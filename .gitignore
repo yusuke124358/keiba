@@ -43,12 +43,6 @@ data/holdout_runs/
 # Models
 models/*.pkl
 
-# Reports
-reports/
-reports/*.md
-reports/*.png
-reports/*.html
-
 # Outputs / artifacts
 output*/
 output for 5.2pro/
