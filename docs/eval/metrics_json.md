@@ -58,3 +58,12 @@ Exit codes:
 - `1`: fail (gates)
 - `2`: incomparable (definitions differ)
 - `3`: error
+
+Comparison prerequisites (incomparable if any mismatch):
+- `schema_version` and `run_kind` must match
+- `split.train/valid/test` start/end must match
+- `betting.buy_t_minus_minutes` and `prob_variant_used` must match
+- `data_cutoff.db_max_race_date` must exist on both sides and match (if present on either side)
+- `data_cutoff.raw_max_mtime` must exist on both sides and match (only used when db_max_race_date is absent on both sides)
+
+`comparison.json` includes gate inputs (`baseline`, `candidate`, and threshold/tolerance) for auditability.

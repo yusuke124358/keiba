@@ -48,6 +48,14 @@ def _pick_metric_block(metrics: dict, use_step14: bool) -> dict:
 
 def _compare_required(baseline: dict, candidate: dict) -> list[str]:
     reasons: list[str] = []
+    b_schema = baseline.get("schema_version")
+    c_schema = candidate.get("schema_version")
+    if b_schema and c_schema and str(b_schema) != str(c_schema):
+        reasons.append(f"schema_version mismatch ({b_schema} vs {c_schema})")
+    b_kind = baseline.get("run_kind")
+    c_kind = candidate.get("run_kind")
+    if b_kind and c_kind and str(b_kind) != str(c_kind):
+        reasons.append(f"run_kind mismatch ({b_kind} vs {c_kind})")
     for key in ["train", "valid", "test"]:
         for field in ["start", "end"]:
             b = _get(baseline, f"split.{key}.{field}")
@@ -88,19 +96,21 @@ def _compare_required(baseline: dict, candidate: dict) -> list[str]:
     if b_close is not None and c_close is not None and not _eq(b_close, c_close):
         reasons.append(f"closing_odds_multiplier mismatch ({b_close} vs {c_close})")
 
-    # data_cutoff checks
+    # data_cutoff checks (strict: no mixed presence)
     b_db = _get(baseline, "data_cutoff.db_max_race_date")
     c_db = _get(candidate, "data_cutoff.db_max_race_date")
-    if b_db and c_db:
-        if str(b_db) != str(c_db):
-            reasons.append(f"data_cutoff.db_max_race_date mismatch ({b_db} vs {c_db})")
+    if (b_db is None) != (c_db is None):
+        reasons.append("data_cutoff.db_max_race_date missing on one side")
+    elif b_db and c_db and str(b_db) != str(c_db):
+        reasons.append(f"data_cutoff.db_max_race_date mismatch ({b_db} vs {c_db})")
     else:
         b_raw = _get(baseline, "data_cutoff.raw_max_mtime")
         c_raw = _get(candidate, "data_cutoff.raw_max_mtime")
-        if b_raw and c_raw:
-            if str(b_raw) != str(c_raw):
-                reasons.append(f"data_cutoff.raw_max_mtime mismatch ({b_raw} vs {c_raw})")
-        else:
+        if (b_raw is None) != (c_raw is None):
+            reasons.append("data_cutoff.raw_max_mtime missing on one side")
+        elif b_raw and c_raw and str(b_raw) != str(c_raw):
+            reasons.append(f"data_cutoff.raw_max_mtime mismatch ({b_raw} vs {c_raw})")
+        elif b_raw is None and c_raw is None and b_db is None and c_db is None:
             reasons.append("data_cutoff missing (db and raw)")
 
     return reasons
@@ -137,9 +147,9 @@ def main() -> None:
     dd_tol = float(gates.get("dd_tolerance", 0.0))
 
     gate_results = {
-        "min_n_bets": {"threshold": min_n_bets, "pass": None},
-        "roi_non_degradation": {"tolerance": roi_tol, "pass": None},
-        "max_drawdown_non_worsening": {"tolerance": dd_tol, "pass": None},
+        "min_n_bets": {"threshold": min_n_bets, "baseline": None, "candidate": None, "pass": None},
+        "roi_non_degradation": {"tolerance": roi_tol, "baseline": None, "candidate": None, "pass": None},
+        "max_drawdown_non_worsening": {"tolerance": dd_tol, "baseline": None, "candidate": None, "pass": None},
     }
 
     decision = "incomparable"
@@ -147,6 +157,8 @@ def main() -> None:
     if comparable:
         b_n = base_metrics.get("n_bets")
         c_n = cand_metrics.get("n_bets")
+        gate_results["min_n_bets"]["baseline"] = b_n
+        gate_results["min_n_bets"]["candidate"] = c_n
         if c_n is None:
             gate_results["min_n_bets"]["pass"] = False
         else:
@@ -154,6 +166,8 @@ def main() -> None:
 
         b_roi = base_metrics.get("roi")
         c_roi = cand_metrics.get("roi")
+        gate_results["roi_non_degradation"]["baseline"] = b_roi
+        gate_results["roi_non_degradation"]["candidate"] = c_roi
         if b_roi is None or c_roi is None:
             gate_results["roi_non_degradation"]["pass"] = False
         else:
@@ -161,6 +175,8 @@ def main() -> None:
 
         b_dd = base_metrics.get("max_drawdown")
         c_dd = cand_metrics.get("max_drawdown")
+        gate_results["max_drawdown_non_worsening"]["baseline"] = b_dd
+        gate_results["max_drawdown_non_worsening"]["candidate"] = c_dd
         if b_dd is None or c_dd is None:
             gate_results["max_drawdown_non_worsening"]["pass"] = False
         else:
