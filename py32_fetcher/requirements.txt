@@ -1,0 +1,5 @@
+# py32_fetcher - JV-Link fetcher (32-bit Python only)
+# Keep dependencies minimal to avoid 32-bit compatibility issues.
+
+pywin32==306
+

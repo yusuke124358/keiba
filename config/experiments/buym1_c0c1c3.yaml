@@ -1,0 +1,19 @@
+# C3 rolling: m1 baseline + market_offset (C0) + history (C1) + speed/last3f (C3)
+# 通過順（C3ペース）はDBに存在しないため、C4で追加取得が必要
+
+backtest:
+  buy_t_minus_minutes: 1
+
+model:
+  use_market_offset: true
+  p_mkt_clip: [0.0001, 0.9999]
+
+betting:
+  buy_minutes: 1
+  # 追加ロジックは全てOFF（C0+C1+C3の純粋な効果を測定）
+  log_odds_std_60m_max: null
+  slippage:
+    enabled: false
+  odds_band_bias:
+    enabled: false
+

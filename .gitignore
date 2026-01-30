@@ -1,0 +1,88 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Data
+data/
+data/raw/*.jsonl
+data/processed/
+data/state/fetch_state.json
+data/holdout_runs/
+
+# Models
+models/*.pkl
+
+# Reports
+reports/
+reports/*.md
+reports/*.png
+reports/*.html
+
+# Outputs / artifacts
+output*/
+output for 5.2pro/
+output_work/
+artifacts/
+tmp/
+JRAVANData/
+
+# Local tools
+.codex/
+.cursor/
+
+# Secrets
+.env
+*.secret
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Pytest
+.pytest_cache/
+
+# Accidental local artifacts (do not commit)
+'@ + $out + r'/
+'@ + $diffPath + '@
+, c.open_stored*
+
+
+

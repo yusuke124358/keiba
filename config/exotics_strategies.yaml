@@ -1,0 +1,20 @@
+strategies:
+  - name: trio_ev010_k10
+    ticket_type: trio
+    max_bets_per_race: 10
+    ev_margin: 0.10
+    max_staleness_min: 10.0
+
+  - name: trio_ev020_k10
+    ticket_type: trio
+    max_bets_per_race: 10
+    ev_margin: 0.20
+    max_staleness_min: 10.0
+
+  - name: trifecta_ev010_k10
+    ticket_type: trifecta
+    max_bets_per_race: 10
+    ev_margin: 0.10
+    max_staleness_min: 10.0
+
+

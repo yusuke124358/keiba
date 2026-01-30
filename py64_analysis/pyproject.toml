@@ -1,0 +1,69 @@
+[project]
+name = "keiba-analysis"
+version = "0.1.0"
+description = "競馬期待値ベース予測システム（分析・学習・バックテスト）"
+requires-python = ">=3.11"
+readme = "README.md"
+license = {text = "MIT"}
+
+dependencies = [
+    # Database
+    "sqlalchemy>=2.0",
+    "psycopg[binary]>=3.1",
+    "alembic>=1.13",
+    
+    # Data Processing
+    "pandas>=2.0",
+    "polars>=0.20",
+    "pyarrow>=14.0",
+    
+    # Machine Learning
+    "lightgbm>=4.0",
+    "scikit-learn>=1.4",
+    
+    # Configuration
+    "pydantic>=2.0",
+    "pydantic-settings>=2.0",
+    "pyyaml>=6.0",
+    
+    # Reporting
+    "jinja2>=3.1",
+    "matplotlib>=3.8",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "ruff>=0.1",
+    "mypy>=1.0",
+]
+
+dashboard = [
+    "streamlit>=1.30",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/keiba"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_ignores = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+

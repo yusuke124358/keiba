@@ -1,0 +1,92 @@
+# Ticket N2’（Post-N3）: buy_minutes=1 を前提に、odds帯バイアス補正を Shrink + Monotone で有効化する
+
+data_source:
+  provider: "jra_van_datalab"
+  storage_raw_dir: "data/raw"
+  storage_processed_dir: "data/processed"
+
+database:
+  url: "postgresql+psycopg://postgres:postgres@localhost:5432/keiba"
+
+universe:
+  track_codes: ["01","02","03","04","05","06","07","08","09","10"]
+  require_results: true
+  require_ts_win: true
+  exclude_race_ids:
+    - "2025020808010301"
+    - "2025020808010302"
+    - "2025020808010303"
+    - "2025020808010304"
+    - "2025020808010305"
+    - "2025020808010306"
+    - "2025020808010307"
+    - "2025020808010308"
+    - "2025020808010309"
+    - "2025020808010310"
+    - "2025020808010311"
+    - "2025020808010312"
+
+payout_rate:
+  default:
+    win: 0.80
+    place: 0.80
+    bracket_quinella: 0.775
+    quinella: 0.775
+    wide: 0.775
+    exacta: 0.75
+    trifecta_box: 0.75
+    trifecta: 0.725
+    win5: 0.70
+  overrides: []
+
+odds_timeseries:
+  supported_types: ["win", "place", "bracket_quinella", "quinella"]
+  interval_minutes: [5, 10]
+  include_total_sales: true
+
+backtest:
+  buy_t_minus_minutes: 1
+  slippage:
+    enabled_if_no_ts_odds: true
+    odds_multiplier: 0.95
+
+model:
+  type: "lightgbm"
+  blend_weight_w: 0.8
+  calibration: "isotonic"
+  seed: 42
+
+cv:
+  scheme: "walk_forward"
+  train_years: 4
+  test_months: 12
+
+betting:
+  ev_margin: 0.10
+  closing_odds_multiplier: 1.0
+  # N2’は buy_time を固定した上で「確率補正」だけを見る（他はOFF）
+  slippage_table:
+    enabled: false
+  log_odds_std_60m_max: null
+  reject_if_log_odds_std_60m_missing: true
+  odds_band_bias:
+    enabled: true
+    odds_bins: [1.0, 2.0, 3.0, 5.0, 10.0, 20.0, 50.0]
+    min_count: 200
+    lambda_shrink: 1000
+    enforce_monotone: true
+    k_clip: [0.85, 1.05]
+  min_odds: null
+  max_odds: null
+  max_bets_per_race: 1
+  bankroll_yen: 300000
+  sizing:
+    method: "fractional_kelly"
+    fraction: 0.2
+  caps:
+    per_race_pct: 0.01
+    per_day_pct: 0.03
+  stop:
+    max_daily_loss_pct: 0.03
+
+

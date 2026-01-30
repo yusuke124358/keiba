@@ -1,0 +1,25 @@
+# Option C (C0 + C1)
+#
+# - baseline固定: buy_minutes=1 / top-K=1 / 追加補正OFF
+# - C0: market prior固定（LightGBM init_score=logit(p_mkt)）
+# - C1: DB内履歴特徴量（FeatureBuilder v1.1.0）
+
+backtest:
+  buy_t_minus_minutes: 1
+
+model:
+  use_market_offset: true
+  p_mkt_clip: [1e-4, 0.9999]
+  # market_offset時は二重カウント回避のため、追加ブレンドは意味を持たないが明示しておく
+  blend_weight_w: 0.0
+
+betting:
+  # 明示的に追加補正/フィルタをOFF
+  log_odds_std_60m_max: null
+  slippage_table:
+    enabled: false
+  odds_band_bias:
+    enabled: false
+  max_bets_per_race: 1
+
+

@@ -1,0 +1,216 @@
+data_source:
+  provider: jra_van_datalab
+  storage_raw_dir: data/raw
+  storage_processed_dir: data/processed
+database:
+  url: postgresql+psycopg://postgres:postgres@localhost:5432/keiba
+universe:
+  track_codes:
+  - '01'
+  - '02'
+  - '03'
+  - '04'
+  - '05'
+  - '06'
+  - '07'
+  - 08
+  - 09
+  - '10'
+  require_results: true
+  require_ts_win: true
+  exclude_race_ids:
+  - '2025020808010301'
+  - '2025020808010302'
+  - '2025020808010303'
+  - '2025020808010304'
+  - '2025020808010305'
+  - '2025020808010306'
+  - '2025020808010307'
+  - '2025020808010308'
+  - '2025020808010309'
+  - '2025020808010310'
+  - '2025020808010311'
+  - '2025020808010312'
+  - '2020020910010810'
+  - '2020021608020602'
+  - '2020021608020604'
+  - '2020030109010206'
+  - '2020052408031012'
+  - '2020060609030110'
+  - '2020062102010411'
+  - '2020062109030612'
+  - '2020080104020310'
+  - '2020092706040710'
+  - '2020102505040601'
+  - '2020103108040704'
+  - '2020110709050103'
+  - '2020110709050107'
+  - '2021030710020806'
+  - '2021041704010310'
+  - '2021042404010506'
+  - '2021042509021004'
+  - '2021050905020601'
+  - '2021061207040311'
+  - '2021061305030411'
+  - '2021071003010308'
+  - '2021071102010404'
+  - '2021071703010512'
+  - '2021081510040208'
+  - '2021082201020407'
+  - '2021082810040503'
+  - '2021091106040112'
+  - '2021091207050201'
+  - '2021100206040801'
+  - '2021101009040206'
+  - '2021103004050707'
+  - '2021112105050612'
+  - '2021121107060305'
+  - '2022010907010311'
+  - '2022012306010808'
+  - '2022020505010312'
+  - '2022021905010708'
+  - '2022050103010609'
+  - '2022052804010707'
+  - '2022070203020112'
+  - '2022090404030803'
+  - '2022101005040311'
+  - '2022111305050408'
+  - '2022120307060112'
+  - '2022121007060305'
+  - '2022121709060504'
+  - '2023020510010811'
+  - '2023021810020311'
+  - '2023031209011007'
+  - '2023060405030201'
+  - '2023061002010108'
+  - '2023061109030402'
+  - '2023061109030404'
+  - '2023071502020501'
+  - '2023080604020411'
+payout_rate:
+  default:
+    win: 0.8
+    place: 0.8
+    bracket_quinella: 0.775
+    quinella: 0.775
+    wide: 0.775
+    exacta: 0.75
+    trifecta_box: 0.75
+    trifecta: 0.725
+    win5: 0.7
+  overrides: []
+odds_timeseries:
+  supported_types:
+  - win
+  - place
+  - bracket_quinella
+  - quinella
+  interval_minutes:
+  - 5
+  - 10
+  include_total_sales: true
+backtest:
+  buy_t_minus_minutes: 1
+  slippage:
+    enabled_if_no_ts_odds: true
+    odds_multiplier: 0.95
+model:
+  type: lightgbm
+  blend_weight_w: 0.8
+  calibration: isotonic
+  seed: 42
+  use_market_offset: false
+  p_mkt_clip:
+  - 0.0001
+  - 0.9999
+  residual_cap:
+    enabled: false
+    quantile: 0.99
+    p_clip:
+    - 0.0001
+    - 0.9999
+    apply_stage: pre_calibration
+cv:
+  scheme: walk_forward
+  train_years: 4
+  test_months: 12
+betting:
+  ev_margin: 0.1
+  race_cost_filter:
+    enabled: true
+    metric: "takeout_implied"
+    cap_mode: "train_quantile"
+    cap_fit_scope: "train_valid"
+    train_quantile: 0.90
+    max_takeout_implied: null
+    max_overround_sum_inv: null
+    reject_if_missing: true
+    scope: "race"
+  closing_odds_multiplier: 1.0
+  ev_upper_cap:
+    enabled: false
+    quantile: 0.95
+  overlay_shrink_alpha: null
+  slippage_table:
+    enabled: false
+    quantile: 0.3
+    min_count: 200
+    odds_bins:
+    - 1.0
+    - 3.0
+    - 5.0
+    - 10.0
+    - 20.0
+    ts_vol_quantiles:
+    - 0.5
+    - 0.8
+    use_snap_age: false
+    snap_age_bins:
+    - 0.0
+    - 1.0
+    - 3.0
+    - 5.0
+  odds_band_bias:
+    enabled: false
+    odds_bins:
+    - 1.0
+    - 2.0
+    - 3.0
+    - 5.0
+    - 10.0
+    - 20.0
+    - 50.0
+    min_count: 200
+    lambda_shrink: 0
+    enforce_monotone: false
+    k_clip:
+    - 0.5
+    - 1.1
+  log_odds_std_60m_max: null
+  reject_if_log_odds_std_60m_missing: true
+  min_odds: null
+  max_odds: 30.0
+  max_bets_per_race: 1
+  bankroll_yen: 300000
+  sizing:
+    method: fractional_kelly
+    fraction: 0.2
+  stake:
+    enabled: true
+    max_frac_per_bet: 0.01
+    max_frac_per_race: 0.03
+    max_frac_per_day: 0.15
+    max_yen_per_bet: null
+    min_yen: 100
+  uncertainty:
+    enabled: true
+    n_bins: 10
+    n0: 2000
+    min_mult: 0.2
+  caps:
+    per_race_pct: 0.01
+    per_day_pct: 0.03
+  stop:
+    max_daily_loss_pct: 0.03
+  min_buy_odds: null
+  max_buy_odds: null

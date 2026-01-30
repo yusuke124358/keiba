@@ -1,0 +1,25 @@
+# Ticket G1: Residual Cap（市場からの乖離をlogit残差で上限制限）
+# C0+C1+C3+G1: market_offset + history_features + speed/last3f + residual_cap
+
+backtest:
+  buy_t_minus_minutes: 1
+
+model:
+  use_market_offset: true
+  p_mkt_clip: [1e-4, 0.9999]
+  blend_weight_w: 0.0
+  # Ticket G1: Residual Cap
+  residual_cap:
+    enabled: true
+    quantile: 0.99
+    p_clip: [0.0001, 0.9999]
+    apply_stage: pre_calibration
+
+betting:
+  log_odds_std_60m_max: null
+  slippage_table:
+    enabled: false
+  odds_band_bias:
+    enabled: false
+  max_bets_per_race: 1
+

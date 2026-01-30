@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Codex Task Result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "job_id",
+    "status",
+    "summary",
+    "files_changed",
+    "commands_executed",
+    "needs_user_input",
+    "raw_notes"
+  ],
+  "properties": {
+    "job_id": { "type": "string" },
+    "status": { "type": "string", "enum": ["ok", "needs_approval", "error"] },
+    "summary": { "type": "string" },
+    "files_changed": { "type": "array", "items": { "type": "string" } },
+    "commands_executed": { "type": "array", "items": { "type": "string" } },
+    "needs_user_input": { "type": "array", "items": { "type": "string" } },
+    "raw_notes": { "type": "string" }
+  }
+}

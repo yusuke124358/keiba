@@ -1,0 +1,24 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: keiba-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${KEIBA_PG_USER:-postgres}
+      POSTGRES_PASSWORD: ${KEIBA_PG_PASSWORD:-postgres}
+      POSTGRES_DB: ${KEIBA_PG_DB:-keiba}
+      TZ: Asia/Tokyo
+    ports:
+      - "${KEIBA_PG_PORT:-5432}:5432"
+    volumes:
+      - keiba_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${KEIBA_PG_USER:-postgres} -d ${KEIBA_PG_DB:-keiba}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  keiba_pgdata:
+
+

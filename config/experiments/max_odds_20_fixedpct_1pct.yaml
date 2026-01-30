@@ -1,0 +1,64 @@
+# max_odds=20 + stakeを固定比率（1%/bet, 1日上限3%）にして「選別の質」だけを見やすくする実験用設定
+
+data_source:
+  provider: "jra_van_datalab"
+  storage_raw_dir: "data/raw"
+  storage_processed_dir: "data/processed"
+
+database:
+  url: "postgresql+psycopg://postgres:postgres@localhost:5432/keiba"
+
+payout_rate:
+  default:
+    win: 0.80
+    place: 0.80
+    bracket_quinella: 0.775
+    quinella: 0.775
+    wide: 0.775
+    exacta: 0.75
+    trifecta_box: 0.75
+    trifecta: 0.725
+    win5: 0.70
+  overrides: []
+
+odds_timeseries:
+  supported_types: ["win", "place", "bracket_quinella", "quinella"]
+  interval_minutes: [5, 10]
+  include_total_sales: true
+
+backtest:
+  buy_t_minus_minutes: 10
+  slippage:
+    enabled_if_no_ts_odds: true
+    odds_multiplier: 0.95
+
+model:
+  type: "lightgbm"
+  blend_weight_w: 0.8
+  calibration: "isotonic"
+  seed: 42
+
+cv:
+  scheme: "walk_forward"
+  train_years: 4
+  test_months: 12
+
+betting:
+  ev_margin: 0.10
+  closing_odds_multiplier: 1.0
+  min_odds: null
+  max_odds: 20.0
+  max_bets_per_race: 1
+  bankroll_yen: 300000
+  sizing:
+    method: "fixed_pct"
+    fraction: 0.01
+  caps:
+    per_race_pct: 0.01
+    per_day_pct: 0.03
+  stop:
+    max_daily_loss_pct: 0.03
+
+
+
+

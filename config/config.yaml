@@ -1,0 +1,278 @@
+# 競馬アルゴ設定ファイル
+
+data_source:
+  provider: "jra_van_datalab"
+  storage_raw_dir: "data/raw"
+  storage_processed_dir: "data/processed"
+
+database:
+  url: "postgresql+psycopg://postgres:postgres@localhost:5432/keiba"
+
+# 学習/検証に使うレース母集団（race_universe）
+universe:
+  # 中央（01〜10）
+  track_codes: ["01","02","03","04","05","06","07","08","09","10"]
+  # 結果があるレースのみ（ラベル汚染防止）
+  require_results: true
+  # 0B41（odds_ts_win）があるレースのみ（p_mkt/TS特徴量の前提）
+  require_ts_win: true
+  # 恒久的に除外したい race_id（16桁）
+  exclude_race_ids:
+    - "2025020808010301"
+    - "2025020808010302"
+    - "2025020808010303"
+    - "2025020808010304"
+    - "2025020808010305"
+    - "2025020808010306"
+    - "2025020808010307"
+    - "2025020808010308"
+    - "2025020808010309"
+    - "2025020808010310"
+    - "2025020808010311"
+    - "2025020808010312"
+    # C2(2020-2023): 0B41 bulk取得で恒久欠損になった race_id（中央01-10）
+    - "2020020910010810"
+    - "2020021608020602"
+    - "2020021608020604"
+    - "2020030109010206"
+    - "2020052408031012"
+    - "2020060609030110"
+    - "2020062102010411"
+    - "2020062109030612"
+    - "2020080104020310"
+    - "2020092706040710"
+    - "2020102505040601"
+    - "2020103108040704"
+    - "2020110709050103"
+    - "2020110709050107"
+    - "2021030710020806"
+    - "2021041704010310"
+    - "2021042404010506"
+    - "2021042509021004"
+    - "2021050905020601"
+    - "2021061207040311"
+    - "2021061305030411"
+    - "2021071003010308"
+    - "2021071102010404"
+    - "2021071703010512"
+    - "2021081510040208"
+    - "2021082201020407"
+    - "2021082810040503"
+    - "2021091106040112"
+    - "2021091207050201"
+    - "2021100206040801"
+    - "2021101009040206"
+    - "2021103004050707"
+    - "2021112105050612"
+    - "2021121107060305"
+    - "2022010907010311"
+    - "2022012306010808"
+    - "2022020505010312"
+    - "2022021905010708"
+    - "2022050103010609"
+    - "2022052804010707"
+    - "2022070203020112"
+    - "2022090404030803"
+    - "2022101005040311"
+    - "2022111305050408"
+    - "2022120307060112"
+    - "2022121007060305"
+    - "2022121709060504"
+    - "2023020510010811"
+    - "2023021810020311"
+    - "2023031209011007"
+    - "2023060405030201"
+    - "2023061002010108"
+    - "2023061109030402"
+    - "2023061109030404"
+    - "2023071502020501"
+    - "2023080604020411"
+
+# 払戻率設定
+payout_rate:
+  default:
+    win: 0.80
+    place: 0.80
+    bracket_quinella: 0.775
+    quinella: 0.775
+    wide: 0.775
+    exacta: 0.75
+    trifecta_box: 0.75
+    trifecta: 0.725
+    win5: 0.70
+  
+  # 特定日の上書き（JRAスーパープレミアム等）
+  overrides: []
+    # - dates: ["2024-12-28", "2024-12-29"]
+    #   all_types: 0.80
+
+# 時系列オッズ設定
+odds_timeseries:
+  supported_types: ["win", "place", "bracket_quinella", "quinella"]
+  interval_minutes: [5, 10]
+  include_total_sales: true
+
+# バックテスト設定
+backtest:
+  # Post-N3: 新ベースライン（buy_minutes=1）
+  buy_t_minus_minutes: 1
+  slippage:
+    enabled_if_no_ts_odds: true
+    odds_multiplier: 0.95
+
+# モデル設定
+model:
+  type: "lightgbm"
+  blend_weight_w: 0.8
+  calibration: "isotonic"
+  market_prob_mode: "raw"
+  seed: 42
+  # Option C0: 市場確率 p_mkt を prior として固定し、残差（logit）だけ学習する
+  use_market_offset: false
+  # logit(p_mkt) 計算時のクリップ範囲（発散防止）
+  p_mkt_clip: [1e-4, 0.9999]
+  # Ticket G1: 市場からの乖離（logit残差）を上限制限してdecile10壊滅を潰す
+  residual_cap:
+    enabled: false
+    quantile: 0.99
+    p_clip: [0.0001, 0.9999]
+    apply_stage: pre_calibration  # pre_calibration or post_calibration
+  blend:
+    segmented:
+      enabled: false
+      segment_by: "surface"
+      min_count: 200
+      n0: 500
+      w_min: 0.0
+      w_max: 1.0
+      grid_step: 0.02
+      loss: "logloss"
+  race_softmax:
+    enabled: false
+    score_space: "logit"
+    clip_eps: 1e-6
+    selector:
+      enabled: false
+      metric: "valid_roi"
+      min_valid_bets: 30
+      min_valid_bets_ratio: 0.50
+      min_delta_valid_roi: 0.02
+      min_delta_valid_logloss: 0.001
+      fallback: "baseline"
+      save_decision: true
+    fit:
+      enabled: true
+      w_grid_step: 0.02
+      t_grid: [0.5,0.7,0.9,1.0,1.1,1.3,1.5,1.8,2.0]
+      loss: "race_logloss"
+    apply:
+      w_default: 0.2
+      t_default: 1.0
+
+# クロスバリデーション設定
+features:
+  pace_history:
+    enabled: false
+
+cv:
+  scheme: "walk_forward"
+  train_years: 4
+  test_months: 12
+
+# ベッティング設定
+betting:
+  ev_margin: 0.10
+  takeout_ev_margin:
+    enabled: false
+    ref_takeout: 0.215
+    slope: 0.0
+  selection:
+    mode: "ev_threshold"
+    daily_top_n:
+      enabled: false
+      n: 5
+      metric: "ev"
+      min_value: null
+      scope: "date"
+      tie_break: "score_desc_then_odds_asc"
+  race_cost_filter:
+    enabled: false
+    metric: "takeout_implied"
+    cap_mode: "fixed"
+    cap_fit_scope: "train"
+    cap_fit_population: "all_races"
+    train_quantile: 0.85
+    max_takeout_implied: null
+    max_overround_sum_inv: null
+    reject_if_missing: true
+    scope: "race"
+    selector:
+      enabled: false
+      candidate_caps: [null]
+      min_valid_n_bets: 80
+      min_delta_valid_roi: 0.02
+      tie_breaker: "prefer_baseline"
+  # Ticket1: 買い時点オッズ→締切オッズのズレを保守的に見積もる倍率（1.0=補正なし）
+  # 例: 0.97 なら「締切でオッズが平均3%悪化する」想定でEV計算・stake計算に反映
+  closing_odds_multiplier: 1.0
+  # Ticket G2: EV上側カット（過大EVによるdecile9/10壊滅を抑止）
+  ev_upper_cap:
+    enabled: false
+    quantile: 0.95  # train期間のbet候補EV分布のquantile
+  # Ticket N6: overlay shrink (logit residual) toward p_mkt (1.0=no shrink, 0.0=market)
+  overlay_shrink_alpha: null
+  # Ticket N2: Favorite–Longshot bias 対策（odds帯ごとの確率補正）
+  odds_band_bias:
+    enabled: false
+    odds_bins: [1.0, 2.0, 3.0, 5.0, 10.0, 20.0, 50.0]
+    min_count: 200
+    # N2’向け（v1でも無害）：Shrink + Monotone のパラメータ
+    lambda_shrink: 0
+    enforce_monotone: false
+    k_clip: [0.50, 1.10]
+  # 勝ち筋探索用: ベット対象のオッズ帯を制限（null なら制限なし）
+  # 例: max_odds: 20 で「オッズ20倍超は買わない」
+  min_odds: null
+  max_odds: null
+  # buy???????????
+  min_buy_odds: null
+  max_buy_odds: null
+  odds_floor_min_odds: 0.0
+  stake_odds_damp:
+    enabled: false
+    ref_odds: 0.0
+    power: 1.0
+    min_mult: 0.0
+  ev_cap_quantile: null
+  overlay_abs_cap_quantile: null
+  reject_if_overlay_missing: true
+  odds_dynamics_filter:
+    enabled: false
+    lookback_minutes: 5
+    metric: "odds_delta_log"
+    direction: "exclude_high"
+    threshold_mode: "quantile"
+    quantile: 0.95
+    fit_scope: "train_valid"
+    fit_population: "candidates_with_bets_under_baseline_gating"
+    threshold: null
+  odds_dyn_ev_margin:
+    enabled: false
+    metric: "odds_delta_log"
+    lookback_minutes: 5
+    direction: "high"
+    ref: null
+    slope: 0.0
+    fit_scope: "train_valid"
+    fit_population: "candidates_with_bets_under_baseline_gating"
+  max_bets_per_race: 1
+  bankroll_yen: 300000
+  sizing:
+    method: "fractional_kelly"
+    fraction: 0.2
+  caps:
+    per_race_pct: 0.01
+    per_day_pct: 0.03
+  stop:
+    max_daily_loss_pct: 0.03
+
