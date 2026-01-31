@@ -27,3 +27,5 @@
 - `py64_analysis/scripts/backfill_pace_from_jvd.py`
 - `py64_analysis/scripts/reparse_hr_from_raw_jsonl.py`
 - `py64_analysis/scripts/load_exotics_snapshots_dir.py`
+- `py64_analysis/scripts/dedupe_features.py`
+- `py64_analysis/scripts/regenerate_features_c4.py`
