@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import subprocess
 from pathlib import Path
 from typing import Optional
 
@@ -56,6 +57,21 @@ def save_config_used(resolved_config_path: Path, run_dir: Path) -> dict:
 def save_config_origin(run_dir: Path, origin_payload: dict) -> None:
     out_path = run_dir / "config_origin.json"
     out_path.write_text(json.dumps(origin_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def git_commit(project_root: Path) -> Optional[str]:
+    try:
+        out = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=str(project_root))
+        return out.decode("utf-8").strip()
+    except Exception:
+        return None
+
+
+def rel_path(path: Path, project_root: Path) -> str:
+    try:
+        return str(path.resolve().relative_to(project_root.resolve()))
+    except Exception:
+        return str(path)
 
 
 def _normalize_path(path: Path) -> Path:

@@ -39,21 +39,6 @@ def _parse_date(s: str) -> date:
     return datetime.strptime(s, "%Y-%m-%d").date()
 
 
-def _git_commit(project_root: Path) -> str | None:
-    try:
-        out = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=str(project_root))
-        return out.decode("utf-8").strip()
-    except Exception:
-        return None
-
-
-def _rel_path(path: Path, project_root: Path) -> str:
-    try:
-        return str(path.resolve().relative_to(project_root.resolve()))
-    except Exception:
-        return str(path)
-
-
 @dataclass(frozen=True)
 class WindowPlan:
     idx: int
@@ -165,7 +150,13 @@ def main() -> None:
     p.add_argument("--top", type=int, default=10, help="最後にROI上位N件を表示")
     args = p.parse_args()
 
-    from keiba.utils.config_resolver import resolve_config_path, save_config_origin, save_config_used
+    from keiba.utils.config_resolver import (
+        git_commit,
+        rel_path,
+        resolve_config_path,
+        save_config_origin,
+        save_config_used,
+    )
 
     resolved_config_path, config_origin = resolve_config_path(args.config)
     orig_env_config = os.environ.get("KEIBA_CONFIG_PATH")
@@ -250,10 +241,10 @@ def main() -> None:
     config_used_path = Path(config_meta["config_used_path"])
     origin_payload = {
         "origin": config_origin,
-        "resolved_config_path": _rel_path(resolved_config_path, project_root),
-        "config_used_path": _rel_path(config_used_path, project_root),
+        "resolved_config_path": rel_path(resolved_config_path, project_root),
+        "config_used_path": rel_path(config_used_path, project_root),
         "config_hash_sha256": config_meta.get("config_hash_sha256"),
-        "git_commit": _git_commit(project_root),
+        "git_commit": git_commit(project_root),
         "generated_at": ts,
     }
     save_config_origin(group_dir, origin_payload)
@@ -265,7 +256,7 @@ def main() -> None:
         "name": args.name,
         "generated_at": ts,
         "group_dir": str(group_dir),
-        "config_used_path": _rel_path(config_used_path, project_root),
+        "config_used_path": rel_path(config_used_path, project_root),
         "plans": [],
         "errors": [],
         "args": vars(args),

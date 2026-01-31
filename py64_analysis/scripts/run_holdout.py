@@ -40,21 +40,6 @@ def _align_features(X: pd.DataFrame, feature_names: list[str]) -> pd.DataFrame:
     return X2
 
 
-def _git_commit(project_root: Path) -> str | None:
-    try:
-        out = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=str(project_root))
-        return out.decode("utf-8").strip()
-    except Exception:
-        return None
-
-
-def _rel_path(path: Path, project_root: Path) -> str:
-    try:
-        return str(path.resolve().relative_to(project_root.resolve()))
-    except Exception:
-        return str(path)
-
-
 def main() -> None:
     _ensure_import_path()
 
@@ -97,7 +82,13 @@ def main() -> None:
     p.add_argument("--out-dir", type=Path, default=None, help="出力先（未指定なら data/holdout_runs/<name>_<ts>）")
     args = p.parse_args()
 
-    from keiba.utils.config_resolver import resolve_config_path, save_config_origin, save_config_used
+    from keiba.utils.config_resolver import (
+        git_commit,
+        rel_path,
+        resolve_config_path,
+        save_config_origin,
+        save_config_used,
+    )
 
     resolved_config_path, config_origin = resolve_config_path(args.config)
     os.environ["KEIBA_CONFIG_PATH"] = str(resolved_config_path)
@@ -123,10 +114,10 @@ def main() -> None:
     config_used_path = Path(config_meta["config_used_path"])
     origin_payload = {
         "origin": config_origin,
-        "resolved_config_path": _rel_path(resolved_config_path, project_root),
-        "config_used_path": _rel_path(config_used_path, project_root),
+        "resolved_config_path": rel_path(resolved_config_path, project_root),
+        "config_used_path": rel_path(config_used_path, project_root),
         "config_hash_sha256": config_meta.get("config_hash_sha256"),
-        "git_commit": _git_commit(project_root),
+        "git_commit": git_commit(project_root),
         "generated_at": ts,
     }
     save_config_origin(run_dir, origin_payload)
@@ -1784,7 +1775,7 @@ def main() -> None:
     summary = {
         "name": args.name,
         "generated_at": ts,
-        "config_used_path": _rel_path(config_used_path, project_root),
+        "config_used_path": rel_path(config_used_path, project_root),
         "train": {"start": args.train_start, "end": args.train_end, "n_races": len(race_ids_train), "features_saved": n_feat_train},
         "valid": {"start": args.valid_start, "end": args.valid_end, "n_races": len(race_ids_valid), "features_saved": n_feat_valid},
         "test": {"start": args.test_start, "end": args.test_end, "n_races": len(race_ids_test), "features_saved": n_feat_test},
