@@ -55,6 +55,14 @@ JRAVANData/
 .codex/
 .cursor/
 
+# Track shared Codex team config (allowlist)
+!.codex/
+!.codex/config.toml
+!.codex/rules/
+!.codex/rules/*.rules
+.codex/ssh/
+.codex/skills/
+
 # Secrets
 .env
 *.secret

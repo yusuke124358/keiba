@@ -1,0 +1,163 @@
+# keiba team rules (Codex execpolicy)
+# Order: allow read-only, prompt external/risky, forbid destructive.
+
+prefix_rule(
+    ["git", "status"],
+    "allow",
+    match=[["git", "status"]],
+    not_match=[["git", "push"]],
+)
+
+prefix_rule(
+    ["git", "diff"],
+    "allow",
+    match=[["git", "diff", "--stat"]],
+    not_match=[["git", "reset", "--hard"]],
+)
+
+prefix_rule(
+    ["git", "log"],
+    "allow",
+    match=[["git", "log", "--oneline", "-n", "5"]],
+    not_match=[["git", "rebase", "main"]],
+)
+
+prefix_rule(
+    ["git", "show"],
+    "allow",
+    match=[["git", "show", "HEAD"]],
+    not_match=[["git", "commit", "-m", "msg"]],
+)
+
+prefix_rule(
+    ["rg"],
+    "allow",
+    match=[["rg", "TODO"]],
+    not_match=[["rm", "-rf", "."]],
+)
+
+prefix_rule(
+    ["git", "push"],
+    "prompt",
+    match=[["git", "push", "origin", "main"]],
+    not_match=[["git", "status"]],
+)
+
+prefix_rule(
+    ["git", "commit"],
+    "prompt",
+    match=[["git", "commit", "-m", "msg"]],
+    not_match=[["git", "diff"]],
+)
+
+prefix_rule(
+    ["git", "reset"],
+    "prompt",
+    match=[["git", "reset", "--hard"]],
+    not_match=[["git", "status"]],
+)
+
+prefix_rule(
+    ["git", "rebase"],
+    "prompt",
+    match=[["git", "rebase", "main"]],
+    not_match=[["git", "log"]],
+)
+
+prefix_rule(
+    ["git", "clean"],
+    "prompt",
+    match=[["git", "clean", "-fdx"]],
+    not_match=[["git", "status"]],
+)
+
+prefix_rule(
+    ["gh"],
+    "prompt",
+    match=[["gh", "pr", "create"]],
+    not_match=[["git", "status"]],
+)
+
+prefix_rule(
+    ["pip", "install"],
+    "prompt",
+    match=[["pip", "install", "requests"]],
+    not_match=[["pip", "list"]],
+)
+
+prefix_rule(
+    ["uv", "pip", "install"],
+    "prompt",
+    match=[["uv", "pip", "install", "requests"]],
+    not_match=[["uv", "pip", "list"]],
+)
+
+prefix_rule(
+    ["python", "-m", "pip", "install"],
+    "prompt",
+    match=[["python", "-m", "pip", "install", "requests"]],
+    not_match=[["python", "-m", "pip", "list"]],
+)
+
+prefix_rule(
+    ["py", "-m", "pip", "install"],
+    "prompt",
+    match=[["py", "-m", "pip", "install", "requests"]],
+    not_match=[["py", "-m", "pip", "list"]],
+)
+
+prefix_rule(
+    ["rm"],
+    "forbidden",
+    match=[["rm", "-rf", "tmp"]],
+    not_match=[["echo", "rm", "-rf", "tmp"]],
+)
+
+prefix_rule(
+    ["del"],
+    "forbidden",
+    match=[["del", "/s", "/q", "C:\\temp\\*"]],
+    not_match=[["echo", "del", "/s", "/q", "C:\\temp\\*"]],
+)
+
+prefix_rule(
+    ["rmdir"],
+    "forbidden",
+    match=[["rmdir", "/s", "/q", "C:\\temp"]],
+    not_match=[["echo", "rmdir", "/s", "/q", "C:\\temp"]],
+)
+
+prefix_rule(
+    ["Remove-Item"],
+    "forbidden",
+    match=[["Remove-Item", "-Recurse", "-Force", "C:\\temp"]],
+    not_match=[["Write-Output", "Remove-Item"]],
+)
+
+prefix_rule(
+    ["format"],
+    "forbidden",
+    match=[["format", "C:"]],
+    not_match=[["echo", "format", "C:"]],
+)
+
+prefix_rule(
+    ["diskpart"],
+    "forbidden",
+    match=[["diskpart"]],
+    not_match=[["echo", "diskpart"]],
+)
+
+prefix_rule(
+    ["shutdown"],
+    "forbidden",
+    match=[["shutdown", "/s", "/t", "0"]],
+    not_match=[["echo", "shutdown", "/s", "/t", "0"]],
+)
+
+prefix_rule(
+    ["reboot"],
+    "forbidden",
+    match=[["reboot"]],
+    not_match=[["echo", "reboot"]],
+)
