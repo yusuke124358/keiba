@@ -1,12 +1,5 @@
 """
-`output for 5.2pro` の出力運用を固定するユーティリティ。
-
-運用ルール（ユーザー合意）:
-  - 「見てほしい参照ファイル」は C:\\Users\\yyosh\\keiba\\output for 5.2pro に .zip で保存する
-  - 次に新しいZIPを出力する前に、既存ZIPは old\\<timestamp>\\ に退避する
-
-用途:
-  - Assistantが次のZIPを書き出す前に、このスクリプトを呼んで過去ZIPを退避する。
+Rotate *.zip files under an output directory into old/<timestamp>/.
 """
 
 from __future__ import annotations
@@ -45,13 +38,8 @@ def rotate_zips(output_dir: Path, *, ts: str | None = None, dry_run: bool = Fals
 
 
 def main() -> None:
-    p = argparse.ArgumentParser(description="Rotate *.zip under output for 5.2pro into old/<timestamp>/")
-    p.add_argument(
-        "--output-dir",
-        type=Path,
-        default=Path(r"C:\Users\yyosh\keiba\output for 5.2pro"),
-        help=r"Output directory (default: C:\Users\yyosh\keiba\output for 5.2pro)",
-    )
+    p = argparse.ArgumentParser(description="Rotate *.zip under output dir into old/<timestamp>/")
+    p.add_argument("--output-dir", type=Path, required=True, help="Output directory containing *.zip")
     p.add_argument("--timestamp", type=str, default=None, help="timestamp folder name (default: now)")
     p.add_argument("--dry-run", action="store_true")
     args = p.parse_args()

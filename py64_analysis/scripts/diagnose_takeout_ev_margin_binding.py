@@ -12,9 +12,6 @@ import numpy as np
 import pandas as pd
 
 
-DEFAULT_BUNDLE = Path(r"C:\Users\yyosh\keiba\output for 5.2pro\単勝\takeout_ev_margin_sweep_2024_2025_20260118_014611")
-
-
 def _read_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8-sig"))
 
@@ -146,13 +143,15 @@ def _fmt(val: Any, digits: int = 4) -> str:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Diagnose takeout_ev_margin binding")
-    ap.add_argument("--bundle-dir", type=Path, default=DEFAULT_BUNDLE)
+    ap.add_argument("--bundle-dir", type=Path, required=True, help="bundle directory (required)")
     ap.add_argument("--out-dir", type=Path, required=True)
     ap.add_argument("--sample-windows", type=int, default=3)
     ap.add_argument("--target-slopes", type=float, nargs="*", default=[0.0, 2.0])
     args = ap.parse_args()
 
     bundle_dir = args.bundle_dir
+    if not bundle_dir.exists():
+        raise SystemExit(f"bundle_dir not found: {bundle_dir}")
     out_dir = args.out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
 

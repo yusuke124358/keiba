@@ -22,11 +22,13 @@ from keiba.modeling.train import WinProbabilityModel
 
 WIN_RE = re.compile(r"^w\d{3}_(\d{8})_(\d{8})$")
 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
 
 def _resolve_run_dir(path: Path) -> Path:
     if path.exists():
         return path
-    base = Path(r"C:\Users\yyosh\keiba\data\holdout_runs")
+    base = PROJECT_ROOT / "data" / "holdout_runs"
     candidate = base / path.name
     if candidate.exists():
         return candidate

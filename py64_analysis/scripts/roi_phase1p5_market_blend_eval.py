@@ -27,6 +27,7 @@ def _ensure_import_path() -> None:
 
 _ensure_import_path()
 from keiba.betting.market_blend import logit_blend_prob, odds_band  # noqa: E402
+from keiba.utils.run_paths import make_analysis_out_dir, require_existing_dir  # noqa: E402
 
 ODDS_PRIORITY = ["odds_val", "odds", "odds_buy", "odds_at_buy", "odds_effective"]
 Y_PRIORITY = ["y_win", "is_win", "winner", "y_true", "y"]
@@ -126,21 +127,10 @@ def _resolve_fullfield_path(run_dir: Path, staging_dir: Path, split: str, allow_
     if cand.exists():
         return cand
 
-    # 2) output_staging/market_edge_big_eval_* (reuse if exists)
-    staging_root = Path(r"C:\Users\yyosh\keiba\output_staging")
-    for base in sorted(staging_root.glob("market_edge_big_eval_*"), reverse=True):
-        alt = base / "fullfield_generated" / run_dir.name / "fullfield" / f"fullfield_{split}.csv"
-        if split == "test":
-            alias = base / "fullfield_generated" / run_dir.name / "fullfield" / "fullfield_preds.csv"
-            if alias.exists():
-                return alias
-        if alt.exists():
-            return alt
-
     if not allow_export:
         raise ValueError(f"fullfield_{split}.csv not found (export disabled): {run_dir}")
 
-    # 3) generate into staging_dir/fullfield_generated/<run_id>
+    # 2) generate into staging_dir/fullfield_generated/<run_id>
     out_dir = staging_dir / "fullfield_generated" / run_dir.name
     out_dir.mkdir(parents=True, exist_ok=True)
     script_path = Path(__file__).resolve().parent / "export_fullfield_preds_for_run_dir.py"
@@ -334,22 +324,35 @@ def _bootstrap_ci_delta(race_sums: pd.DataFrame, n_boot: int, rng: np.random.Gen
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Phase1.5 market-anchored blend (leak-free)")
-    ap.add_argument("--run_dir_glob", required=True)
+    ap.add_argument("--run_dir", action="append", default=None, help="run_dir (repeatable)")
+    ap.add_argument("--run_dir_glob", action="append", default=None, help="glob for run_dir (repeatable)")
     ap.add_argument("--market_method", default="p_mkt_col")
     ap.add_argument("--bootstrap_n", type=int, default=500)
-    ap.add_argument("--out_dir", required=True)
-    ap.add_argument("--staging_dir", required=True)
+    ap.add_argument("--out_dir", default=None)
+    ap.add_argument("--staging_dir", default=None)
     ap.add_argument("--no_export", action="store_true")
     args = ap.parse_args()
 
-    run_dirs = _run_dirs(args.run_dir_glob)
+    run_dirs: list[Path] = []
+    if args.run_dir:
+        run_dirs.extend([Path(p) for p in args.run_dir])
+    if args.run_dir_glob:
+        for pattern in args.run_dir_glob:
+            run_dirs.extend(_run_dirs(pattern))
     if not run_dirs:
-        raise SystemExit(f"No run dirs matched: {args.run_dir_glob}")
+        raise SystemExit("No run_dir specified (use --run_dir or --run_dir_glob)")
+    run_dirs = [require_existing_dir(p, "run_dir") for p in run_dirs]
 
-    out_dir = Path(args.out_dir)
-    staging_dir = Path(args.staging_dir)
+    out_dir = Path(args.out_dir) if args.out_dir else make_analysis_out_dir(run_dirs[0], "roi_phase1p5_market_blend_eval")
+    staging_dir = Path(args.staging_dir) if args.staging_dir else out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
     staging_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"[paths] run_dirs={len(run_dirs)}")
+    for rd in run_dirs:
+        print(f"[paths] run_dir={rd}")
+    print(f"[paths] out_dir={out_dir}")
+    print(f"[paths] staging_dir={staging_dir}")
 
     missing_race_ids = []
     for run_dir in run_dirs:
