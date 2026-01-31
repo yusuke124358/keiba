@@ -1,0 +1,140 @@
+# keiba team rules (Codex execpolicy)
+# Order: allow read-only, prompt external/risky, forbid destructive.
+
+prefix_rule(
+    ["git", "status"],
+    "allow",
+    match=[["git", "status"]],
+)
+
+prefix_rule(
+    ["git", "diff"],
+    "allow",
+    match=[["git", "diff", "--stat"]],
+)
+
+prefix_rule(
+    ["git", "log"],
+    "allow",
+    match=[["git", "log", "--oneline", "-n", "5"]],
+)
+
+prefix_rule(
+    ["git", "show"],
+    "allow",
+    match=[["git", "show", "HEAD"]],
+)
+
+prefix_rule(
+    ["rg"],
+    "allow",
+    match=[["rg", "TODO"]],
+)
+
+prefix_rule(
+    ["git", "push"],
+    "prompt",
+    match=[["git", "push", "origin", "main"]],
+)
+
+prefix_rule(
+    ["git", "commit"],
+    "prompt",
+    match=[["git", "commit", "-m", "msg"]],
+)
+
+prefix_rule(
+    ["git", "reset"],
+    "prompt",
+    match=[["git", "reset", "--hard"]],
+)
+
+prefix_rule(
+    ["git", "rebase"],
+    "prompt",
+    match=[["git", "rebase", "main"]],
+)
+
+prefix_rule(
+    ["git", "clean"],
+    "prompt",
+    match=[["git", "clean", "-fdx"]],
+)
+
+prefix_rule(
+    ["gh"],
+    "prompt",
+    match=[["gh", "pr", "create"]],
+)
+
+prefix_rule(
+    ["pip", "install"],
+    "prompt",
+    match=[["pip", "install", "requests"]],
+)
+
+prefix_rule(
+    ["uv", "pip", "install"],
+    "prompt",
+    match=[["uv", "pip", "install", "requests"]],
+)
+
+prefix_rule(
+    ["python", "-m", "pip", "install"],
+    "prompt",
+    match=[["python", "-m", "pip", "install", "requests"]],
+)
+
+prefix_rule(
+    ["py", "-m", "pip", "install"],
+    "prompt",
+    match=[["py", "-m", "pip", "install", "requests"]],
+)
+
+prefix_rule(
+    ["rm"],
+    "forbidden",
+    match=[["rm", "-rf", "tmp"]],
+)
+
+prefix_rule(
+    ["del"],
+    "forbidden",
+    match=[["del", "/s", "/q", "C:\\temp\\*"]],
+)
+
+prefix_rule(
+    ["rmdir"],
+    "forbidden",
+    match=[["rmdir", "/s", "/q", "C:\\temp"]],
+)
+
+prefix_rule(
+    ["Remove-Item"],
+    "forbidden",
+    match=[["Remove-Item", "-Recurse", "-Force", "C:\\temp"]],
+)
+
+prefix_rule(
+    ["format"],
+    "forbidden",
+    match=[["format", "C:"]],
+)
+
+prefix_rule(
+    ["diskpart"],
+    "forbidden",
+    match=[["diskpart"]],
+)
+
+prefix_rule(
+    ["shutdown"],
+    "forbidden",
+    match=[["shutdown", "/s", "/t", "0"]],
+)
+
+prefix_rule(
+    ["reboot"],
+    "forbidden",
+    match=[["reboot"]],
+)

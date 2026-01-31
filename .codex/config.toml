@@ -1,0 +1,36 @@
+approval_policy = "on-request"
+sandbox_mode = "read-only"
+web_search = "disabled"
+project_doc_fallback_filenames = ["memory.md"]
+
+[features]
+exec_policy = true
+powershell_utf8 = true
+
+[profiles.orchestrator]
+web_search = "disabled"
+sandbox_mode = "workspace-write"
+approval_policy = "on-request"
+
+[profiles.experiment]
+web_search = "disabled"
+sandbox_mode = "workspace-write"
+approval_policy = "on-request"
+
+[profiles.reviewer]
+web_search = "disabled"
+sandbox_mode = "read-only"
+approval_policy = "on-request"
+
+[profiles.research]
+web_search = "live"
+sandbox_mode = "read-only"
+approval_policy = "on-request"
+
+[profiles.publisher]
+web_search = "disabled"
+sandbox_mode = "workspace-write"
+approval_policy = "on-request"
+
+[sandbox_workspace_write]
+network_access = false
