@@ -1,7 +1,7 @@
 # Codex team config (profiles, rules, memory)
 
 ## Trusted project
-- `.codex/config.toml` is read only when the project is trusted.
+- `.codex/config.toml` is read-only when the project is trusted.
 - If settings do not apply, verify the project is trusted in Codex CLI.
 
 ## Profiles (summary)
