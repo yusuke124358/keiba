@@ -3,6 +3,7 @@ C4-0バックフィル: 既存のJSONLファイルを再パースしてペース
 
 既存のJSONLファイルを拡張パーサーで再パースし、fact_race/fact_resultのペース関連カラムを更新する
 """
+import argparse
 import json
 import logging
 from pathlib import Path
@@ -223,21 +224,50 @@ def backfill_from_jsonl(jsonl_path: Path, batch_size: int = 1000) -> dict:
         session.close()
 
 
-if __name__ == "__main__":
-    import sys
-    
-    if len(sys.argv) < 2:
-        print("Usage: python backfill_pace_from_jsonl.py <jsonl_file>")
-        sys.exit(1)
-    
-    jsonl_path = Path(sys.argv[1])
-    
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Backfill pace fields from JSONL into DB")
+    parser.add_argument("jsonl_file", type=Path, help="JSONL file to backfill")
+    parser.add_argument("--lock-timeout-seconds", type=float, default=0)
+    parser.add_argument("--lock-poll-seconds", type=float, default=0.25)
+    parser.add_argument("--no-lock", action="store_true")
+    args = parser.parse_args()
+
+    if not args.no_lock:
+        if args.lock_timeout_seconds < 0:
+            raise SystemExit("--lock-timeout-seconds must be >= 0")
+        if args.lock_poll_seconds <= 0:
+            raise SystemExit("--lock-poll-seconds must be > 0")
+
+    jsonl_path = args.jsonl_file
     if not jsonl_path.exists():
-        print(f"Error: File not found: {jsonl_path}")
-        sys.exit(1)
-    
-    result = backfill_from_jsonl(jsonl_path)
-    print(f"\nResult: {result}")
+        raise SystemExit(f"Error: File not found: {jsonl_path}")
+
+    def _run() -> None:
+        result = backfill_from_jsonl(jsonl_path)
+        print(f"\nResult: {result}")
+
+    if args.no_lock:
+        print("DB write lock: DISABLED (--no-lock)")
+        _run()
+        return
+
+    from keiba.utils.locks import db_write_lock, default_db_lock_path
+
+    lock_path = default_db_lock_path()
+    print(
+        f"Acquiring DB write lock: {lock_path} "
+        f"(timeout={args.lock_timeout_seconds}, poll={args.lock_poll_seconds})"
+    )
+    with db_write_lock(timeout_seconds=args.lock_timeout_seconds, poll_seconds=args.lock_poll_seconds):
+        print("Acquired DB write lock")
+        try:
+            _run()
+        finally:
+            print("Released DB write lock")
+
+
+if __name__ == "__main__":
+    main()
 
 
 
