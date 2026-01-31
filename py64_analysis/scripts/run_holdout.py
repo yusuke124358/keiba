@@ -12,13 +12,16 @@ Ticket3: 30〜90日 holdout を固定パラメータで回すための実行ス�
 from __future__ import annotations
 
 import argparse
+import csv
 import json
+import os
+import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
-import csv
-import yaml
+
 import pandas as pd
+import yaml
 
 
 def _ensure_import_path() -> None:
@@ -35,6 +38,21 @@ def _align_features(X: pd.DataFrame, feature_names: list[str]) -> pd.DataFrame:
     X2 = X.reindex(columns=feature_names, fill_value=0.0)
     X2 = X2.apply(pd.to_numeric, errors="coerce").fillna(0.0).astype(float)
     return X2
+
+
+def _git_commit(project_root: Path) -> str | None:
+    try:
+        out = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=str(project_root))
+        return out.decode("utf-8").strip()
+    except Exception:
+        return None
+
+
+def _rel_path(path: Path, project_root: Path) -> str:
+    try:
+        return str(path.resolve().relative_to(project_root.resolve()))
+    except Exception:
+        return str(path)
 
 
 def main() -> None:
@@ -72,11 +90,17 @@ def main() -> None:
     p.add_argument("--test-start", required=True)
     p.add_argument("--test-end", required=True)
     p.add_argument("--name", default="holdout")
+    p.add_argument("--config", default=None, help="config path (optional)")
     p.add_argument("--estimate-closing-mult", action="store_true", help="train(またはvalidまで)でclosing_odds_multiplierを推定して上書き")
     p.add_argument("--closing-mult-quantile", type=float, default=0.30)
     p.add_argument("--initial-bankroll", type=float, default=None)
     p.add_argument("--out-dir", type=Path, default=None, help="出力先（未指定なら data/holdout_runs/<name>_<ts>）")
     args = p.parse_args()
+
+    from keiba.utils.config_resolver import resolve_config_path, save_config_origin, save_config_used
+
+    resolved_config_path, config_origin = resolve_config_path(args.config)
+    os.environ["KEIBA_CONFIG_PATH"] = str(resolved_config_path)
 
     cfg = get_config()
     if args.initial_bankroll is None:
@@ -94,6 +118,18 @@ def main() -> None:
     report_dir = run_dir / "report"
     artifacts_dir.mkdir(parents=True, exist_ok=True)
     report_dir.mkdir(parents=True, exist_ok=True)
+
+    config_meta = save_config_used(resolved_config_path, run_dir)
+    config_used_path = Path(config_meta["config_used_path"])
+    origin_payload = {
+        "origin": config_origin,
+        "resolved_config_path": _rel_path(resolved_config_path, project_root),
+        "config_used_path": _rel_path(config_used_path, project_root),
+        "config_hash_sha256": config_meta.get("config_hash_sha256"),
+        "git_commit": _git_commit(project_root),
+        "generated_at": ts,
+    }
+    save_config_origin(run_dir, origin_payload)
 
     session = get_session()
 
@@ -978,11 +1014,6 @@ def main() -> None:
     odds_dyn_filter_meta = _fit_odds_dynamics_filter()
     odds_dyn_ev_margin_meta = _fit_odds_dyn_ev_margin()
 
-    cfg_used = cfg.model_dump()
-    (run_dir / "config_used.yaml").write_text(
-        yaml.safe_dump(cfg_used, allow_unicode=True, sort_keys=False),
-        encoding="utf-8",
-    )
 
 
     # バックテスト（test）
@@ -1353,10 +1384,6 @@ def main() -> None:
             sel_path = artifacts_dir / "race_cost_cap_selector.json"
             sel_path.write_text(json.dumps(rc_selector_meta, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    cfg_used = cfg.model_dump()
-    (run_dir / "config_used.yaml").write_text(
-        yaml.safe_dump(cfg_used, allow_unicode=True, sort_keys=False), encoding="utf-8"
-    )
 
     bt = run_backtest(
         session,
@@ -1757,6 +1784,7 @@ def main() -> None:
     summary = {
         "name": args.name,
         "generated_at": ts,
+        "config_used_path": _rel_path(config_used_path, project_root),
         "train": {"start": args.train_start, "end": args.train_end, "n_races": len(race_ids_train), "features_saved": n_feat_train},
         "valid": {"start": args.valid_start, "end": args.valid_end, "n_races": len(race_ids_valid), "features_saved": n_feat_valid},
         "test": {"start": args.test_start, "end": args.test_end, "n_races": len(race_ids_test), "features_saved": n_feat_test},

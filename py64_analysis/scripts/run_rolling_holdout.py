@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -36,6 +37,21 @@ def _ensure_import_path() -> None:
 
 def _parse_date(s: str) -> date:
     return datetime.strptime(s, "%Y-%m-%d").date()
+
+
+def _git_commit(project_root: Path) -> str | None:
+    try:
+        out = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=str(project_root))
+        return out.decode("utf-8").strip()
+    except Exception:
+        return None
+
+
+def _rel_path(path: Path, project_root: Path) -> str:
+    try:
+        return str(path.resolve().relative_to(project_root.resolve()))
+    except Exception:
+        return str(path)
 
 
 @dataclass(frozen=True)
@@ -133,6 +149,7 @@ def main() -> None:
     p.add_argument("--name", default="rolling")
     p.add_argument("--test-range-start", required=True)
     p.add_argument("--test-range-end", required=True)
+    p.add_argument("--config", default=None, help="config path (optional)")
     p.add_argument("--test-window-days", type=int, default=30)
     p.add_argument("--step-days", type=int, default=7)
     p.add_argument("--gap-days", type=int, default=0, help="train/valid と test の間のギャップ（日数）")
@@ -147,6 +164,12 @@ def main() -> None:
     p.add_argument("--stop-on-error", action="store_true")
     p.add_argument("--top", type=int, default=10, help="最後にROI上位N件を表示")
     args = p.parse_args()
+
+    from keiba.utils.config_resolver import resolve_config_path, save_config_origin, save_config_used
+
+    resolved_config_path, config_origin = resolve_config_path(args.config)
+    orig_env_config = os.environ.get("KEIBA_CONFIG_PATH")
+    os.environ["KEIBA_CONFIG_PATH"] = str(resolved_config_path)
 
     test_range_start = _parse_date(args.test_range_start)
     test_range_end = _parse_date(args.test_range_end)
@@ -223,6 +246,18 @@ def main() -> None:
     group_dir = out_root / f"{args.name}_{ts}"
     group_dir.mkdir(parents=True, exist_ok=True)
 
+    config_meta = save_config_used(resolved_config_path, group_dir)
+    config_used_path = Path(config_meta["config_used_path"])
+    origin_payload = {
+        "origin": config_origin,
+        "resolved_config_path": _rel_path(resolved_config_path, project_root),
+        "config_used_path": _rel_path(config_used_path, project_root),
+        "config_hash_sha256": config_meta.get("config_hash_sha256"),
+        "git_commit": _git_commit(project_root),
+        "generated_at": ts,
+    }
+    save_config_origin(group_dir, origin_payload)
+
     run_holdout = project_root / "py64_analysis" / "scripts" / "run_holdout.py"
     summarize = project_root / "py64_analysis" / "scripts" / "summarize_holdout_runs.py"
 
@@ -230,6 +265,7 @@ def main() -> None:
         "name": args.name,
         "generated_at": ts,
         "group_dir": str(group_dir),
+        "config_used_path": _rel_path(config_used_path, project_root),
         "plans": [],
         "errors": [],
         "args": vars(args),
@@ -259,6 +295,12 @@ def main() -> None:
             "--out-dir",
             str(run_dir),
         ]
+
+        sub_env = os.environ.copy()
+        if orig_env_config is None:
+            sub_env.pop("KEIBA_CONFIG_PATH", None)
+            if config_origin == "cli:--config":
+                cmd += ["--config", str(resolved_config_path)]
 
         if plan.valid_start and plan.valid_end:
             cmd += ["--valid-start", plan.valid_start.isoformat(), "--valid-end", plan.valid_end.isoformat()]
@@ -292,7 +334,7 @@ def main() -> None:
             stdout_path = run_dir / "stdout.log"
             stderr_path = run_dir / "stderr.log"
             with open(stdout_path, "w", encoding="utf-8") as out_f, open(stderr_path, "w", encoding="utf-8") as err_f:
-                subprocess.run(cmd, stdout=out_f, stderr=err_f, check=True)
+                subprocess.run(cmd, stdout=out_f, stderr=err_f, check=True, env=sub_env)
         except subprocess.CalledProcessError as e:
             err = {
                 "window_name": window_name,
