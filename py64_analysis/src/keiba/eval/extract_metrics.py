@@ -327,7 +327,13 @@ def extract_metrics_from_rolling_run(
             return None
         vals = df[col].dropna().unique()
         if len(vals) == 1:
-            return vals[0]
+            val = vals[0]
+            if hasattr(val, "item"):
+                try:
+                    val = val.item()
+                except Exception:
+                    pass
+            return val
         return None
 
     def _mean_or_none(col: str) -> Optional[float]:

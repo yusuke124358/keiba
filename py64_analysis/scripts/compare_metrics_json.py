@@ -96,21 +96,23 @@ def _compare_required(baseline: dict, candidate: dict) -> list[str]:
     if b_close is not None and c_close is not None and not _eq(b_close, c_close):
         reasons.append(f"closing_odds_multiplier mismatch ({b_close} vs {c_close})")
 
-    # data_cutoff checks (strict: no mixed presence)
+    # data_cutoff checks (db takes precedence; raw fallback only if db missing on both)
     b_db = _get(baseline, "data_cutoff.db_max_race_date")
     c_db = _get(candidate, "data_cutoff.db_max_race_date")
     if (b_db is None) != (c_db is None):
         reasons.append("data_cutoff.db_max_race_date missing on one side")
-    elif b_db and c_db and str(b_db) != str(c_db):
-        reasons.append(f"data_cutoff.db_max_race_date mismatch ({b_db} vs {c_db})")
+    elif b_db is not None and c_db is not None:
+        if str(b_db) != str(c_db):
+            reasons.append(f"data_cutoff.db_max_race_date mismatch ({b_db} vs {c_db})")
     else:
         b_raw = _get(baseline, "data_cutoff.raw_max_mtime")
         c_raw = _get(candidate, "data_cutoff.raw_max_mtime")
         if (b_raw is None) != (c_raw is None):
             reasons.append("data_cutoff.raw_max_mtime missing on one side")
-        elif b_raw and c_raw and str(b_raw) != str(c_raw):
-            reasons.append(f"data_cutoff.raw_max_mtime mismatch ({b_raw} vs {c_raw})")
-        elif b_raw is None and c_raw is None and b_db is None and c_db is None:
+        elif b_raw is not None and c_raw is not None:
+            if str(b_raw) != str(c_raw):
+                reasons.append(f"data_cutoff.raw_max_mtime mismatch ({b_raw} vs {c_raw})")
+        else:
             reasons.append("data_cutoff missing (db and raw)")
 
     return reasons
