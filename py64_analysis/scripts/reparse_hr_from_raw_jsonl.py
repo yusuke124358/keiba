@@ -66,91 +66,114 @@ def main() -> None:
     p.add_argument("--input-dir", type=Path, required=True, help="data/raw ディレクトリ（RACE_*.jsonl を探す）")
     p.add_argument("--batch-size", type=int, default=5000, help="DB投入のバッチサイズ")
     p.add_argument("--max-files", type=int, default=0, help="デバッグ用: 先頭Nファイルだけ処理（0なら全件）")
+    p.add_argument("--lock-timeout-seconds", type=float, default=0)
+    p.add_argument("--lock-poll-seconds", type=float, default=0.25)
+    p.add_argument("--no-lock", action="store_true")
     args = p.parse_args()
+    def _run() -> None:
+    
+        input_dir = args.input_dir
+        files = _iter_race_jsonl_files(input_dir)
+        if args.max_files and args.max_files > 0:
+            files = files[: int(args.max_files)]
+    
+        print(f"Found RACE jsonl files: {len(files)}")
+        for f in files:
+            print(" -", f)
+    
+        total_hr_lines = 0
+        total_parsed = 0
+        total_inserted = 0
+        total_skipped_no_raw = 0
+        total_skipped_parse_fail = 0
+    
+        sess = get_session()
+        try:
+            for idx, fp in enumerate(files, 1):
+                print(f"\n[{idx}/{len(files)}] scanning {fp.name} ...")
+                parsed_records: list[dict] = []
+    
+                with fp.open("r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        obj = json.loads(line)
+                        if obj.get("record_type") != "HR":
+                            continue
+                        total_hr_lines += 1
+                        if "_raw" not in obj:
+                            total_skipped_no_raw += 1
+                            continue
+    
+                        try:
+                            raw_hex = obj["_raw"]
+                            raw_bytes = bytes.fromhex(raw_hex)
+                        except Exception:
+                            total_skipped_parse_fail += 1
+                            continue
+    
+                        race_id = obj.get("race_id")
+                        if not race_id or len(race_id) < 8:
+                            total_skipped_parse_fail += 1
+                            continue
+                        race_date = race_id[:8]
+    
+                        parsed = parse_hr_pay(raw_bytes, race_id=race_id, race_date=race_date)
+                        if not parsed:
+                            total_skipped_parse_fail += 1
+                            continue
+    
+                        # loaderに渡す形に整形（_rawは付けない）
+                        rec = {
+                            "record_type": "HR",
+                            "race_id": race_id,
+                            **parsed,
+                        }
+                        parsed_records.append(rec)
+                        total_parsed += 1
+    
+                        # メモリ節約: ある程度溜まったらDB投入
+                        if len(parsed_records) >= int(args.batch_size):
+                            inserted = load_hr_exotics_payout_records(sess, parsed_records)
+                            sess.commit()
+                            total_inserted += int(inserted)
+                            parsed_records = []
+    
+                # file end: flush
+                if parsed_records:
+                    inserted = load_hr_exotics_payout_records(sess, parsed_records)
+                    sess.commit()
+                    total_inserted += int(inserted)
+    
+            print("\n=== summary ===")
+            print("hr_lines:", total_hr_lines)
+            print("parsed:", total_parsed)
+            print("inserted_rows(total refund+payout):", total_inserted)
+            print("skipped_no_raw:", total_skipped_no_raw)
+            print("skipped_parse_fail:", total_skipped_parse_fail)
+        finally:
+            sess.close()
+    
 
-    input_dir = args.input_dir
-    files = _iter_race_jsonl_files(input_dir)
-    if args.max_files and args.max_files > 0:
-        files = files[: int(args.max_files)]
+    if args.no_lock:
+        print("DB write lock: DISABLED (--no-lock)")
+        _run()
+        return
 
-    print(f"Found RACE jsonl files: {len(files)}")
-    for f in files:
-        print(" -", f)
+    from keiba.utils.locks import db_write_lock, default_db_lock_path
 
-    total_hr_lines = 0
-    total_parsed = 0
-    total_inserted = 0
-    total_skipped_no_raw = 0
-    total_skipped_parse_fail = 0
-
-    sess = get_session()
-    try:
-        for idx, fp in enumerate(files, 1):
-            print(f"\n[{idx}/{len(files)}] scanning {fp.name} ...")
-            parsed_records: list[dict] = []
-
-            with fp.open("r", encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    obj = json.loads(line)
-                    if obj.get("record_type") != "HR":
-                        continue
-                    total_hr_lines += 1
-                    if "_raw" not in obj:
-                        total_skipped_no_raw += 1
-                        continue
-
-                    try:
-                        raw_hex = obj["_raw"]
-                        raw_bytes = bytes.fromhex(raw_hex)
-                    except Exception:
-                        total_skipped_parse_fail += 1
-                        continue
-
-                    race_id = obj.get("race_id")
-                    if not race_id or len(race_id) < 8:
-                        total_skipped_parse_fail += 1
-                        continue
-                    race_date = race_id[:8]
-
-                    parsed = parse_hr_pay(raw_bytes, race_id=race_id, race_date=race_date)
-                    if not parsed:
-                        total_skipped_parse_fail += 1
-                        continue
-
-                    # loaderに渡す形に整形（_rawは付けない）
-                    rec = {
-                        "record_type": "HR",
-                        "race_id": race_id,
-                        **parsed,
-                    }
-                    parsed_records.append(rec)
-                    total_parsed += 1
-
-                    # メモリ節約: ある程度溜まったらDB投入
-                    if len(parsed_records) >= int(args.batch_size):
-                        inserted = load_hr_exotics_payout_records(sess, parsed_records)
-                        sess.commit()
-                        total_inserted += int(inserted)
-                        parsed_records = []
-
-            # file end: flush
-            if parsed_records:
-                inserted = load_hr_exotics_payout_records(sess, parsed_records)
-                sess.commit()
-                total_inserted += int(inserted)
-
-        print("\n=== summary ===")
-        print("hr_lines:", total_hr_lines)
-        print("parsed:", total_parsed)
-        print("inserted_rows(total refund+payout):", total_inserted)
-        print("skipped_no_raw:", total_skipped_no_raw)
-        print("skipped_parse_fail:", total_skipped_parse_fail)
-    finally:
-        sess.close()
-
+    lock_path = default_db_lock_path()
+    print(
+        f"Acquiring DB write lock: {lock_path} "
+        f"(timeout={args.lock_timeout_seconds}, poll={args.lock_poll_seconds})"
+    )
+    with db_write_lock(timeout_seconds=args.lock_timeout_seconds, poll_seconds=args.lock_poll_seconds):
+        print("Acquired DB write lock")
+        try:
+            _run()
+        finally:
+            print("Released DB write lock")
 
 if __name__ == "__main__":
     main()

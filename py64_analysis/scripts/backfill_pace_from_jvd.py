@@ -653,53 +653,75 @@ if __name__ == "__main__":
         default=None,
         help="Output directory for backfill_pace_nonnull_ratios.csv",
     )
+    parser.add_argument("--lock-timeout-seconds", type=float, default=0)
+    parser.add_argument("--lock-poll-seconds", type=float, default=0.25)
+    parser.add_argument("--no-lock", action="store_true")
     args = parser.parse_args()
 
-    total_updated = 0
-    total_skipped = 0
-    total_errors = 0
+    def _run() -> None:
+        total_updated = 0
+        total_skipped = 0
+        total_errors = 0
 
-    if args.jvd_dir and args.jvd_dir.exists():
-        result = backfill_from_jvd_dir(args.jvd_dir, args.min_year, args.max_year)
-        total_updated += result.get("ra_updated", 0)
-        total_skipped += result.get("ra_skipped_no_laps", 0)
-        total_errors += result.get("ra_errors", 0)
-        print(f"JVD result: {result}")
+        if args.jvd_dir and args.jvd_dir.exists():
+            result = backfill_from_jvd_dir(args.jvd_dir, args.min_year, args.max_year)
+            total_updated += result.get("ra_updated", 0)
+            total_skipped += result.get("ra_skipped_no_laps", 0)
+            total_errors += result.get("ra_errors", 0)
+            print(f"JVD result: {result}")
+        else:
+            logger.warning(f"JVD dir not found or skipped: {args.jvd_dir}")
+
+        for jsonl_dir in args.jsonl_dir:
+            if not jsonl_dir.exists():
+                logger.warning(f"JSONL dir not found: {jsonl_dir}")
+                continue
+            result = backfill_from_jsonl_dir(jsonl_dir)
+            total_updated += result.get("ra_updated", 0)
+            total_skipped += result.get("ra_skipped_no_laps", 0)
+            total_errors += result.get("ra_errors", 0)
+            print(f"JSONL result: {result}")
+
+        session = get_session()
+        try:
+            total_2024, nonnull_2024, ratio_2024 = _compute_pace_nonnull_ratio(
+                session, "2024-01-01", "2024-12-20"
+            )
+            total_2025, nonnull_2025, ratio_2025 = _compute_pace_nonnull_ratio(
+                session, "2025-01-01", "2025-12-20"
+            )
+        finally:
+            session.close()
+
+        if args.out_dir:
+            args.out_dir.mkdir(parents=True, exist_ok=True)
+            out_path = args.out_dir / "backfill_pace_nonnull_ratios.csv"
+            with open(out_path, "w", encoding="utf-8") as f:
+                f.write("year,total,nonnull_pace_first3f,ratio_pace_first3f\n")
+                f.write(f"2024,{total_2024},{nonnull_2024},{ratio_2024:.6f}\n")
+                f.write(f"2025,{total_2025},{nonnull_2025},{ratio_2025:.6f}\n")
+
+        print(
+            f"[backfill] updated={total_updated} | skipped_no_laps={total_skipped} | errors={total_errors}"
+        )
+        print(
+            f"[backfill] nonnull_ratio_2024={ratio_2024:.6f} nonnull_ratio_2025={ratio_2025:.6f}"
+        )
+
+    if args.no_lock:
+        print("DB write lock: DISABLED (--no-lock)")
+        _run()
     else:
-        logger.warning(f"JVD dir not found or skipped: {args.jvd_dir}")
+        from keiba.utils.locks import db_write_lock, default_db_lock_path
 
-    for jsonl_dir in args.jsonl_dir:
-        if not jsonl_dir.exists():
-            logger.warning(f"JSONL dir not found: {jsonl_dir}")
-            continue
-        result = backfill_from_jsonl_dir(jsonl_dir)
-        total_updated += result.get("ra_updated", 0)
-        total_skipped += result.get("ra_skipped_no_laps", 0)
-        total_errors += result.get("ra_errors", 0)
-        print(f"JSONL result: {result}")
-
-    session = get_session()
-    try:
-        total_2024, nonnull_2024, ratio_2024 = _compute_pace_nonnull_ratio(
-            session, "2024-01-01", "2024-12-20"
+        lock_path = default_db_lock_path()
+        print(
+            f"Acquiring DB write lock: {lock_path} "
+            f"(timeout={args.lock_timeout_seconds}, poll={args.lock_poll_seconds})"
         )
-        total_2025, nonnull_2025, ratio_2025 = _compute_pace_nonnull_ratio(
-            session, "2025-01-01", "2025-12-20"
-        )
-    finally:
-        session.close()
-
-    if args.out_dir:
-        args.out_dir.mkdir(parents=True, exist_ok=True)
-        out_path = args.out_dir / "backfill_pace_nonnull_ratios.csv"
-        with open(out_path, "w", encoding="utf-8") as f:
-            f.write("year,total,nonnull_pace_first3f,ratio_pace_first3f\n")
-            f.write(f"2024,{total_2024},{nonnull_2024},{ratio_2024:.6f}\n")
-            f.write(f"2025,{total_2025},{nonnull_2025},{ratio_2025:.6f}\n")
-
-    print(
-        f"[backfill] updated={total_updated} | skipped_no_laps={total_skipped} | errors={total_errors}"
-    )
-    print(
-        f"[backfill] nonnull_ratio_2024={ratio_2024:.6f} nonnull_ratio_2025={ratio_2025:.6f}"
-    )
+        with db_write_lock(timeout_seconds=args.lock_timeout_seconds, poll_seconds=args.lock_poll_seconds):
+            print("Acquired DB write lock")
+            try:
+                _run()
+            finally:
+                print("Released DB write lock")
