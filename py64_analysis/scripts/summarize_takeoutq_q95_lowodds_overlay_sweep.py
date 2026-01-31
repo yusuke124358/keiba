@@ -668,12 +668,12 @@ def _load_odds_band_recap(src_dir: Optional[Path]) -> list[str]:
         for _, r in df.iterrows():
             profit_txt = ""
             if has_profit_contrib:
-                profit_txt = f" profit_contrib={r['profit_contrib']:.3f}"
+                profit_txt = f"profit_contrib={r['profit_contrib']:.3f} "
             elif has_profit_share:
-                profit_txt = f" profit_contrib={r['profit_share']:.3f}"
+                profit_txt = f"profit_contrib={r['profit_share']:.3f} "
             lines.append(
-                f"  - {year} bin={r['odds_bin']} roi={r['roi']:.4f} stake_share={r['stake_share']:.3f}"
-                f"{profit_txt} stake={r['stake_sum']:.1f} n_bets={int(r['n_bets'])}"
+                f"  - {year} bin={r['odds_bin']} roi={r['roi']:.4f} stake_share={r['stake_share']:.3f} "
+                f"{profit_txt}stake={r['stake_sum']:.1f} n_bets={int(r['n_bets'])}"
             )
     return lines
 
