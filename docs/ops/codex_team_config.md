@@ -18,6 +18,13 @@ Profiles:
 - `research`: read-only, web_search live
 - `publisher`: workspace-write, web_search disabled
 
+## Network access (workspace-write)
+- `sandbox_workspace_write.network_access = false` by default.
+- This blocks outbound network in workspace-write sandboxes.
+- If you need to push or create PRs from a sandboxed profile, either:
+  - run those commands outside Codex, or
+  - temporarily override network access for the run.
+
 ## Example usage
 ```bash
 codex exec --profile research --search "paper title or query"

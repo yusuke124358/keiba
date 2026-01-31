@@ -2,6 +2,12 @@
 
 Purpose: prioritize reproducibility and leakage prevention for keiba AI development.
 
+## Project memory (must-read)
+- Before starting work, open and read `memory.md`.
+- Treat it as the source of truth for run_dir conventions, evaluation gates, metrics.json/baselines,
+  DB lock, and Windows pytest tmp issues.
+- If it conflicts with older context, prefer `memory.md`.
+
 ## Data and leakage rules
 - Use time-based splits only (train < valid < test). Never shuffle across time.
 - Feature engineering must use data available at or before race time and buy time.
