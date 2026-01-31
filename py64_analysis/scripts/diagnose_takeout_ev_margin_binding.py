@@ -150,8 +150,8 @@ def main() -> None:
     args = ap.parse_args()
 
     bundle_dir = args.bundle_dir
-    if not bundle_dir.exists():
-        raise SystemExit(f"bundle_dir not found: {bundle_dir}")
+    if not bundle_dir.is_dir():
+        raise SystemExit(f"bundle_dir not found or not a directory: {bundle_dir.resolve()}")
     out_dir = args.out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
 

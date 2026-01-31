@@ -27,10 +27,14 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 def _resolve_run_dir(path: Path) -> Path:
     if path.exists():
+        if not path.is_dir():
+            raise SystemExit(f"run_dir is not a directory: {path}")
         return path
     base = PROJECT_ROOT / "data" / "holdout_runs"
     candidate = base / path.name
     if candidate.exists():
+        if not candidate.is_dir():
+            raise SystemExit(f"run_dir is not a directory: {candidate}")
         return candidate
     raise SystemExit(f"run_dir not found: {path}")
 
