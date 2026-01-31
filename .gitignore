@@ -78,5 +78,8 @@ logs/
 '@ + $diffPath + '@
 , c.open_stored*
 
+# Local deploy keys (Codex)
+codex_deploy_ed25519*
+
 
 

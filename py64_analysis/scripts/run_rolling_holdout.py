@@ -325,6 +325,14 @@ def main() -> None:
             ],
             check=True,
         )
+        # metrics.json (non-fatal if extraction fails)
+        try:
+            from keiba.eval.extract_metrics import write_metrics_json
+
+            write_metrics_json(group_dir, run_kind="rolling_holdout")
+            print("metrics:", group_dir / "metrics.json")
+        except Exception as e:
+            print(f"[metrics] failed: {e}")
 
     print("DONE")
     print("group_dir:", group_dir)
@@ -332,5 +340,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
 

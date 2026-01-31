@@ -1,0 +1,4 @@
+min_n_bets: 200
+roi_tolerance: 0.0
+dd_tolerance: 0.0
+use_step14_if_present: true

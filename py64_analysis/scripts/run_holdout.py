@@ -1849,6 +1849,14 @@ def main() -> None:
     }
 
     (run_dir / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+    # metrics.json (non-fatal if extraction fails)
+    try:
+        from keiba.eval.extract_metrics import write_metrics_json
+
+        write_metrics_json(run_dir, run_kind="holdout")
+        print("metrics:", run_dir / "metrics.json")
+    except Exception as e:
+        print(f"[metrics] failed: {e}")
 
     print("OK")
     print("run_dir:", run_dir)
