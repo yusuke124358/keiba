@@ -20,6 +20,17 @@ import numpy as np
 import pandas as pd
 
 
+def _ensure_import_path() -> None:
+    project_root = Path(__file__).resolve().parents[2]
+    src = project_root / "py64_analysis" / "src"
+    if src.exists():
+        sys.path.insert(0, str(src))
+
+
+_ensure_import_path()
+from keiba.utils.run_paths import make_analysis_out_dir, require_existing_dir  # noqa: E402
+
+
 ODDS_CANDIDATES = ["odds", "odds_val", "odds_at_buy", "odds_effective", "odds_final"]
 Y_CANDIDATES = ["y_win", "is_win", "winner", "y_true", "y"]
 FINISH_CANDIDATES = ["finish_pos", "finish_position"]
@@ -423,26 +434,39 @@ def _bootstrap_ci(df: pd.DataFrame, w: float, model_col: str, unit: str, n_boot:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="TaskM2 market-anchored logit blend (full-field)")
-    ap.add_argument("--run_dir_glob", nargs="+", required=True)
+    ap.add_argument("--run_dir", action="append", default=None, help="run_dir (repeatable)")
+    ap.add_argument("--run_dir_glob", action="append", default=None, help="glob for run_dir (repeatable)")
     ap.add_argument("--market_method", default="p_mkt_col")
     ap.add_argument("--model_prob_col", default="p_model")
     ap.add_argument("--fullfield_root", default=None)
     ap.add_argument("--bootstrap_n", type=int, default=500)
     ap.add_argument("--seed", type=int, default=42)
-    ap.add_argument("--out_ascii", default=None)
-    ap.add_argument("--out_jp", default=None)
+    ap.add_argument("--out_dir", default=None, help="output directory (default: run_dir/analysis/...)")
+    ap.add_argument("--out_ascii", default=None, help="alias for --out_dir (deprecated)")
+    ap.add_argument("--out_jp", default=None, help="optional secondary output directory")
     args = ap.parse_args()
 
-    run_dirs = _resolve_run_dirs(args.run_dir_glob)
+    run_dirs: list[Path] = []
+    if args.run_dir:
+        run_dirs.extend([Path(p) for p in args.run_dir])
+    if args.run_dir_glob:
+        run_dirs.extend(_resolve_run_dirs(args.run_dir_glob))
     if not run_dirs:
-        raise SystemExit(f"No run dirs matched: {args.run_dir_glob}")
+        raise SystemExit("No run_dir specified (use --run_dir or --run_dir_glob)")
+    run_dirs = [require_existing_dir(p, "run_dir") for p in run_dirs]
 
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    default_name = f"roi_taskM2_market_anchor_blend_{ts}"
-    out_ascii = Path(args.out_ascii) if args.out_ascii else Path(r"C:\Users\yyosh\keiba\output_staging") / default_name
-    out_jp = Path(args.out_jp) if args.out_jp else Path(r"C:\Users\yyosh\keiba\output for 5.2pro\単勝") / default_name
-    out_ascii.mkdir(parents=True, exist_ok=True)
-    out_jp.mkdir(parents=True, exist_ok=True)
+    if args.out_dir and args.out_ascii:
+        raise SystemExit("Use --out_dir or --out_ascii (alias), not both.")
+    out_dir = (
+        Path(args.out_dir or args.out_ascii)
+        if (args.out_dir or args.out_ascii)
+        else make_analysis_out_dir(run_dirs[0], "roi_taskM2_market_anchor_logit_blend")
+    )
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_ascii = out_dir
+    out_jp = Path(args.out_jp) if args.out_jp else None
+    if out_jp:
+        out_jp.mkdir(parents=True, exist_ok=True)
 
     fullfield_root = Path(args.fullfield_root) if args.fullfield_root else None
     dedup_cols = ["window_id", "race_id", "horse_no", "asof_time"]
@@ -686,8 +710,8 @@ def main() -> None:
             f"- decision={decision} ({reason})",
             "",
             "## Paths",
-            f"- out_ascii: {out_ascii}",
-            f"- out_jp: {out_jp}",
+            f"- out_dir: {out_dir}",
+            f"- out_jp: {out_jp if out_jp else 'N/A'}",
         ]
     )
     (out_ascii / "minimal_update_for_chat.md").write_text("\n".join(minimal_lines) + "\n", encoding="utf-8")
@@ -711,7 +735,7 @@ def main() -> None:
     stdout_lines.extend(
         [
             f"[plan] decision={decision} | reason={reason}",
-            f"[paths] out_dir={out_jp} | staging={out_ascii} | zip=<NOT_USED>",
+            f"[paths] out_dir={out_jp if out_jp else out_dir} | staging={out_dir} | zip=<NOT_USED>",
         ]
     )
     (out_ascii / "stdout_required.txt").write_text("\n".join(stdout_lines) + "\n", encoding="utf-8")

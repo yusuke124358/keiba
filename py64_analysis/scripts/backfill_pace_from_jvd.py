@@ -635,7 +635,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--jvd-dir",
         type=Path,
-        default=Path(r"C:\Users\yyosh\keiba\JRAVANData\data"),
+        default=PROJECT_ROOT / "JRAVANData" / "data",
         help="Directory containing RA*/SE*.jvd files.",
     )
     parser.add_argument("--min-year", type=int, default=None)

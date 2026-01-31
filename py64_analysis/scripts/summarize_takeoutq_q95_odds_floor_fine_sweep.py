@@ -574,10 +574,12 @@ def _copy_tree(src: Path, dst: Path) -> None:
             shutil.copy2(item, target)
 
 
-def _load_odds_band_recap() -> list[str]:
-    src_dir = Path(
-        r"C:\Users\yyosh\keiba\output for 5.2pro\単勝\takeoutq_q95_odds_cap_followup_2024_2025_20260123_214504\odds_band_analysis"
-    )
+def _load_odds_band_recap(src_dir: Optional[Path]) -> list[str]:
+    if src_dir is None:
+        return []
+    src_dir = Path(src_dir)
+    if not src_dir.exists():
+        return []
     bins = {"1-2", "2-3", "3-5", "5-10"}
     lines: list[str] = []
     for year in (2024, 2025):
@@ -603,8 +605,10 @@ def main() -> int:
     ap.add_argument("--min_odds_list", required=True, help="comma-separated list, e.g., 4.0,4.2,...")
     ap.add_argument("--out_ascii", required=True)
     ap.add_argument("--out_jp", required=True)
+    ap.add_argument("--odds-band-dir", default=None, help="optional odds_band_analysis directory")
     args = ap.parse_args()
 
+    project_root = Path(__file__).resolve().parents[2]
     out_ascii = Path(args.out_ascii)
     out_ascii.mkdir(parents=True, exist_ok=True)
     out_jp = Path(args.out_jp)
@@ -996,7 +1000,10 @@ def main() -> int:
     lines.append("")
     lines.append("## Odds-band recap (from prior q95 bundle)")
     lines.append("- Source: odds_band_contrib_2024/2025.csv in takeoutq_q95_odds_cap_followup_2024_2025_20260123_214504.")
-    recap = _load_odds_band_recap()
+    odds_band_dir = Path(args.odds_band_dir) if args.odds_band_dir else None
+    if odds_band_dir and not odds_band_dir.is_absolute():
+        odds_band_dir = project_root / odds_band_dir
+    recap = _load_odds_band_recap(odds_band_dir)
     if recap:
         lines.extend(recap)
     else:

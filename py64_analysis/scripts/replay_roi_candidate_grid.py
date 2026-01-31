@@ -14,6 +14,7 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 WIN_RE = re.compile(r"^w\d{3}_(\d{8})_(\d{8})$")
 
 DATE_COL_CANDIDATES = [
@@ -203,10 +204,14 @@ def _slug_exclude(bands: list[str]) -> str:
 
 def _resolve_run_dir(path: Path) -> Path:
     if path.exists():
+        if not path.is_dir():
+            raise SystemExit(f"run_dir is not a directory: {path}")
         return path
-    base = Path(r"C:\Users\yyosh\keiba\data\holdout_runs")
+    base = PROJECT_ROOT / "data" / "holdout_runs"
     candidate = base / path.name
     if candidate.exists():
+        if not candidate.is_dir():
+            raise SystemExit(f"run_dir is not a directory: {candidate}")
         return candidate
     raise SystemExit(f"run_dir not found: {path}")
 
