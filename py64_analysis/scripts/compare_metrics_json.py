@@ -88,7 +88,19 @@ def _compare_required(baseline: dict, candidate: dict) -> list[str]:
     for field in ["track_codes", "require_results", "require_ts_win", "exclude_race_ids_hash"]:
         b = b_uni.get(field)
         c = c_uni.get(field)
-        if b is not None and c is not None and b != c:
+        if b is None or c is None:
+            continue
+        if field == "track_codes":
+            try:
+                b_sorted = sorted(str(x) for x in b)
+                c_sorted = sorted(str(x) for x in c)
+            except Exception:
+                b_sorted = b
+                c_sorted = c
+            if b_sorted != c_sorted:
+                reasons.append("universe.track_codes mismatch")
+            continue
+        if b != c:
             reasons.append(f"universe.{field} mismatch")
 
     b_close = _get(baseline, "betting.closing_odds_multiplier")

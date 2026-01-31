@@ -3,14 +3,13 @@ from __future__ import annotations
 import hashlib
 import json
 import subprocess
-from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 import yaml
 
-from .metrics_schema import MetricsV01
+from .metrics_schema import MetricsV01, validate_metrics_v01
 from ..config import PROJECT_ROOT, get_data_path
 
 
@@ -150,7 +149,7 @@ def _universe_from_config(config_path: Optional[Path]) -> Dict[str, Any]:
     uni = cfg.get("universe") if isinstance(cfg, dict) else {}
     if not isinstance(uni, dict):
         return {}
-    track_codes = [str(x) for x in (uni.get("track_codes") or [])]
+    track_codes = sorted(str(x) for x in (uni.get("track_codes") or []))
     exclude_ids = [str(x) for x in (uni.get("exclude_race_ids") or [])]
     h = hashlib.sha256("\n".join(sorted(exclude_ids)).encode("utf-8")).hexdigest() if exclude_ids else None
     return {
@@ -350,7 +349,11 @@ def extract_metrics_from_rolling_run(
         "total_profit": _coerce_float(df["total_profit"].sum()) if "total_profit" in df.columns else None,
         "max_drawdown": _coerce_float(df["max_drawdown"].max()) if "max_drawdown" in df.columns else None,
     }
-    if backtest.get("total_stake") is not None and backtest.get("total_stake", 0) > 0:
+    if (
+        backtest.get("total_stake") is not None
+        and backtest.get("total_profit") is not None
+        and backtest.get("total_stake", 0) > 0
+    ):
         backtest["roi"] = backtest["total_profit"] / backtest["total_stake"]
     else:
         backtest["roi"] = None
@@ -420,6 +423,7 @@ def write_metrics_json(run_dir: Path, run_kind: str) -> Path:
         metrics = extract_metrics_from_rolling_run(run_dir)
     else:
         raise ValueError(f"Unknown run_kind: {run_kind}")
+    validate_metrics_v01(metrics)
     out_path = run_dir / "metrics.json"
     out_path.write_text(json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8")
     return out_path
