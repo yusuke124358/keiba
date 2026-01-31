@@ -66,4 +66,4 @@ warn_unused_ignores = true
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
-
+norecursedirs = ["tmp*"]

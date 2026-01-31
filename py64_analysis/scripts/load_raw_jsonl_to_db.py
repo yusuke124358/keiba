@@ -34,6 +34,12 @@ def main() -> None:
     p.add_argument("--no-lock", action="store_true")
     args = p.parse_args()
 
+    if not args.no_lock:
+        if args.lock_timeout_seconds < 0:
+            raise SystemExit("--lock-timeout-seconds must be >= 0")
+        if args.lock_poll_seconds <= 0:
+            raise SystemExit("--lock-poll-seconds must be > 0")
+
     def _run() -> None:
         if args.input_dir:
             if not args.input_dir.exists():

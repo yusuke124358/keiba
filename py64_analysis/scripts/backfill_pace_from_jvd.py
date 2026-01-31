@@ -658,6 +658,12 @@ if __name__ == "__main__":
     parser.add_argument("--no-lock", action="store_true")
     args = parser.parse_args()
 
+    if not args.no_lock:
+        if args.lock_timeout_seconds < 0:
+            raise SystemExit("--lock-timeout-seconds must be >= 0")
+        if args.lock_poll_seconds <= 0:
+            raise SystemExit("--lock-poll-seconds must be > 0")
+
     def _run() -> None:
         total_updated = 0
         total_skipped = 0

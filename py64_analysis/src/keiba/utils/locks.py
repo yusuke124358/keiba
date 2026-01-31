@@ -47,11 +47,7 @@ class FileLock:
                     except Exception:
                         pass
                     self._fh = None
-                if self.timeout_seconds <= 0:
-                    raise TimeoutError(self._timeout_message())
-                if (time.monotonic() - start) >= self.timeout_seconds:
-                    raise TimeoutError(self._timeout_message())
-                time.sleep(self.poll_seconds)
+                raise
 
     def release(self) -> None:
         if not self._locked or self._fh is None:

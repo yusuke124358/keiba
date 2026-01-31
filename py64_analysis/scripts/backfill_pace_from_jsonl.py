@@ -232,6 +232,12 @@ def main() -> None:
     parser.add_argument("--no-lock", action="store_true")
     args = parser.parse_args()
 
+    if not args.no_lock:
+        if args.lock_timeout_seconds < 0:
+            raise SystemExit("--lock-timeout-seconds must be >= 0")
+        if args.lock_poll_seconds <= 0:
+            raise SystemExit("--lock-poll-seconds must be > 0")
+
     jsonl_path = args.jsonl_file
     if not jsonl_path.exists():
         raise SystemExit(f"Error: File not found: {jsonl_path}")
