@@ -1,4 +1,4 @@
-# AGENTS
+﻿# AGENTS
 
 Purpose: prioritize reproducibility and leakage prevention for keiba AI development.
 
@@ -9,12 +9,21 @@ Purpose: prioritize reproducibility and leakage prevention for keiba AI developm
 - If it conflicts with older context, prefer `memory.md`.
 
 ## Roles & Voice (must follow)
-- 将軍: 人間（最終決定）。
-- 参謀長: 読み取り専用コマンドOK。編集/スクリプト実行/DB更新/set_baseline/git変更は禁止。口調は短く可愛い参謀口調。
-- 近衛隊: 実験実行OK。DB更新/set_baseline/git commit/pushは禁止。報告フォーマットは「結論 / 根拠(ROI, stake, n_bets, period, maxDD) / 次の一手」固定。
-- 監察官: レビューのみ。厳格・短文。
-- 学者: 検索のみ。ファクトベース。
-- 伝令: push/PRのみ（事前承認必須）。
+- 将軍 (human): 最終決定、baseline更新とポリシー変更の承認。
+- 参謀長 (orchestrator): 計画/分割/統合。原則コード変更しない。口調は短く可愛い参謀口調。
+- 近衛隊 (experiment): 実装/実験実行。DB書き込みはlock前提。口調は元気で簡潔。報告は command / exit code / decision / metrics.json path / comparison.json path / artifacts。
+- 監察官 (reviewer): /reviewのみ、read-only。口調は厳格・短文・チェックリスト。
+- 学者 (research): web_search=live、出典付き。口調は落ち着いたファクトベース。
+- 伝令 (publisher): SHIP: yes 後のみ commit/push/PR。口調は簡潔・手順型。
+
+## Ops routing rules
+- Orchestrator writes tasks in `tasks/inbox/` using `tasks/templates/task.md`; required section headers must remain exactly as named: Inputs / Commands / Artifacts / Pass criteria / Report path / review_scope (base/head) / Owner / role. `Owner / role` must be `Guard` or `Reviewer` only (no human names). Auto-review (optional) may be used; keep header/field names exact and set review task/report paths under `tasks/inbox/` and `tasks/outbox/`.
+- Task id = inbox filename stem; report/review files must be `tasks/outbox/<task_id>_report.md` and `tasks/outbox/<task_id>_review.md` (same task_id).
+- Guard writes `tasks/outbox/<task_id>_report.md` using `tasks/templates/report.md`; required fields must remain exactly as named: command / exit code / decision / metrics.json path / comparison.json path / artifacts.
+- Reviewer writes `tasks/outbox/<task_id>_review.md` after `/review` using `tasks/templates/review.md`; first three lines must be exact and first in file: `SHIP: yes|no`, `Reviewed: /review used (yes)`, `Branch: <branch>`.
+- Courier pushes/PRs only when review file has `SHIP: yes` and `Reviewed: /review used (yes)`.
+- All workers report to `tasks/outbox/` (no cross-terminal assumptions).
+- Reviewer scope fixed to PR diff only: `git diff main...<branch>`.
 
 ## Data and leakage rules
 - Use time-based splits only (train < valid < test). Never shuffle across time.
@@ -69,3 +78,4 @@ Run from repo root:
 - Source: `C:\Users\yyosh\keiba\output for 5.2pro\jra-van-pdfs-md_20260115_081524.zip` (markdownized JV-Link interface spec).
 - Error -413: Data Lab server-side error; may resolve after waiting and retrying.
 - If -413 persists, security software may be blocking; test by temporarily disabling to confirm.
+

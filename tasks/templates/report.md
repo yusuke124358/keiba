@@ -1,23 +1,27 @@
 # Report: <title>
 
+Required fields must remain exactly as named.
+Report file path must be `tasks/outbox/<task_id>_report.md` (task_id from inbox task file).
+
 ## Summary
 - <one sentence conclusion>
 
-## Evidence
-- Command: <command>
-- Exit code: <code>
+## Required fields
+- command: <command>
+- exit code: <code>
+- decision: <decision>
+- metrics.json path: <path or N/A>
+- comparison.json path: <path or N/A>
+- artifacts: <path or N/A>
 
 ## Changes
 - <files changed, if any>
 
-## Artifacts
-- <path>
+## Risks
+- <risk or "none">
 
 ## Next actions
 - <next step>
-
-## Risks
-- <risk or "none">
 
 ## Status
 - <pass/fail/blocked>
