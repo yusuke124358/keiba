@@ -1,0 +1,34 @@
+﻿{
+  "title": "AgentLoopOutput",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "summary": {"type": "string"},
+    "change_summary": {"type": "array", "items": {"type": "string"}},
+    "tests_run": {"type": "array", "items": {"type": "string"}},
+    "risks": {"type": "array", "items": {"type": "string"}},
+    "metrics": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "roi": {"type": "string"},
+        "total_stake": {"type": "string"},
+        "n_bets": {"type": "string"},
+        "test_period": {"type": "string"},
+        "max_drawdown": {"type": "string"}
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "metrics_json": {"type": "string"},
+        "comparison_json": {"type": "string"},
+        "experiment_log": {"type": "string"}
+      }
+    },
+    "pr_body": {"type": "string"},
+    "followups": {"type": "array", "items": {"type": "string"}}
+  },
+  "required": ["summary", "change_summary", "tests_run", "pr_body"]
+}

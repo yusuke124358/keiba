@@ -1,0 +1,8 @@
+labels:
+  auto_fix: "auto-fix"
+  needs_human: "needs-human"
+  autogen: "autogen"
+thresholds:
+  consecutive_fail: 3
+  recurrence: 2
+  max_total: 10

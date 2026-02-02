@@ -35,10 +35,12 @@ env/
 
 # Data
 data/
+!data/
 data/raw/*.jsonl
 data/processed/
 data/state/fetch_state.json
 data/holdout_runs/
+!data/manifest.yml
 
 # Models
 models/*.pkl
@@ -50,6 +52,10 @@ output_work/
 artifacts/
 tmp/
 JRAVANData/
+!artifacts/
+artifacts/*
+!artifacts/patches/
+!artifacts/patches/*.diff
 
 # Local tools
 .codex/
@@ -62,7 +68,9 @@ JRAVANData/
 !.codex/rules/
 !.codex/rules/*.rules
 .codex/ssh/
-.codex/skills/
+!.codex/skills/
+!.codex/skills/**/
+!.codex/skills/**/SKILL.md
 
 # Secrets
 .env
@@ -75,6 +83,9 @@ Thumbs.db
 # Logs
 *.log
 logs/
+
+# Docs private
+docs/_private/
 
 # Jupyter
 .ipynb_checkpoints/

@@ -302,3 +302,55 @@ signals = generate_bet_signals(
 ## ライセンス
 
 MIT License
+
+## Agent Loop Operations
+
+Local (cron/systemd)
+- Linux cron example:
+```cron
+*/30 * * * * cd /path/to/keiba && bash scripts/agent/loop.sh
+```
+- Windows Task Scheduler example command:
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\agent\loop.ps1
+```
+
+GitHub Actions (scheduled)
+- Create a scheduled workflow that runs once per schedule and executes:
+```bash
+bash scripts/agent/loop.sh
+```
+ - Backlog is in `experiments/backlog.yml`.
+
+Safety and stop conditions
+- `risk_level: high` disables auto-merge.
+- `approval_policy` and `sandbox_mode` are enforced in `.codex/config.toml`.
+- Failures write to `docs/experiments/<id>.md` and the loop exits; rerun on the next schedule.
+
+## Spec / Research / Data Registry
+
+### PDF Spec Ingest
+- Convert PDF to Markdown:
+```bash
+python tools/pdf/pdf_to_md.py "docs/_private/<spec>.pdf"
+```
+- Extracted assets land in `docs/specs/` with a `.meta.json` file.
+
+### Research assets
+- Reading list: `docs/research/reading_list.md`
+- Paper summaries: `docs/research/papers/<slug>.md`
+- Ideas backlog: `docs/research/ideas/backlog.yml`
+
+### Data registry
+- Manifest: `data/manifest.yml`
+- Schemas: `schemas/**`
+- Dictionary: `docs/data_dictionary/`
+
+### Make targets
+- `make verify`
+- `make pdf-spec PDF=docs/_private/<spec>.pdf`
+
+## Publisher Separation
+- Codex should not `git push` directly. Use a publisher instead.
+- Local publisher: `scripts/publish/local_push.sh` (or `.ps1` on Windows)
+- GitHub Actions publisher: `.github/workflows/publish.yml` applies patches from `artifacts/patches/*.diff`

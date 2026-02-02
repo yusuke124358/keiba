@@ -1,0 +1,92 @@
+﻿name: publisher
+
+on:
+  workflow_dispatch:
+    inputs:
+      patch_glob:
+        description: "Glob for patch files"
+        required: false
+        default: "artifacts/patches/*.diff"
+  schedule:
+    - cron: "0 2 * * *"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply patches
+        id: apply
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          glob="${{ inputs.patch_glob }}"
+          files=($glob)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No patches found for $glob"
+            echo "applied=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          for f in "${files[@]}"; do
+            echo "Applying $f"
+            git apply "$f"
+          done
+          echo "applied=true" >> "$GITHUB_OUTPUT"
+
+      - name: Load PR metadata
+        id: meta
+        if: steps.apply.outputs.applied == 'true'
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          glob = os.environ.get("PATCH_GLOB", "artifacts/patches/*.diff")
+          patch_files = list(Path().glob(glob))
+          meta_files = []
+          for patch in patch_files:
+            meta_path = patch.with_suffix(".meta.json")
+            if meta_path.exists():
+              meta_files.append(meta_path)
+          if not meta_files:
+            with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              fh.write("labels=publisher\n")
+              fh.write("base_branch=main\n")
+              fh.write("title=publisher: apply patches\n")
+              fh.write("body<<EOF\nAutomated publisher PR (patches applied).\nEOF\n")
+            raise SystemExit(0)
+
+          latest = max(meta_files, key=lambda p: p.stat().st_mtime)
+          data = json.loads(latest.read_text(encoding="utf-8"))
+          labels = data.get("labels") or ["publisher"]
+          if isinstance(labels, list):
+            labels = ",".join(labels)
+          base_branch = data.get("base_branch") or "main"
+          title = data.get("title") or "publisher: apply patches"
+          body = data.get("body") or "Automated publisher PR (patches applied)."
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+            fh.write(f"labels={labels}\n")
+            fh.write(f"base_branch={base_branch}\n")
+            fh.write(f"title={title}\n")
+            fh.write(f"body<<EOF\n{body}\nEOF\n")
+          PY
+        env:
+          PATCH_GLOB: ${{ inputs.patch_glob }}
+
+      - name: Create PR
+        if: steps.apply.outputs.applied == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          base: ${{ steps.meta.outputs.base_branch }}
+          branch: publisher/patches-${{ github.run_id }}
+          title: ${{ steps.meta.outputs.title }}
+          body: ${{ steps.meta.outputs.body }}
+          commit-message: "publisher: apply patches"
+          labels: ${{ steps.meta.outputs.labels }}

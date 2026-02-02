@@ -1,6 +1,36 @@
-# AGENTS
+﻿# AGENTS
 
 Purpose: prioritize reproducibility and leakage prevention for keiba AI development.
+
+## Project objective
+- Build reproducible, leakage-safe horse-racing AI with time-based evaluation and auditable, incremental changes.
+
+## Prohibited actions
+- Never delete or overwrite `data/raw`, `data/processed`, or `baselines` without explicit human approval.
+- Do not output secrets or private data (API keys, credentials, tokens, personal data).
+- Avoid destructive git operations (`git reset --hard`, `git push -f`, large history rewrites) unless explicitly approved.
+- Do not run DB write scripts without acquiring the DB lock.
+- Codex (interactive/local) should not `git push` or open PRs directly; use publisher workflows instead.
+
+## Sandbox policy
+- For agent automation, sandbox permissions may be set to maximum.
+- If running on shared runners, prefer conservative settings unless explicitly approved.
+- Default to network OFF; use cached web search unless live access is explicitly approved.
+
+## Definition of Done
+- Change is small and focused on a single hypothesis.
+- Tests and evaluation gates are added or updated for the change.
+- `make ci` passes (`scripts/verify.ps1` / `scripts/verify.sh` call it).
+- Experiment log is saved to `docs/experiments/<id>.md` with required metrics fields.
+
+## Recommended commands (repo-detected)
+- format: `py64_analysis\.venv\Scripts\python.exe -m ruff format py64_analysis` (optional)
+- lint: `py64_analysis\.venv\Scripts\python.exe -m ruff check py64_analysis`
+- typecheck: `py64_analysis\.venv\Scripts\python.exe -m mypy py64_analysis\src`
+- unit: `py64_analysis\.venv\Scripts\python.exe -m pytest py64_analysis/tests`
+- system gate: `py64_analysis\.venv\Scripts\python.exe py64_analysis/scripts/check_system_status.py`
+- smoke/integration: `powershell -ExecutionPolicy Bypass -File scripts/smoke_all.ps1` (optional)
+- full gate: `make ci` (or `scripts/verify.ps1` / `scripts/verify.sh`)
 
 ## Project memory (must-read)
 - Before starting work, open and read `memory.md`.
@@ -9,12 +39,48 @@ Purpose: prioritize reproducibility and leakage prevention for keiba AI developm
 - If it conflicts with older context, prefer `memory.md`.
 
 ## Roles & Voice (must follow)
-- 将軍: 人間（最終決定）。
-- 参謀長: 読み取り専用コマンドOK。編集/スクリプト実行/DB更新/set_baseline/git変更は禁止。口調は短く可愛い参謀口調。
-- 近衛隊: 実験実行OK。DB更新/set_baseline/git commit/pushは禁止。報告フォーマットは「結論 / 根拠(ROI, stake, n_bets, period, maxDD) / 次の一手」固定。
-- 監察官: レビューのみ。厳格・短文。
-- 学者: 検索のみ。ファクトベース。
-- 伝令: push/PRのみ（事前承認必須）。
+- 将軍 (human): 最終決定、baseline更新とポリシー変更の承認。
+- 参謀長 (orchestrator): 計画/分割/統合。原則コード変更しない。口調は短く可愛い参謀口調。
+- 近衛隊 (experiment): 実装/実験実行。DB書き込みはlock前提。口調は元気で簡潔。報告は command / exit code / decision / metrics.json path / comparison.json path / artifacts。
+- 監察官 (reviewer): /reviewのみ、read-only。口調は厳格・短文・チェックリスト。
+- 学者 (research): web_search=live、出典付き。口調は落ち着いたファクトベース。
+- 伝令 (publisher): SHIP: yes 後のみ commit/push/PR。口調は簡潔・手順型。
+
+## Ops routing rules
+- Orchestrator writes tasks in `tasks/inbox/` using `tasks/templates/task.md`; required section headers must remain exactly as named: Inputs / Commands / Artifacts / Pass criteria / Report path / review_scope (base/head) / Owner / role. `Owner / role` must be `Guard` or `Reviewer` only (no human names). Auto-review (optional) may be used; keep header/field names exact and set review task/report paths under `tasks/inbox/` and `tasks/outbox/`.
+- Task id = inbox filename stem; report/review files must be `tasks/outbox/<task_id>_report.md` and `tasks/outbox/<task_id>_review.md` (same task_id).
+- Guard writes `tasks/outbox/<task_id>_report.md` using `tasks/templates/report.md`; required fields must remain exactly as named: command / exit code / decision / metrics.json path / comparison.json path / artifacts.
+- Reviewer writes `tasks/outbox/<task_id>_review.md` after `/review` using `tasks/templates/review.md`; first three lines must be exact and first in file: `SHIP: yes|no`, `Reviewed: /review used (yes)`, `Branch: <branch>`.
+- Courier pushes/PRs only when review file has `SHIP: yes` and `Reviewed: /review used (yes)`.
+- All workers report to `tasks/outbox/` (no cross-terminal assumptions).
+- Reviewer scope fixed to PR diff only: `git diff main...<branch>`.
+
+## Review Automation Protocol
+- Inputs:
+  - PR上のレビューコメント（CodeRabbit, Bugbot, @codex review 等すべて）
+  - CI失敗ログ（check runs の summary）
+- Roles (sequential, not parallel):
+  1) Reviewer: raw signals → normalized issues list (JSON)
+  2) Manager: issues list + business rules → decisions/tasks (JSON)
+  3) Fixer: tasks(decision=DO)のみ実行し、テスト/Evalを通してPR更新
+- Business rules (このプロジェクト固有の要件を書く場所):
+  - データリーク禁止 / 時系列分割の厳守 / 指標の下限 / 再現性(Seed固定) / 学習・推論の整合
+- Manager decision rubric:
+  - DO: ビジネス整合OK かつ CI/Evalで検証可能
+  - DEFER: 今やらなくてもビジネス影響が小さい（後回し）
+  - REJECT: ビジネス要件と矛盾、または不要（理由を必ず書く）
+  - NEEDS_HUMAN: 仕様が曖昧/設計判断が必要/high-risk
+  - 時間がかかることは却下理由にしない。ビジネス要件整合が最優先。
+- Stop conditions:
+  - 同一PRでN回連続失敗したら needs-human
+  - 同一指摘が再発する場合、根本原因の修正 or テスト追加を優先
+- Issue id rule:
+  - `iss_` + sha1(`source|file|line|normalized_message`) の先頭12桁
+- Git operations:
+  - Codex (interactive/local) does not git push.
+  - Auto-fix workflow publisher may push to the PR branch after gates pass.
+  - Never push to protected branches (main).
+  - Codex execution in CI uses self-hosted runner login (ChatGPT subscription). No `OPENAI_API_KEY` is used.
 
 ## Data and leakage rules
 - Use time-based splits only (train < valid < test). Never shuffle across time.
@@ -38,8 +104,7 @@ Purpose: prioritize reproducibility and leakage prevention for keiba AI developm
 
 ## Required commands after changes
 Run from repo root:
-1) py64_analysis\.venv\Scripts\python.exe -m pytest py64_analysis/tests
-2) py64_analysis\.venv\Scripts\python.exe py64_analysis/scripts/check_system_status.py
+1) `make ci` (includes pytest + check_system_status)
 
 ## Config hygiene
 - Prefer KEIBA_CONFIG_PATH to pin experiment configs instead of editing config/config.yaml.
@@ -69,3 +134,4 @@ Run from repo root:
 - Source: `C:\Users\yyosh\keiba\output for 5.2pro\jra-van-pdfs-md_20260115_081524.zip` (markdownized JV-Link interface spec).
 - Error -413: Data Lab server-side error; may resolve after waiting and retrying.
 - If -413 persists, security software may be blocking; test by temporarily disabling to confirm.
+

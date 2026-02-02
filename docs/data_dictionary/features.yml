@@ -1,0 +1,10 @@
+﻿version: 1
+features:
+  - name: win_prob
+    description: "Model-predicted win probability"
+    unit: probability
+    leak_risk: low
+    depends_on:
+      - race_id
+      - horse_id
+    notes: "Output of win model; must be trained on time-split data only"

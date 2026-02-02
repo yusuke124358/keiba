@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Manager Decision",
+  "type": "object",
+  "required": ["approved", "summary", "tasks", "automerge_eligible"],
+  "properties": {
+    "approved": { "type": "boolean" },
+    "summary": { "type": "string" },
+    "tasks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "issue_id",
+          "decision",
+          "priority",
+          "risk",
+          "rationale",
+          "required_checks"
+        ],
+        "properties": {
+          "issue_id": { "type": "string" },
+          "decision": {
+            "type": "string",
+            "enum": ["DO", "DEFER", "REJECT", "NEEDS_HUMAN"]
+          },
+          "priority": { "type": "string", "enum": ["P0", "P1", "P2"] },
+          "risk": { "type": "string", "enum": ["low", "medium", "high"] },
+          "rationale": { "type": "string" },
+          "required_checks": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "automerge_eligible": { "type": "boolean" }
+  },
+  "additionalProperties": false
+}

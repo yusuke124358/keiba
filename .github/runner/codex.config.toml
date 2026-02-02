@@ -1,0 +1,7 @@
+forced_login_method = "chatgpt"
+web_search = "cached"
+
+[profiles.agent_loop]
+web_search = "cached"
+sandbox_mode = "workspace-write"
+approval_policy = "on-request"

@@ -1,0 +1,43 @@
+name: needs-human-notify
+
+on:
+  issues:
+    types: [labeled]
+
+jobs:
+  notify:
+    if: github.event.issue.pull_request != null
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install deps
+        run: python -m pip install pyyaml
+
+      - name: Load config
+        id: cfg
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          import yaml
+
+          data = yaml.safe_load(Path("config/auto_fix.yml").read_text(encoding="utf-8")) or {}
+          labels = data.get("labels") or {}
+          needs_human = labels.get("needs_human", "needs-human")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              fh.write(f"needs_human_label={needs_human}\n")
+          PY
+
+      - name: Notify human
+        if: github.event.label.name == steps.cfg.outputs.needs_human_label
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pr_number="${{ github.event.issue.number }}"
+          author="${{ github.event.issue.user.login }}"
+          gh pr edit "$pr_number" --add-assignee "$author" >/dev/null 2>&1 || true
+          gh pr comment "$pr_number" --body "@${author} needs-human flagged.\n\nHuman Packet:\n- Reply with \`/human approve\` to resume auto-fix\n- Reply with \`/human clarify <context>\` to resume with notes\n- Reply with \`/human reject <reason>\` to stop auto-fix" || true
