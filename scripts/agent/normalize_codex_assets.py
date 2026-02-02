@@ -10,6 +10,12 @@ def normalize_text(text: str) -> str:
     return "\n".join(lines).rstrip("\n") + "\n"
 
 
+def write_text_lf(path: Path, text: str) -> None:
+    normalized = normalize_text(text)
+    with path.open("w", encoding="utf-8", newline="\n") as handle:
+        handle.write(normalized)
+
+
 def ensure_frontmatter(path: Path) -> None:
     raw = path.read_text(encoding="utf-8-sig")
     stripped = raw.lstrip("\ufeff\r\n\t ")
@@ -19,13 +25,13 @@ def ensure_frontmatter(path: Path) -> None:
             f"---\nname: {name}\ndescription: Codex skill {name}\nversion: 0.1\n---\n\n"
         )
         stripped = fm + stripped
-    path.write_text(normalize_text(stripped), encoding="utf-8")
+    write_text_lf(path, stripped)
 
 
 def normalize_schema(path: Path) -> None:
     raw = path.read_text(encoding="utf-8-sig")
     json.loads(raw)
-    path.write_text(normalize_text(raw), encoding="utf-8")
+    write_text_lf(path, raw)
 
 
 def main() -> int:
