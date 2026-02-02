@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 import json
 import sys
 from pathlib import Path
@@ -18,7 +18,7 @@ def main():
     errors = []
     for path in schema_files:
         try:
-            data = json.loads(path.read_text(encoding="utf-8"))
+            data = json.loads(path.read_text(encoding="utf-8-sig"))
         except Exception as exc:
             errors.append(f"{path}: invalid JSON ({exc})")
             continue

@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 import argparse
 import datetime as dt
 import os
@@ -10,16 +10,23 @@ from pathlib import Path
 
 try:
     import yaml
-except Exception as exc:
-    print("PyYAML is required to run the agent loop. Install with: pip install pyyaml", file=sys.stderr)
+except Exception:
+    print(
+        "PyYAML is required to run the agent loop. Install with: pip install pyyaml",
+        file=sys.stderr,
+    )
     raise
 
 
 def run(cmd, cwd=None, check=True, capture_output=True, text=True):
-    result = subprocess.run(cmd, cwd=cwd, check=False, capture_output=capture_output, text=text)
+    result = subprocess.run(
+        cmd, cwd=cwd, check=False, capture_output=capture_output, text=text
+    )
     if check and result.returncode != 0:
         stderr = result.stderr.strip() if result.stderr else ""
-        raise RuntimeError(f"Command failed ({result.returncode}): {' '.join(cmd)}\n{stderr}")
+        raise RuntimeError(
+            f"Command failed ({result.returncode}): {' '.join(cmd)}\n{stderr}"
+        )
     return result
 
 
@@ -37,7 +44,9 @@ def slugify(text):
 def ensure_clean(root):
     status = run(["git", "status", "--porcelain"], cwd=root).stdout.strip()
     if status:
-        raise RuntimeError("Working tree not clean. Commit or stash changes before running the loop.")
+        raise RuntimeError(
+            "Working tree not clean. Commit or stash changes before running the loop."
+        )
 
 
 def git_fetch_checkout(root, remote, base_branch):
@@ -73,7 +82,9 @@ def update_item(item, branch):
 
 
 def save_backlog(path, data):
-    Path(path).write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=False), encoding="utf-8")
+    Path(path).write_text(
+        yaml.safe_dump(data, sort_keys=False, allow_unicode=False), encoding="utf-8"
+    )
 
 
 def ensure_experiment_log(root, exp_id, title, risk_level, max_diff_size):
@@ -97,6 +108,7 @@ def ensure_experiment_log(root, exp_id, title, risk_level, max_diff_size):
 
 def render_prompt(template_path, item):
     text = Path(template_path).read_text(encoding="utf-8")
+
     def render_list(value):
         if not value:
             return "- (none)"
@@ -128,10 +140,20 @@ def find_codex_bin():
     return shutil.which("codex")
 
 
-def run_codex(root, prompt_text, schema_path, output_last_message, profile, log_path, codex_bin):
-    cmd = [codex_bin, "exec", "--profile", profile, "--full-auto",
-           "--output-schema", str(schema_path),
-           "--output-last-message", str(output_last_message)]
+def run_codex(
+    root, prompt_text, schema_path, output_last_message, profile, log_path, codex_bin
+):
+    cmd = [
+        codex_bin,
+        "exec",
+        "--profile",
+        profile,
+        "--full-auto",
+        "--output-schema",
+        str(schema_path),
+        "--output-last-message",
+        str(output_last_message),
+    ]
 
     with open(log_path, "w", encoding="utf-8") as log:
         result = subprocess.run(
@@ -142,7 +164,9 @@ def run_codex(root, prompt_text, schema_path, output_last_message, profile, log_
             text=True,
         )
     if result.returncode != 0:
-        raise RuntimeError(f"codex exec failed with code {result.returncode}. See {log_path}")
+        raise RuntimeError(
+            f"codex exec failed with code {result.returncode}. See {log_path}"
+        )
 
 
 def diff_size(root):
@@ -165,7 +189,13 @@ def diff_size(root):
 
 def run_verify(root):
     if os.name == "nt":
-        cmd = ["powershell", "-ExecutionPolicy", "Bypass", "-File", str(root / "scripts" / "verify.ps1")]
+        cmd = [
+            "powershell",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(root / "scripts" / "verify.ps1"),
+        ]
     else:
         cmd = ["bash", str(root / "scripts" / "verify.sh")]
     result = subprocess.run(cmd, cwd=root)
@@ -191,7 +221,9 @@ def main():
     parser.add_argument("--output-dir", default="artifacts/agent")
     parser.add_argument("--skip-codex", action="store_true")
     parser.add_argument("--skip-tests", action="store_true")
-    parser.add_argument("--publisher", choices=["none", "local", "actions"], default="none")
+    parser.add_argument(
+        "--publisher", choices=["none", "local", "actions"], default="none"
+    )
     parser.add_argument("--patch-dir", default="artifacts/patches")
     args = parser.parse_args()
 
@@ -232,12 +264,22 @@ def main():
         if not codex_bin:
             raise RuntimeError("codex CLI not found in PATH")
         prompt_text = render_prompt(root / args.prompt, item)
-        run_codex(root, prompt_text, root / args.schema, codex_last, args.profile, codex_log, codex_bin)
+        run_codex(
+            root,
+            prompt_text,
+            root / args.schema,
+            codex_last,
+            args.profile,
+            codex_log,
+            codex_bin,
+        )
 
     total_diff = diff_size(root)
     if total_diff > max_diff_size:
         run(["git", "reset"], cwd=root, check=False)
-        raise RuntimeError(f"Diff size {total_diff} exceeds max_diff_size {max_diff_size}")
+        raise RuntimeError(
+            f"Diff size {total_diff} exceeds max_diff_size {max_diff_size}"
+        )
 
     if not args.skip_tests:
         run_verify(root)
@@ -262,13 +304,18 @@ def main():
     if args.publisher == "local":
         if os.name == "nt":
             publisher = root / "scripts" / "publish" / "local_push.ps1"
-            run(["powershell", "-ExecutionPolicy", "Bypass", "-File", str(publisher)], cwd=root)
+            run(
+                ["powershell", "-ExecutionPolicy", "Bypass", "-File", str(publisher)],
+                cwd=root,
+            )
         else:
             publisher = root / "scripts" / "publish" / "local_push.sh"
             run(["bash", str(publisher)], cwd=root)
         return 0
 
-    print("Publisher is set to 'none'. Commit created locally; no push or PR performed.")
+    print(
+        "Publisher is set to 'none'. Commit created locally; no push or PR performed."
+    )
     return 0
 
 

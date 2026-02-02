@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 import argparse
 import json
 import shutil
@@ -58,7 +58,9 @@ def extract_pages(path: Path, method: str = "auto"):
                 return extract_pages(path, method=attempt)
             except Exception:
                 continue
-        raise RuntimeError("No PDF extractor available. Install PyMuPDF or pdfplumber, or add pdftotext.")
+        raise RuntimeError(
+            "No PDF extractor available. Install PyMuPDF or pdfplumber, or add pdftotext."
+        )
 
     if method == "pymupdf":
         return _extract_pymupdf(path)
@@ -73,7 +75,11 @@ def extract_pages(path: Path, method: str = "auto"):
 def main():
     parser = argparse.ArgumentParser(description="Extract text from a PDF file")
     parser.add_argument("pdf", help="Path to the PDF file")
-    parser.add_argument("--method", default="auto", choices=["auto", "pymupdf", "pdfplumber", "pdftotext"])
+    parser.add_argument(
+        "--method",
+        default="auto",
+        choices=["auto", "pymupdf", "pdfplumber", "pdftotext"],
+    )
     parser.add_argument("--output", help="Optional output text file")
     args = parser.parse_args()
 

@@ -1,6 +1,5 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 import argparse
-import json
 import re
 import subprocess
 import sys
@@ -106,7 +105,9 @@ def validate_log(path):
             if key not in fields:
                 errors.append(f"Missing rolling field '{key}'")
             elif is_na(fields[key]):
-                errors.append(f"Rolling field '{key}' cannot be N/A when Rolling is yes")
+                errors.append(
+                    f"Rolling field '{key}' cannot be N/A when Rolling is yes"
+                )
     else:
         for key in ROLLING_KEYS:
             if key not in fields:
@@ -115,12 +116,20 @@ def validate_log(path):
     if fields.get("pooled vs step14 sign mismatch", "").lower() not in {"yes", "no"}:
         errors.append("Pooled vs step14 sign mismatch must be 'yes' or 'no'")
 
-    if fields.get("preferred roi for decisions", "").lower() not in {"step14", "pooled"}:
+    if fields.get("preferred roi for decisions", "").lower() not in {
+        "step14",
+        "pooled",
+    }:
         errors.append("Preferred ROI for decisions must be 'step14' or 'pooled'")
 
     roi_def = fields.get("roi definition", "")
-    if "roi = profit / stake" not in roi_def.lower() or "profit = return - stake" not in roi_def.lower():
-        errors.append("ROI definition must include 'ROI = profit / stake' and 'profit = return - stake'")
+    if (
+        "roi = profit / stake" not in roi_def.lower()
+        or "profit = return - stake" not in roi_def.lower()
+    ):
+        errors.append(
+            "ROI definition must include 'ROI = profit / stake' and 'profit = return - stake'"
+        )
 
     # Metrics fields validation
     if exp_type == "infra":
@@ -148,10 +157,18 @@ def main():
         return 0
 
     code_changes = [f for f in files if is_code_change(f)]
-    exp_logs = [f for f in files if f.startswith("docs/experiments/") and f.endswith(".md") and not f.endswith("_template.md")]
+    exp_logs = [
+        f
+        for f in files
+        if f.startswith("docs/experiments/")
+        and f.endswith(".md")
+        and not f.endswith("_template.md")
+    ]
 
     if code_changes and not exp_logs:
-        print("Experiment log required for code changes but none found.", file=sys.stderr)
+        print(
+            "Experiment log required for code changes but none found.", file=sys.stderr
+        )
         print("Changed files:", file=sys.stderr)
         for f in code_changes:
             print(f"- {f}", file=sys.stderr)

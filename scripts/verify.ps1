@@ -15,9 +15,19 @@ function Run-Step([string]$name, [scriptblock]$block) {
   }
 }
 
-Run-Step "ruff format" { & $py -m ruff format --check py64_analysis }
-Run-Step "ruff check" { & $py -m ruff check py64_analysis }
-Run-Step "mypy" { & $py -m mypy py64_analysis\src }
+$changedPy = @(git diff --name-only "$baseRef...HEAD" -- '*.py' | Where-Object { $_ -ne "" })
+if ($changedPy.Count -gt 0) {
+  Run-Step "ruff format" { & $py -m ruff format --check @changedPy }
+  Run-Step "ruff check" { & $py -m ruff check @changedPy }
+} else {
+  Write-Host "No changed Python files; skipping ruff format/check."
+}
+$mypyFiles = @(git diff --name-only "$baseRef...HEAD" -- py64_analysis/src | Where-Object { $_ -match '\.py$' })
+if ($mypyFiles.Count -gt 0) {
+  Run-Step "mypy" { & $py -m mypy @mypyFiles }
+} else {
+  Write-Host "No changed src files; skipping mypy."
+}
 Run-Step "pytest" { & $py -m pytest py64_analysis\tests }
 Run-Step "check_system_status" { & $py py64_analysis\scripts\check_system_status.py }
 Run-Step "validate_data_manifest" { & $py scripts\validate_data_manifest.py }

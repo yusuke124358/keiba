@@ -1,7 +1,6 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 import argparse
 import json
-import re
 from pathlib import Path
 
 
@@ -50,15 +49,23 @@ def _extract_fields(text: str):
     for header, row in _parse_tables(text):
         header_lower = [h.lower() for h in header]
         try:
-            name_idx = next(i for i, h in enumerate(header_lower) if "field" in h or "name" in h or "項目" in h)
+            name_idx = next(
+                i
+                for i, h in enumerate(header_lower)
+                if "field" in h or "name" in h or "項目" in h
+            )
         except StopIteration:
             name_idx = 0
         try:
-            type_idx = next(i for i, h in enumerate(header_lower) if "type" in h or "型" in h)
+            type_idx = next(
+                i for i, h in enumerate(header_lower) if "type" in h or "型" in h
+            )
         except StopIteration:
             type_idx = None
         try:
-            desc_idx = next(i for i, h in enumerate(header_lower) if "desc" in h or "説明" in h)
+            desc_idx = next(
+                i for i, h in enumerate(header_lower) if "desc" in h or "説明" in h
+            )
         except StopIteration:
             desc_idx = None
 
@@ -67,7 +74,11 @@ def _extract_fields(text: str):
         name = row[name_idx].strip()
         if not name or name.lower() == "name":
             continue
-        field_type = _normalize_type(row[type_idx]) if type_idx is not None and type_idx < len(row) else "string"
+        field_type = (
+            _normalize_type(row[type_idx])
+            if type_idx is not None and type_idx < len(row)
+            else "string"
+        )
         desc = row[desc_idx] if desc_idx is not None and desc_idx < len(row) else ""
         fields.append({"name": name, "type": field_type, "description": desc})
     return fields
@@ -81,9 +92,17 @@ def _record_name(path: Path):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Generate JSON schema templates from JRA-VAN spec markdown")
-    parser.add_argument("--input", action="append", help="Input markdown file (can repeat)")
-    parser.add_argument("--glob", default="docs/specs/jravan_*.md", help="Glob pattern when --input not supplied")
+    parser = argparse.ArgumentParser(
+        description="Generate JSON schema templates from JRA-VAN spec markdown"
+    )
+    parser.add_argument(
+        "--input", action="append", help="Input markdown file (can repeat)"
+    )
+    parser.add_argument(
+        "--glob",
+        default="docs/specs/jravan_*.md",
+        help="Glob pattern when --input not supplied",
+    )
     parser.add_argument("--out-dir", default="schemas/jravan")
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
@@ -122,7 +141,9 @@ def main():
                 "description": field["description"],
             }
 
-        schema_path.write_text(json.dumps(schema, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
+        schema_path.write_text(
+            json.dumps(schema, ensure_ascii=True, indent=2) + "\n", encoding="utf-8"
+        )
         print(f"Wrote: {schema_path}")
 
 

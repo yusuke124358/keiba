@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 import argparse
 import hashlib
 import json
@@ -6,9 +6,6 @@ import re
 import sys
 from datetime import datetime
 from pathlib import Path
-
-SCRIPT_DIR = Path(__file__).resolve().parent
-sys.path.insert(0, str(SCRIPT_DIR))
 
 from pdf_to_text import extract_pages
 
@@ -71,7 +68,11 @@ def pages_to_markdown(pages):
 def main():
     parser = argparse.ArgumentParser(description="Convert PDF to Markdown")
     parser.add_argument("pdf", help="Path to PDF")
-    parser.add_argument("--method", default="auto", choices=["auto", "pymupdf", "pdfplumber", "pdftotext"])
+    parser.add_argument(
+        "--method",
+        default="auto",
+        choices=["auto", "pymupdf", "pdfplumber", "pdftotext"],
+    )
     parser.add_argument("--output-dir", default="docs/specs")
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
@@ -95,16 +96,20 @@ def main():
 
     md_path.write_text(markdown, encoding="utf-8")
 
-    meta.update({
-        "source": str(pdf_path),
-        "output_md": str(md_path),
-        "output_meta": str(meta_path),
-        "timestamp_utc": datetime.utcnow().isoformat() + "Z",
-        "sha256": _hash_file(pdf_path),
-        "file_size_bytes": pdf_path.stat().st_size,
-    })
+    meta.update(
+        {
+            "source": str(pdf_path),
+            "output_md": str(md_path),
+            "output_meta": str(meta_path),
+            "timestamp_utc": datetime.utcnow().isoformat() + "Z",
+            "sha256": _hash_file(pdf_path),
+            "file_size_bytes": pdf_path.stat().st_size,
+        }
+    )
 
-    meta_path.write_text(json.dumps(meta, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
+    meta_path.write_text(
+        json.dumps(meta, ensure_ascii=True, indent=2) + "\n", encoding="utf-8"
+    )
 
     print(f"Wrote: {md_path}")
     print(f"Meta: {meta_path}")
