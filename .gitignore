@@ -62,7 +62,9 @@ JRAVANData/
 !.codex/rules/
 !.codex/rules/*.rules
 .codex/ssh/
-.codex/skills/
+!.codex/skills/
+!.codex/skills/**/
+!.codex/skills/**/SKILL.md
 
 # Secrets
 .env

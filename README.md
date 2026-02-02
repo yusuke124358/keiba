@@ -302,3 +302,27 @@ signals = generate_bet_signals(
 ## ライセンス
 
 MIT License
+
+## Agent Loop Operations
+
+Local (cron/systemd)
+- Linux cron example:
+```cron
+*/30 * * * * cd /path/to/keiba && bash scripts/agent/loop.sh
+```
+- Windows Task Scheduler example command:
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\agent\loop.ps1
+```
+
+GitHub Actions (scheduled)
+- Create a scheduled workflow that runs once per schedule and executes:
+```bash
+bash scripts/agent/loop.sh
+```
+ - Backlog is in `experiments/backlog.yml`.
+
+Safety and stop conditions
+- `risk_level: high` disables auto-merge.
+- `approval_policy` and `sandbox_mode` are enforced in `.codex/config.toml`.
+- Failures write to `docs/experiments/<id>.md` and the loop exits; rerun on the next schedule.

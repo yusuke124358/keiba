@@ -2,6 +2,34 @@
 
 Purpose: prioritize reproducibility and leakage prevention for keiba AI development.
 
+## Project objective
+- Build reproducible, leakage-safe horse-racing AI with time-based evaluation and auditable, incremental changes.
+
+## Prohibited actions
+- Never delete or overwrite `data/raw`, `data/processed`, or `baselines` without explicit human approval.
+- Do not output secrets or private data (API keys, credentials, tokens, personal data).
+- Avoid destructive git operations (`git reset --hard`, `git push -f`, large history rewrites) unless explicitly approved.
+- Do not run DB write scripts without acquiring the DB lock.
+
+## Sandbox policy
+- For agent automation, sandbox permissions may be set to maximum.
+- If running on shared runners, prefer conservative settings unless explicitly approved.
+
+## Definition of Done
+- Change is small and focused on a single hypothesis.
+- Tests and evaluation gates are added or updated for the change.
+- `scripts/verify.ps1` (Windows) or `scripts/verify.sh` (Linux/CI) passes.
+- Experiment log is saved to `docs/experiments/<id>.md` with required metrics fields.
+
+## Recommended commands (repo-detected)
+- format: `py64_analysis\.venv\Scripts\python.exe -m ruff format py64_analysis` (optional)
+- lint: `py64_analysis\.venv\Scripts\python.exe -m ruff check py64_analysis`
+- typecheck: `py64_analysis\.venv\Scripts\python.exe -m mypy py64_analysis\src`
+- unit: `py64_analysis\.venv\Scripts\python.exe -m pytest py64_analysis/tests`
+- system gate: `py64_analysis\.venv\Scripts\python.exe py64_analysis/scripts/check_system_status.py`
+- smoke/integration: `powershell -ExecutionPolicy Bypass -File scripts/smoke_all.ps1` (optional)
+- full gate: `scripts/verify.ps1` (Windows) or `scripts/verify.sh` (Linux/CI)
+
 ## Project memory (must-read)
 - Before starting work, open and read `memory.md`.
 - Treat it as the source of truth for run_dir conventions, evaluation gates, metrics.json/baselines,
