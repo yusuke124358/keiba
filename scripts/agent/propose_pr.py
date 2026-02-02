@@ -224,6 +224,16 @@ def _force_additional_properties_false(node):
                 "additionalProperties"
             ) is True:
                 node["additionalProperties"] = False
+            props = node.get("properties") or {}
+            if props:
+                required = node.get("required")
+                keys = list(props.keys())
+                if not required:
+                    node["required"] = keys
+                else:
+                    missing = [k for k in keys if k not in required]
+                    if missing:
+                        node["required"] = list(required) + missing
         for value in node.values():
             _force_additional_properties_false(value)
     elif isinstance(node, list):
