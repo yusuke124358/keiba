@@ -59,6 +59,8 @@ jobs:
             with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
               fh.write("labels=publisher\n")
               fh.write("base_branch=main\n")
+              fh.write("title=publisher: apply patches\n")
+              fh.write("body<<EOF\nAutomated publisher PR (patches applied).\nEOF\n")
             raise SystemExit(0)
 
           latest = max(meta_files, key=lambda p: p.stat().st_mtime)
@@ -82,9 +84,9 @@ jobs:
         if: steps.apply.outputs.applied == 'true'
         uses: peter-evans/create-pull-request@v6
         with:
-          base: ${{ steps.meta.outputs.base_branch || 'main' }}
+          base: ${{ steps.meta.outputs.base_branch }}
           branch: publisher/patches-${{ github.run_id }}
-          title: ${{ steps.meta.outputs.title || 'publisher: apply patches' }}
-          body: ${{ steps.meta.outputs.body || 'Automated publisher PR (patches applied).' }}
+          title: ${{ steps.meta.outputs.title }}
+          body: ${{ steps.meta.outputs.body }}
           commit-message: "publisher: apply patches"
-          labels: ${{ steps.meta.outputs.labels || 'publisher' }}
+          labels: ${{ steps.meta.outputs.labels }}
