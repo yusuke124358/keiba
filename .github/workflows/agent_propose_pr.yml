@@ -24,7 +24,7 @@ jobs:
         run: scripts/agent/preflight.sh
       - name: Preflight (Windows)
         if: runner.os == 'Windows'
-        shell: pwsh
+        shell: powershell
         run: scripts/agent/preflight.ps1
       - name: Configure Codex (Linux/macOS)
         if: runner.os != 'Windows'
@@ -34,7 +34,7 @@ jobs:
           cp .github/runner/codex.config.toml ~/.codex/config.toml
       - name: Configure Codex (Windows)
         if: runner.os == 'Windows'
-        shell: pwsh
+        shell: powershell
         run: |
           New-Item -ItemType Directory -Force -Path "$HOME\\.codex" | Out-Null
           Copy-Item .github\\runner\\codex.config.toml "$HOME\\.codex\\config.toml" -Force
@@ -48,7 +48,7 @@ jobs:
         run: python -m pip install --upgrade pip pyyaml
       - name: Install Python deps (Windows)
         if: runner.os == 'Windows'
-        shell: pwsh
+        shell: powershell
         run: python -m pip install --upgrade pip pyyaml
       - name: Run propose loop
         env:
@@ -62,5 +62,5 @@ jobs:
         env:
           AUTO_FIX_PUSH_TOKEN: ${{ secrets.AUTO_FIX_PUSH_TOKEN }}
           GH_TOKEN: ${{ secrets.AUTO_FIX_PUSH_TOKEN }}
-        shell: pwsh
+        shell: powershell
         run: python scripts\\agent\\propose_pr.py --once --publisher token
