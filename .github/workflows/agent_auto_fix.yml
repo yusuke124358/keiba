@@ -88,11 +88,7 @@ jobs:
         id: pr_win
         shell: cmd
         run: |
-          python -c "import json,os; data=json.load(open(os.environ['GITHUB_EVENT_PATH'])); pr=''; evt=os.environ.get('GITHUB_EVENT_NAME');\n\
-          pr = data.get('issue',{}).get('number','') if (evt=='issue_comment' and data.get('issue',{}).get('pull_request')) else pr;\n\
-          pr = data.get('pull_request',{}).get('number','') if evt=='pull_request_review' else pr;\n\
-          pr = (data.get('inputs',{}) or {}).get('pr_number','') if evt=='workflow_dispatch' else pr;\n\
-          open(os.environ['GITHUB_OUTPUT'],'a',encoding='utf-8').write(f'pr_number={pr}\\n')"
+          python -c "import json,os; data=json.load(open(os.environ['GITHUB_EVENT_PATH'])); pr=''; evt=os.environ.get('GITHUB_EVENT_NAME'); pr=data.get('issue',{}).get('number','') if (evt=='issue_comment' and data.get('issue',{}).get('pull_request')) else pr; pr=data.get('pull_request',{}).get('number','') if evt=='pull_request_review' else pr; pr=(data.get('inputs',{}) or {}).get('pr_number','') if evt=='workflow_dispatch' else pr; open(os.environ['GITHUB_OUTPUT'],'a',encoding='utf-8').write(f'pr_number={pr}\\n')"
       - name: Run review loop
         env:
           AUTO_FIX_PUSH_TOKEN: ${{ secrets.AUTO_FIX_PUSH_TOKEN }}
