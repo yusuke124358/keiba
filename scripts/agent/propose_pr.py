@@ -423,7 +423,7 @@ def main():
     prompt_text = render_prompt(root / args.prompt, item)
     run_codex(
         prompt_text,
-        schema_path,
+        root / args.schema,
         implement_output,
         implement_log,
         args.profile,
