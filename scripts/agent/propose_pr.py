@@ -178,9 +178,16 @@ def run_codex(prompt_text, schema_path, output_path, log_path, profile, codex_bi
     with open(log_path, "w", encoding="utf-8") as log:
         result = subprocess.run(cmd + [prompt_text], stdout=log, stderr=log, text=True)
     if result.returncode != 0:
-        raise RuntimeError(
-            f"codex exec failed with code {result.returncode}. See {log_path}"
-        )
+        tail = ""
+        try:
+            text = Path(log_path).read_text(encoding="utf-8")
+            tail = text[-4000:] if len(text) > 4000 else text
+        except Exception:
+            tail = ""
+        message = f"codex exec failed with code {result.returncode}. See {log_path}"
+        if tail:
+            message = f"{message}\n--- codex log tail ---\n{tail}"
+        raise RuntimeError(message)
 
 
 def diff_size(root):
