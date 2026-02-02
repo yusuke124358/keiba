@@ -83,7 +83,9 @@ def load_state(path: Path):
 
 def save_state(path: Path, state):
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(state, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
+    path.write_text(
+        json.dumps(state, ensure_ascii=True, indent=2) + "\n", encoding="utf-8"
+    )
 
 
 def parse_ts(value):
@@ -280,7 +282,9 @@ def build_prompts(run_dir, bundle_path):
 
 
 def write_json(path, payload):
-    path.write_text(json.dumps(payload, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
+    path.write_text(
+        json.dumps(payload, ensure_ascii=True, indent=2) + "\n", encoding="utf-8"
+    )
 
 
 def find_codex_bin():
@@ -293,7 +297,9 @@ def find_codex_bin():
 
 
 def ensure_codex_ready(codex_bin):
-    result = subprocess.run([codex_bin, "login", "status"], capture_output=True, text=True)
+    result = subprocess.run(
+        [codex_bin, "login", "status"], capture_output=True, text=True
+    )
     if result.returncode != 0:
         raise RuntimeError(
             "codex login status failed. Run: codex login --device-auth on the runner."
@@ -468,7 +474,10 @@ def collect(args, config):
     )
     new_checks = filter_new_checks(checks, state.get("last_check_completed_at"))
 
-    if not (new_comments or new_reviews or new_thread_comments or new_checks) and not args.force:
+    if (
+        not (new_comments or new_reviews or new_thread_comments or new_checks)
+        and not args.force
+    ):
         ensure_current_run(
             {"should_run": False, "reason": "no_new_signals", "pr": pr_number}
         )
@@ -580,8 +589,12 @@ def finalize(args, config):
         vals = [int(current or 0)] + [int(v or 0) for v in values]
         return max(vals) if vals else int(current or 0)
 
-    state["last_comment_id"] = _max_with_current(state.get("last_comment_id", 0), comment_ids)
-    state["last_review_id"] = _max_with_current(state.get("last_review_id", 0), review_ids)
+    state["last_comment_id"] = _max_with_current(
+        state.get("last_comment_id", 0), comment_ids
+    )
+    state["last_review_id"] = _max_with_current(
+        state.get("last_review_id", 0), review_ids
+    )
     state["last_thread_comment_id"] = _max_with_current(
         state.get("last_thread_comment_id", 0), thread_ids
     )
@@ -704,7 +717,10 @@ def finalize(args, config):
 
     status = run(["git", "status", "--porcelain"], cwd=root).stdout.strip()
     if status:
-        run(["git", "config", "user.email", "auto-fix@users.noreply.github.com"], cwd=root)
+        run(
+            ["git", "config", "user.email", "auto-fix@users.noreply.github.com"],
+            cwd=root,
+        )
         run(["git", "config", "user.name", "auto-fix-bot"], cwd=root)
         run(["git", "add", "-A"], cwd=root)
         commit_msg = f"autofix: pr-{pr_number} [agent-fix]"
@@ -714,16 +730,16 @@ def finalize(args, config):
         if not token:
             raise RuntimeError("AUTO_FIX_PUSH_TOKEN is required for push.")
 
-        remote_url = run(["git", "remote", "get-url", "origin"], cwd=root).stdout.strip()
+        remote_url = run(
+            ["git", "remote", "get-url", "origin"], cwd=root
+        ).stdout.strip()
         if remote_url.startswith("git@"):
             match = re.match(r"git@github.com:(.+?/.+?)\\.git", remote_url)
             repo = match.group(1) if match else ""
             https_url = f"https://github.com/{repo}.git" if repo else remote_url
         else:
             https_url = remote_url
-        push_url = https_url.replace(
-            "https://", f"https://x-access-token:{token}@"
-        )
+        push_url = https_url.replace("https://", f"https://x-access-token:{token}@")
         run(["git", "remote", "set-url", "--push", "origin", push_url], cwd=root)
         run(["git", "push", "origin", f"HEAD:{head_ref}"], cwd=root)
 

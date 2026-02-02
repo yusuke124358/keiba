@@ -151,7 +151,9 @@ def find_codex_bin():
 
 
 def ensure_codex_ready(codex_bin):
-    result = subprocess.run([codex_bin, "login", "status"], capture_output=True, text=True)
+    result = subprocess.run(
+        [codex_bin, "login", "status"], capture_output=True, text=True
+    )
     if result.returncode != 0:
         raise RuntimeError(
             "codex login status failed. Run: codex login --device-auth on the runner."
@@ -280,7 +282,11 @@ def build_fixer_prompt(manager_path, review_items_path):
 def load_labels():
     config_path = Path("config/auto_fix.yml")
     if not config_path.exists():
-        return {"auto_fix": "auto-fix", "needs_human": "needs-human", "autogen": "autogen"}
+        return {
+            "auto_fix": "auto-fix",
+            "needs_human": "needs-human",
+            "autogen": "autogen",
+        }
     data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
     labels = data.get("labels") or {}
     return {
@@ -300,7 +306,9 @@ def main():
     parser.add_argument("--schema", default="scripts/agent/output_schema.json")
     parser.add_argument("--prompt", default="scripts/agent/prompt.md")
     parser.add_argument("--output-dir", default="artifacts/agent")
-    parser.add_argument("--publisher", choices=["none", "local", "actions", "token"], default="none")
+    parser.add_argument(
+        "--publisher", choices=["none", "local", "actions", "token"], default="none"
+    )
     parser.add_argument("--once", action="store_true")
     args = parser.parse_args()
 
@@ -480,7 +488,9 @@ def main():
         if not token:
             raise RuntimeError("AUTO_FIX_PUSH_TOKEN is required for token publisher.")
 
-        remote_url = run(["git", "remote", "get-url", "origin"], cwd=root).stdout.strip()
+        remote_url = run(
+            ["git", "remote", "get-url", "origin"], cwd=root
+        ).stdout.strip()
         if remote_url.startswith("git@"):
             match = re.match(r"git@github.com:(.+?/.+?)\\.git", remote_url)
             repo = match.group(1) if match else ""
@@ -527,7 +537,9 @@ def main():
         patch_dir.mkdir(parents=True, exist_ok=True)
         patch_path = patch_dir / f"{exp_id}_{slugify(title)}_{ts}.diff"
         meta_path = patch_dir / f"{exp_id}_{slugify(title)}_{ts}.meta.json"
-        diff = run(["git", "diff", f"origin/{args.base_branch}...HEAD"], cwd=root).stdout
+        diff = run(
+            ["git", "diff", f"origin/{args.base_branch}...HEAD"], cwd=root
+        ).stdout
         patch_path.write_text(diff, encoding="utf-8")
         meta = {
             "title": f"autogen: {exp_id} {title}",
@@ -535,10 +547,14 @@ def main():
             "labels": [labels["autogen"], labels["auto_fix"]],
             "base_branch": args.base_branch,
         }
-        meta_path.write_text(json.dumps(meta, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
+        meta_path.write_text(
+            json.dumps(meta, ensure_ascii=True, indent=2) + "\n", encoding="utf-8"
+        )
         print(f"Patch written for publisher workflow: {patch_path}")
     else:
-        print("Publisher is set to 'none'. Commit created locally; no push or PR performed.")
+        print(
+            "Publisher is set to 'none'. Commit created locally; no push or PR performed."
+        )
 
     return 0
 
