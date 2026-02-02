@@ -1,0 +1,14 @@
+﻿version: 1
+fields:
+  - name: race_id
+    description: "Unique race identifier"
+    type: string
+    source: "JRA-VAN"
+    leak_risk: low
+    notes: "Derived from JRA-VAN record keys"
+  - name: horse_id
+    description: "Unique horse identifier"
+    type: string
+    source: "JRA-VAN"
+    leak_risk: low
+    notes: "Stable across records"

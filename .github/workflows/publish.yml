@@ -1,0 +1,50 @@
+﻿name: publisher
+
+on:
+  workflow_dispatch:
+    inputs:
+      patch_glob:
+        description: "Glob for patch files"
+        required: false
+        default: "artifacts/patches/*.diff"
+  schedule:
+    - cron: "0 2 * * *"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply patches
+        id: apply
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          glob="${{ inputs.patch_glob }}"
+          files=($glob)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No patches found for $glob"
+            echo "applied=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          for f in "${files[@]}"; do
+            echo "Applying $f"
+            git apply "$f"
+          done
+          echo "applied=true" >> "$GITHUB_OUTPUT"
+
+      - name: Create PR
+        if: steps.apply.outputs.applied == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: publisher/patches-${{ github.run_id }}
+          title: "publisher: apply patches"
+          body: "Automated publisher PR (patches applied)."
+          commit-message: "publisher: apply patches"
+          labels: "publisher"

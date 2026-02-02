@@ -326,3 +326,31 @@ Safety and stop conditions
 - `risk_level: high` disables auto-merge.
 - `approval_policy` and `sandbox_mode` are enforced in `.codex/config.toml`.
 - Failures write to `docs/experiments/<id>.md` and the loop exits; rerun on the next schedule.
+
+## Spec / Research / Data Registry
+
+### PDF Spec Ingest
+- Convert PDF to Markdown:
+```bash
+python tools/pdf/pdf_to_md.py "docs/_private/<spec>.pdf"
+```
+- Extracted assets land in `docs/specs/` with a `.meta.json` file.
+
+### Research assets
+- Reading list: `docs/research/reading_list.md`
+- Paper summaries: `docs/research/papers/<slug>.md`
+- Ideas backlog: `docs/research/ideas/backlog.yml`
+
+### Data registry
+- Manifest: `data/manifest.yml`
+- Schemas: `schemas/**`
+- Dictionary: `docs/data_dictionary/`
+
+### Make targets
+- `make verify`
+- `make pdf-spec PDF=docs/_private/<spec>.pdf`
+
+## Publisher Separation
+- Codex should not `git push` directly. Use a publisher instead.
+- Local publisher: `scripts/publish/local_push.sh` (or `.ps1` on Windows)
+- GitHub Actions publisher: `.github/workflows/publish.yml` applies patches from `artifacts/patches/*.diff`

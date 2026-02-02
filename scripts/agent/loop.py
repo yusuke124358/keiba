@@ -1,7 +1,6 @@
 ﻿#!/usr/bin/env python3
 import argparse
 import datetime as dt
-import json
 import os
 import re
 import shutil
@@ -174,114 +173,10 @@ def run_verify(root):
         raise RuntimeError(f"verify failed with code {result.returncode}")
 
 
-def load_json(path):
-    try:
-        return json.loads(Path(path).read_text(encoding="utf-8"))
-    except Exception:
-        return None
-
-
-def render_pr_body(item, codex_output):
-    summary = (codex_output or {}).get("summary", "(summary missing)")
-    change_summary = (codex_output or {}).get("change_summary", [])
-    tests_run = (codex_output or {}).get("tests_run", [])
-    risks = (codex_output or {}).get("risks", [])
-    metrics = (codex_output or {}).get("metrics", {})
-    artifacts = (codex_output or {}).get("artifacts", {})
-
-    lines = []
-    lines.append("## Summary")
-    lines.append(summary)
-    lines.append("")
-
-    if change_summary:
-        lines.append("## Changes")
-        for item_line in change_summary:
-            lines.append(f"- {item_line}")
-        lines.append("")
-
-    if tests_run:
-        lines.append("## Tests")
-        for test in tests_run:
-            lines.append(f"- {test}")
-        lines.append("")
-
-    lines.append("## Experiment")
-    lines.append(f"- id: {item.get('id')}")
-    lines.append(f"- risk_level: {item.get('risk_level')}")
-    lines.append(f"- log: docs/experiments/{item.get('id')}.md")
-    lines.append("")
-
-    if metrics:
-        lines.append("## Metrics")
-        for key, value in metrics.items():
-            lines.append(f"- {key}: {value}")
-        lines.append("")
-
-    if artifacts:
-        lines.append("## Artifacts")
-        for key, value in artifacts.items():
-            lines.append(f"- {key}: {value}")
-        lines.append("")
-
-    if risks:
-        lines.append("## Risks")
-        for risk in risks:
-            lines.append(f"- {risk}")
-        lines.append("")
-
-    return "\n".join(lines).strip() + "\n"
-
-
-def gh_json(args, root):
-    result = run(["gh"] + args, cwd=root, capture_output=True)
-    return json.loads(result.stdout)
-
-
-def ensure_labels(root, labels):
-    for label in labels:
-        try:
-            run(["gh", "label", "create", label["name"], "--color", label["color"],
-                 "--description", label["description"], "--force"], cwd=root)
-        except Exception:
-            pass
-
-
-def pr_checks_green(root, pr_number):
-    try:
-        data = gh_json(["pr", "view", str(pr_number), "--json", "statusCheckRollup"], root)
-    except Exception:
-        return False, ["Unable to query checks"]
-
-    rollup = data.get("statusCheckRollup", []) or []
-    bad = []
-    for check in rollup:
-        state = (check.get("state") or check.get("conclusion") or "").upper()
-        name = check.get("name", "unknown")
-        if state in {"SUCCESS", "NEUTRAL", "SKIPPED"}:
-            continue
-        if not state:
-            continue
-        bad.append(f"{name}:{state}")
-    return len(bad) == 0, bad
-
-
-def pr_has_changes_requested(root, pr_number):
-    try:
-        data = gh_json(["pr", "view", str(pr_number), "--json", "reviewDecision,reviews,comments"], root)
-    except Exception:
-        return False, []
-
-    reasons = []
-    if data.get("reviewDecision") == "CHANGES_REQUESTED":
-        reasons.append("reviewDecision: CHANGES_REQUESTED")
-
-    for review in data.get("reviews", []) or []:
-        if review.get("state") == "CHANGES_REQUESTED":
-            author = (review.get("author") or {}).get("login", "unknown")
-            reasons.append(f"review:{author}: CHANGES_REQUESTED")
-
-    return len(reasons) > 0, reasons
+def write_patch(root, base_ref, patch_path):
+    diff = run(["git", "diff", f"{base_ref}...HEAD"], cwd=root).stdout
+    patch_path.write_text(diff, encoding="utf-8")
+    return patch_path
 
 
 def main():
@@ -296,11 +191,8 @@ def main():
     parser.add_argument("--output-dir", default="artifacts/agent")
     parser.add_argument("--skip-codex", action="store_true")
     parser.add_argument("--skip-tests", action="store_true")
-    parser.add_argument("--skip-pr", action="store_true")
-    parser.add_argument("--skip-review-comment", action="store_true")
-    parser.add_argument("--skip-auto-merge", action="store_true")
-    parser.add_argument("--fix-reviews", action="store_true")
-    parser.add_argument("--max-fix-rounds", type=int, default=2)
+    parser.add_argument("--publisher", choices=["none", "local", "actions"], default="none")
+    parser.add_argument("--patch-dir", default="artifacts/patches")
     args = parser.parse_args()
 
     root = repo_root()
@@ -358,80 +250,25 @@ def main():
 
     commit_msg = f"agent: {exp_id} {slugify(title)}"
     run(["git", "commit", "-m", commit_msg], cwd=root)
-    run(["git", "push", "-u", args.remote, branch], cwd=root)
 
-    if args.skip_pr:
-        print("PR creation skipped.")
+    if args.publisher == "actions":
+        patch_dir = Path(args.patch_dir)
+        patch_dir.mkdir(parents=True, exist_ok=True)
+        patch_path = patch_dir / f"{exp_id}_{slugify(title)}_{ts}.diff"
+        write_patch(root, args.base_branch, patch_path)
+        print(f"Patch written for publisher workflow: {patch_path}")
         return 0
 
-    codex_output = load_json(codex_last)
-    pr_body = (codex_output or {}).get("pr_body") or render_pr_body(item, codex_output)
-    pr_body_path = out_dir / "pr_body.md"
-    pr_body_path.write_text(pr_body, encoding="utf-8")
-
-    pr_title = f"{exp_id}: {title}"
-    run(["gh", "auth", "status"], cwd=root)
-    run(["gh", "pr", "create", "--base", args.base_branch, "--head", branch,
-         "--title", pr_title, "--body-file", str(pr_body_path)], cwd=root)
-
-    pr_data = gh_json(["pr", "view", "--json", "number,url", "--head", branch], root)
-    pr_number = pr_data.get("number")
-    pr_url = pr_data.get("url")
-
-    ensure_labels(root, [
-        {"name": "agent-loop", "color": "0e8a16", "description": "Automated agent loop PR"},
-        {"name": "risk:low", "color": "0e8a16", "description": "Low risk"},
-        {"name": "risk:medium", "color": "fbca04", "description": "Medium risk"},
-        {"name": "risk:high", "color": "d93f0b", "description": "High risk"},
-    ])
-
-    run(["gh", "pr", "edit", str(pr_number), "--add-label", "agent-loop"], cwd=root)
-    run(["gh", "pr", "edit", str(pr_number), "--add-label", f"risk:{risk_level}"], cwd=root)
-
-    if not args.skip_review_comment:
-        run(["gh", "pr", "comment", str(pr_number), "--body", "@codex review"], cwd=root)
-
-    if args.fix_reviews:
-        for _ in range(args.max_fix_rounds):
-            has_changes, reasons = pr_has_changes_requested(root, pr_number)
-            checks_ok, bad_checks = pr_checks_green(root, pr_number)
-            if not has_changes and checks_ok:
-                break
-            issues = reasons + bad_checks
-            if not issues:
-                break
-            prompt = (
-                "Fix PR review issues and failing checks. "
-                f"PR: {pr_url}\nIssues:\n" + "\n".join(f"- {i}" for i in issues)
-                + "\n\nRequirements:\n"
-                + "- Keep the change scoped to the current hypothesis.\n"
-                + f"- Update docs/experiments/{exp_id}.md if results change.\n"
-                + "- Output ONLY valid JSON matching scripts/agent/output_schema.json.\n"
-            )
-            fix_log = out_dir / f"codex_fix_{dt.datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.log"
-            codex_bin = find_codex_bin()
-            if not codex_bin:
-                raise RuntimeError("codex CLI not found in PATH")
-            run_codex(root, prompt, root / args.schema, codex_last, args.profile, fix_log, codex_bin)
-            run_verify(root)
-            run(["git", "add", "-A"], cwd=root)
-            run(["git", "commit", "-m", f"agent: fix {exp_id}"], cwd=root)
-            run(["git", "push", args.remote, branch], cwd=root)
-
-    if risk_level == "high":
-        print("risk_level=high; auto-merge disabled.")
-        return 0
-
-    if not args.skip_auto_merge:
-        checks_ok, bad_checks = pr_checks_green(root, pr_number)
-        if checks_ok:
-            run(["gh", "pr", "merge", str(pr_number), "--auto", "--squash"], cwd=root)
+    if args.publisher == "local":
+        if os.name == "nt":
+            publisher = root / "scripts" / "publish" / "local_push.ps1"
+            run(["powershell", "-ExecutionPolicy", "Bypass", "-File", str(publisher)], cwd=root)
         else:
-            print("Checks not green; auto-merge not enabled:")
-            for bad in bad_checks:
-                print(f"- {bad}")
+            publisher = root / "scripts" / "publish" / "local_push.sh"
+            run(["bash", str(publisher)], cwd=root)
+        return 0
 
-    print(f"PR created: {pr_url}")
+    print("Publisher is set to 'none'. Commit created locally; no push or PR performed.")
     return 0
 
 

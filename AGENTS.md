@@ -10,10 +10,12 @@ Purpose: prioritize reproducibility and leakage prevention for keiba AI developm
 - Do not output secrets or private data (API keys, credentials, tokens, personal data).
 - Avoid destructive git operations (`git reset --hard`, `git push -f`, large history rewrites) unless explicitly approved.
 - Do not run DB write scripts without acquiring the DB lock.
+- Codex should not `git push` or open PRs directly; use publisher workflows instead.
 
 ## Sandbox policy
 - For agent automation, sandbox permissions may be set to maximum.
 - If running on shared runners, prefer conservative settings unless explicitly approved.
+- Default to network OFF; use cached web search unless live access is explicitly approved.
 
 ## Definition of Done
 - Change is small and focused on a single hypothesis.
