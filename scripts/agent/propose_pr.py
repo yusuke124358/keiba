@@ -174,6 +174,10 @@ def flag_supported(help_text: str, flag: str) -> bool:
 
 
 def run_codex(prompt_text, schema_path, output_path, log_path, profile, codex_bin):
+    schema_path = Path(schema_path)
+    if schema_path.exists():
+        normalized_path = Path(log_path).with_suffix(".schema.json")
+        schema_path = normalize_schema_for_codex(schema_path, normalized_path)
     help_text = codex_help(codex_bin)
     cmd = [codex_bin, "exec"]
     if not help_text or flag_supported(help_text, "--profile"):
@@ -241,7 +245,7 @@ def _force_additional_properties_false(node):
             _force_additional_properties_false(value)
 
 
-def normalize_output_schema(schema_path: Path, out_path: Path) -> Path:
+def normalize_schema_for_codex(schema_path: Path, out_path: Path) -> Path:
     data = json.loads(schema_path.read_text(encoding="utf-8"))
     _force_additional_properties_false(data)
     out_path.write_text(
@@ -408,10 +412,6 @@ def main():
     ts = dt.datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     out_dir = Path(args.output_dir) / f"propose_{exp_id}_{ts}"
     out_dir.mkdir(parents=True, exist_ok=True)
-
-    schema_path = normalize_output_schema(
-        root / args.schema, out_dir / "output_schema.normalized.json"
-    )
 
     codex_bin = find_codex_bin()
     if not codex_bin:
