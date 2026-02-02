@@ -10,7 +10,7 @@ Purpose: prioritize reproducibility and leakage prevention for keiba AI developm
 - Do not output secrets or private data (API keys, credentials, tokens, personal data).
 - Avoid destructive git operations (`git reset --hard`, `git push -f`, large history rewrites) unless explicitly approved.
 - Do not run DB write scripts without acquiring the DB lock.
-- Codex should not `git push` or open PRs directly; use publisher workflows instead.
+- Codex (interactive/local) should not `git push` or open PRs directly; use publisher workflows instead.
 
 ## Sandbox policy
 - For agent automation, sandbox permissions may be set to maximum.
@@ -20,7 +20,7 @@ Purpose: prioritize reproducibility and leakage prevention for keiba AI developm
 ## Definition of Done
 - Change is small and focused on a single hypothesis.
 - Tests and evaluation gates are added or updated for the change.
-- `scripts/verify.ps1` (Windows) or `scripts/verify.sh` (Linux/CI) passes.
+- `make ci` passes (`scripts/verify.ps1` / `scripts/verify.sh` call it).
 - Experiment log is saved to `docs/experiments/<id>.md` with required metrics fields.
 
 ## Recommended commands (repo-detected)
@@ -30,7 +30,7 @@ Purpose: prioritize reproducibility and leakage prevention for keiba AI developm
 - unit: `py64_analysis\.venv\Scripts\python.exe -m pytest py64_analysis/tests`
 - system gate: `py64_analysis\.venv\Scripts\python.exe py64_analysis/scripts/check_system_status.py`
 - smoke/integration: `powershell -ExecutionPolicy Bypass -File scripts/smoke_all.ps1` (optional)
-- full gate: `scripts/verify.ps1` (Windows) or `scripts/verify.sh` (Linux/CI)
+- full gate: `make ci` (or `scripts/verify.ps1` / `scripts/verify.sh`)
 
 ## Project memory (must-read)
 - Before starting work, open and read `memory.md`.
@@ -80,6 +80,7 @@ Purpose: prioritize reproducibility and leakage prevention for keiba AI developm
   - Codex (interactive/local) does not git push.
   - Auto-fix workflow publisher may push to the PR branch after gates pass.
   - Never push to protected branches (main).
+  - Codex execution in CI uses self-hosted runner login (ChatGPT subscription). No `OPENAI_API_KEY` is used.
 
 ## Data and leakage rules
 - Use time-based splits only (train < valid < test). Never shuffle across time.
@@ -103,8 +104,7 @@ Purpose: prioritize reproducibility and leakage prevention for keiba AI developm
 
 ## Required commands after changes
 Run from repo root:
-1) py64_analysis\.venv\Scripts\python.exe -m pytest py64_analysis/tests
-2) py64_analysis\.venv\Scripts\python.exe py64_analysis/scripts/check_system_status.py
+1) `make ci` (includes pytest + check_system_status)
 
 ## Config hygiene
 - Prefer KEIBA_CONFIG_PATH to pin experiment configs instead of editing config/config.yaml.

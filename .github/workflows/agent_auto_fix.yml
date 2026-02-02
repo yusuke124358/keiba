@@ -1,0 +1,70 @@
+﻿name: Agent Auto Fix
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review:
+    types: [submitted]
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "PR number (optional)"
+        required: false
+        type: string
+
+jobs:
+  auto-fix:
+    if: ${{ github.event_name != 'issue_comment' || github.event.issue.pull_request }}
+    runs-on: self-hosted
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Preflight
+        shell: bash
+        run: scripts/agent/preflight.sh
+      - name: Configure Codex
+        shell: bash
+        run: |
+          mkdir -p ~/.codex
+          cp .github/runner/codex.config.toml ~/.codex/config.toml
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Python deps
+        run: python -m pip install --upgrade pip pyyaml
+      - name: Resolve PR number
+        id: pr
+        shell: bash
+        run: |
+          pr=""
+          if [[ "${{ github.event_name }}" == "issue_comment" ]]; then
+            if [[ -n "${{ github.event.issue.pull_request }}" ]]; then
+              pr="${{ github.event.issue.number }}"
+            fi
+          elif [[ "${{ github.event_name }}" == "pull_request_review" ]]; then
+            pr="${{ github.event.pull_request.number }}"
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            pr="${{ inputs.pr_number }}"
+          fi
+          echo "pr_number=$pr" >> "$GITHUB_OUTPUT"
+      - name: Run review loop
+        env:
+          AUTO_FIX_PUSH_TOKEN: ${{ secrets.AUTO_FIX_PUSH_TOKEN }}
+          GH_TOKEN: ${{ secrets.AUTO_FIX_PUSH_TOKEN }}
+        shell: bash
+        run: |
+          args=()
+          if [[ -n "${{ steps.pr.outputs.pr_number }}" ]]; then
+            args+=(--pr "${{ steps.pr.outputs.pr_number }}")
+          fi
+          python scripts/agent/review_loop.py "${args[@]}"

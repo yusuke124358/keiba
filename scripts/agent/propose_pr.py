@@ -20,6 +20,9 @@ except Exception:
 from issue_id import build_issue_id
 
 
+PROMPTS_DIR = Path("prompts")
+
+
 def run(cmd, cwd=None, check=True, capture_output=True, text=True, env=None):
     result = subprocess.run(
         cmd,
@@ -147,13 +150,24 @@ def find_codex_bin():
     return shutil.which("codex")
 
 
+def ensure_codex_ready(codex_bin):
+    result = subprocess.run([codex_bin, "login", "status"], capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(
+            "codex login status failed. Run: codex login --device-auth on the runner."
+        )
+
+
 def run_codex(prompt_text, schema_path, output_path, log_path, profile, codex_bin):
     cmd = [
         codex_bin,
         "exec",
         "--profile",
         profile,
-        "--full-auto",
+        "--ask-for-approval",
+        "never",
+        "--sandbox",
+        "workspace-write",
         "--output-schema",
         str(schema_path),
         "--output-last-message",
@@ -220,41 +234,45 @@ def build_diff(root, base_ref, out_path):
     out_path.write_text(diff, encoding="utf-8")
 
 
-def build_review_prompt(diff_path, schema_path):
+def load_prompt(path):
+    if not path.exists():
+        raise RuntimeError(f"Missing prompt: {path}")
+    return path.read_text(encoding="utf-8").strip()
+
+
+def build_review_prompt(diff_path):
+    base = load_prompt(PROMPTS_DIR / "reviewer.md")
     return "\n".join(
         [
-            "You are Reviewer. Use $reviewer-triage.",
+            base,
+            "",
             f"Diff file: {diff_path}",
             "Review the diff for correctness, risks, and missing tests.",
             "Include file/line when possible.",
-            f"Output must conform to schema: {schema_path}",
-            "Only output JSON. No extra text.",
         ]
     )
 
 
-def build_manager_prompt(review_items_path, schema_path):
+def build_manager_prompt(review_items_path):
+    base = load_prompt(PROMPTS_DIR / "manager.md")
     return "\n".join(
         [
-            "You are Manager. Use $manager-approve.",
+            base,
+            "",
             f"Review items JSON: {review_items_path}",
             "Apply business rules from AGENTS.md.",
-            f"Output must conform to schema: {schema_path}",
-            "Only output JSON. No extra text.",
         ]
     )
 
 
-def build_fixer_prompt(manager_path, review_items_path, schema_path):
+def build_fixer_prompt(manager_path, review_items_path):
+    base = load_prompt(PROMPTS_DIR / "fixer.md")
     return "\n".join(
         [
-            "You are Fixer. Use $fixer-implement.",
+            base,
+            "",
             f"Manager decisions: {manager_path}",
             f"Review items: {review_items_path}",
-            "Only execute tasks with decision=DO.",
-            "Do not run make ci; the orchestrator will.",
-            f"Output must conform to schema: {schema_path}",
-            "Only output JSON. No extra text.",
         ]
     )
 
@@ -282,7 +300,8 @@ def main():
     parser.add_argument("--schema", default="scripts/agent/output_schema.json")
     parser.add_argument("--prompt", default="scripts/agent/prompt.md")
     parser.add_argument("--output-dir", default="artifacts/agent")
-    parser.add_argument("--publisher", choices=["none", "local", "actions"], default="none")
+    parser.add_argument("--publisher", choices=["none", "local", "actions", "token"], default="none")
+    parser.add_argument("--once", action="store_true")
     args = parser.parse_args()
 
     root = repo_root()
@@ -318,6 +337,7 @@ def main():
     codex_bin = find_codex_bin()
     if not codex_bin:
         raise RuntimeError("codex CLI not found in PATH")
+    ensure_codex_ready(codex_bin)
 
     implement_output = out_dir / "implement_output.json"
     implement_log = out_dir / "implement_codex.log"
@@ -343,7 +363,7 @@ def main():
 
     review_items_path = out_dir / "review_items.json"
     review_log = out_dir / "review_codex.log"
-    review_prompt = build_review_prompt(diff_path, root / "schemas/agent/review_items.schema.json")
+    review_prompt = build_review_prompt(diff_path)
     run_codex(
         review_prompt,
         root / "schemas/agent/review_items.schema.json",
@@ -356,10 +376,7 @@ def main():
 
     manager_path = out_dir / "manager_decision.json"
     manager_log = out_dir / "manager_codex.log"
-    manager_prompt = build_manager_prompt(
-        review_items_path=review_items_path,
-        schema_path=root / "schemas/agent/manager_decision.schema.json",
-    )
+    manager_prompt = build_manager_prompt(review_items_path=review_items_path)
     run_codex(
         manager_prompt,
         root / "schemas/agent/manager_decision.schema.json",
@@ -371,11 +388,7 @@ def main():
 
     fixer_report_path = out_dir / "fixer_report.json"
     fixer_log = out_dir / "fixer_codex.log"
-    fixer_prompt = build_fixer_prompt(
-        manager_path,
-        review_items_path,
-        root / "schemas/agent/fixer_report.schema.json",
-    )
+    fixer_prompt = build_fixer_prompt(manager_path, review_items_path)
     run_codex(
         fixer_prompt,
         root / "schemas/agent/fixer_report.schema.json",
@@ -462,6 +475,53 @@ def main():
             env["PR_LABELS"] = label_str
             publisher = root / "scripts" / "publish" / "local_push.sh"
             run(["bash", str(publisher)], cwd=root, env=env)
+    elif args.publisher == "token":
+        token = os.environ.get("AUTO_FIX_PUSH_TOKEN")
+        if not token:
+            raise RuntimeError("AUTO_FIX_PUSH_TOKEN is required for token publisher.")
+
+        remote_url = run(["git", "remote", "get-url", "origin"], cwd=root).stdout.strip()
+        if remote_url.startswith("git@"):
+            match = re.match(r"git@github.com:(.+?/.+?)\\.git", remote_url)
+            repo = match.group(1) if match else ""
+            https_url = f"https://github.com/{repo}.git" if repo else remote_url
+        else:
+            https_url = remote_url
+        push_url = https_url.replace("https://", f"https://x-access-token:{token}@")
+        run(["git", "remote", "set-url", "--push", "origin", push_url], cwd=root)
+        run(["git", "push", "origin", f"HEAD:{branch}"], cwd=root)
+
+        env = os.environ.copy()
+        if not env.get("GH_TOKEN"):
+            env["GH_TOKEN"] = token
+        result = run(["gh", "pr", "view", branch], cwd=root, check=False, env=env)
+        if result.returncode != 0:
+            run(
+                [
+                    "gh",
+                    "pr",
+                    "create",
+                    "--base",
+                    args.base_branch,
+                    "--head",
+                    branch,
+                    "--title",
+                    f"autogen: {exp_id} {title}",
+                    "--body-file",
+                    str(pr_body_path),
+                ],
+                cwd=root,
+                env=env,
+            )
+        for label in label_str.split(","):
+            label = label.strip()
+            if label:
+                run(
+                    ["gh", "pr", "edit", branch, "--add-label", label],
+                    cwd=root,
+                    check=False,
+                    env=env,
+                )
     elif args.publisher == "actions":
         patch_dir = root / "artifacts" / "patches"
         patch_dir.mkdir(parents=True, exist_ok=True)

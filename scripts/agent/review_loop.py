@@ -21,6 +21,7 @@ from issue_id import build_issue_id
 
 
 CONFIG_PATH = Path("config/auto_fix.yml")
+PROMPTS_DIR = Path("prompts")
 STATE_DIR = Path("artifacts/agent")
 CURRENT_RUN = STATE_DIR / "current_run.json"
 
@@ -63,7 +64,6 @@ def load_config():
             "recurrence": int(thresholds.get("recurrence", 2)),
             "max_total": int(thresholds.get("max_total", 10)),
         },
-        "codex_version": data.get("codex_version", "0.80.0"),
     }
 
 
@@ -118,6 +118,7 @@ def gh_pr_view(pr_number):
         "url",
         "headRefName",
         "baseRefName",
+        "isCrossRepository",
         "labels",
         "comments",
         "reviews",
@@ -240,33 +241,39 @@ def filter_new_checks(checks, last_completed_at):
     return out
 
 
-def build_prompts(run_dir, bundle_path, review_schema, manager_schema, fixer_schema):
+def load_prompt(path):
+    if not path.exists():
+        raise RuntimeError(f"Missing prompt: {path}")
+    return path.read_text(encoding="utf-8").strip()
+
+
+def build_prompts(run_dir, bundle_path):
+    reviewer_base = load_prompt(PROMPTS_DIR / "reviewer.md")
+    manager_base = load_prompt(PROMPTS_DIR / "manager.md")
+    fixer_base = load_prompt(PROMPTS_DIR / "fixer.md")
+
     reviewer_prompt = "\n".join(
         [
-            "You are Reviewer. Use $reviewer-triage.",
+            reviewer_base,
+            "",
             f"Input bundle JSON: {bundle_path}",
-            f"Output must conform to schema: {review_schema}",
-            "Only output JSON. No extra text.",
         ]
     )
     manager_prompt = "\n".join(
         [
-            "You are Manager. Use $manager-approve.",
+            manager_base,
+            "",
             f"Review items JSON: {run_dir / 'review_items.json'}",
             "Apply business rules from AGENTS.md.",
-            f"Output must conform to schema: {manager_schema}",
-            "Only output JSON. No extra text.",
         ]
     )
     fixer_prompt = "\n".join(
         [
-            "You are Fixer. Use $fixer-implement.",
+            fixer_base,
+            "",
             f"Manager decisions: {run_dir / 'manager_decision.json'}",
             f"Review items: {run_dir / 'review_items.json'}",
-            "Only execute tasks with decision=DO.",
             "Do not commit or push; orchestrator handles that.",
-            f"Output must conform to schema: {fixer_schema}",
-            "Only output JSON. No extra text.",
         ]
     )
     return reviewer_prompt, manager_prompt, fixer_prompt
@@ -285,11 +292,22 @@ def find_codex_bin():
     return shutil.which("codex")
 
 
+def ensure_codex_ready(codex_bin):
+    result = subprocess.run([codex_bin, "login", "status"], capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(
+            "codex login status failed. Run: codex login --device-auth on the runner."
+        )
+
+
 def run_codex(prompt_text, schema_path, output_path, log_path, codex_bin):
     cmd = [
         codex_bin,
         "exec",
-        "--full-auto",
+        "--ask-for-approval",
+        "never",
+        "--sandbox",
+        "workspace-write",
         "--output-schema",
         str(schema_path),
         "--output-last-message",
@@ -403,6 +421,11 @@ def collect(args, config):
 
     if args.pr:
         pr_data = gh_pr_view(args.pr)
+        if pr_data.get("isCrossRepository"):
+            ensure_current_run(
+                {"should_run": False, "reason": "fork_pr", "pr": args.pr}
+            )
+            return None
         labels = {l.get("name") for l in pr_data.get("labels", [])}
         if auto_label not in labels or needs_label in labels:
             ensure_current_run(
@@ -420,6 +443,11 @@ def collect(args, config):
             ensure_current_run({"should_run": False, "reason": "no_pr"})
             return None
         pr_data = gh_pr_view(pr.get("number"))
+        if pr_data.get("isCrossRepository"):
+            ensure_current_run(
+                {"should_run": False, "reason": "fork_pr", "pr": pr.get("number")}
+            )
+            return None
 
     pr_number = pr_data.get("number")
     head_ref = pr_data.get("headRefName")
@@ -469,13 +497,7 @@ def collect(args, config):
     bundle_path = run_dir / "input_bundle.json"
     write_json(bundle_path, bundle)
 
-    review_schema = root / "schemas" / "agent" / "review_items.schema.json"
-    manager_schema = root / "schemas" / "agent" / "manager_decision.schema.json"
-    fixer_schema = root / "schemas" / "agent" / "fixer_report.schema.json"
-
-    reviewer_prompt, manager_prompt, fixer_prompt = build_prompts(
-        run_dir, bundle_path, review_schema, manager_schema, fixer_schema
-    )
+    reviewer_prompt, manager_prompt, fixer_prompt = build_prompts(run_dir, bundle_path)
 
     (run_dir / "reviewer_prompt.txt").write_text(reviewer_prompt, encoding="utf-8")
     (run_dir / "manager_prompt.txt").write_text(manager_prompt, encoding="utf-8")
@@ -491,7 +513,6 @@ def collect(args, config):
         "review_items": str(run_dir / "review_items.json"),
         "manager_decision": str(run_dir / "manager_decision.json"),
         "fixer_report": str(run_dir / "fixer_report.json"),
-        "codex_version": os.environ.get("CODEX_VERSION", "") or config["codex_version"],
     }
     ensure_current_run(run_meta)
     return run_meta
@@ -730,6 +751,7 @@ def run_all(args, config):
     codex_bin = find_codex_bin()
     if not codex_bin:
         raise RuntimeError("codex CLI not found in PATH")
+    ensure_codex_ready(codex_bin)
 
     run_dir = Path(run_meta["run_dir"])
     reviewer_prompt = (run_dir / "reviewer_prompt.txt").read_text(encoding="utf-8")
