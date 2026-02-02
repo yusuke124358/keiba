@@ -1,3 +1,9 @@
+---
+name: data-registry
+description: Codex skill data-registry
+version: 0.1
+---
+
 ﻿---
 name: data-registry
 description: Maintain data/manifest.yml, schemas, and dictionaries with validation when data changes.

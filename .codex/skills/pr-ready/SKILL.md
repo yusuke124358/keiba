@@ -1,3 +1,9 @@
+---
+name: pr-ready
+description: Codex skill pr-ready
+version: 0.1
+---
+
 ﻿# pr-ready
 
 Purpose: ensure a PR is small, reproducible, and passes required gates before submission.

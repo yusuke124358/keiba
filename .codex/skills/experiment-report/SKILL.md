@@ -1,3 +1,9 @@
+---
+name: experiment-report
+description: Codex skill experiment-report
+version: 0.1
+---
+
 ﻿# experiment-report
 
 Purpose: create or update a reproducible experiment log in `docs/experiments/`.

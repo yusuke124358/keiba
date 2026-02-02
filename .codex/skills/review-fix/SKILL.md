@@ -1,3 +1,9 @@
+---
+name: review-fix
+description: Codex skill review-fix
+version: 0.1
+---
+
 ﻿# review-fix
 
 Purpose: apply review feedback and stabilize CI gates.

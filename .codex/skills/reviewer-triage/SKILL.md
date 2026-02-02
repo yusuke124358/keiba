@@ -1,3 +1,9 @@
+---
+name: reviewer-triage
+description: Codex skill reviewer-triage
+version: 0.1
+---
+
 # reviewer-triage
 
 Purpose: normalize raw review signals into a deduplicated issues list.

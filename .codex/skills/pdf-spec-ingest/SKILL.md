@@ -1,3 +1,9 @@
+---
+name: pdf-spec-ingest
+description: Codex skill pdf-spec-ingest
+version: 0.1
+---
+
 ﻿---
 name: pdf-spec-ingest
 description: Ingest a PDF spec into docs/specs, extract key fields, and update the JRA-VAN data dictionary and validations.

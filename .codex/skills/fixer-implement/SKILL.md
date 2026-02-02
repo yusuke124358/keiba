@@ -1,3 +1,9 @@
+---
+name: fixer-implement
+description: Codex skill fixer-implement
+version: 0.1
+---
+
 # fixer-implement
 
 Purpose: implement approved fixes safely and verify gates.
