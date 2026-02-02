@@ -21,9 +21,9 @@ gh auth status >/dev/null 2>&1 || {
 }
 
 if git rev-parse --abbrev-ref --symbolic-full-name @{u} >/dev/null 2>&1; then
-  git -c credential.helper= -c credential.helper="!gh auth git-credential" push
+  git -c credential.helper= -c credential.helper="!gh auth git-credential get" push
 else
-  git -c credential.helper= -c credential.helper="!gh auth git-credential" push -u origin "$branch"
+  git -c credential.helper= -c credential.helper="!gh auth git-credential get" push -u origin "$branch"
 fi
 
 base_branch="${BASE_BRANCH:-main}"
