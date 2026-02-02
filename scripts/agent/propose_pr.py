@@ -217,6 +217,29 @@ def run_codex(prompt_text, schema_path, output_path, log_path, profile, codex_bi
         output_path.write_text(result.stdout or "", encoding="utf-8")
 
 
+def _force_additional_properties_false(node):
+    if isinstance(node, dict):
+        if node.get("type") == "object" or "properties" in node:
+            if node.get("additionalProperties") is None or node.get(
+                "additionalProperties"
+            ) is True:
+                node["additionalProperties"] = False
+        for value in node.values():
+            _force_additional_properties_false(value)
+    elif isinstance(node, list):
+        for value in node:
+            _force_additional_properties_false(value)
+
+
+def normalize_output_schema(schema_path: Path, out_path: Path) -> Path:
+    data = json.loads(schema_path.read_text(encoding="utf-8"))
+    _force_additional_properties_false(data)
+    out_path.write_text(
+        json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    return out_path
+
+
 def diff_size(root):
     run(["git", "add", "-A"], cwd=root)
     out = run(["git", "diff", "--cached", "--numstat"], cwd=root).stdout.strip()
@@ -376,6 +399,10 @@ def main():
     out_dir = Path(args.output_dir) / f"propose_{exp_id}_{ts}"
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    schema_path = normalize_output_schema(
+        root / args.schema, out_dir / "output_schema.normalized.json"
+    )
+
     codex_bin = find_codex_bin()
     if not codex_bin:
         raise RuntimeError("codex CLI not found in PATH")
@@ -386,7 +413,7 @@ def main():
     prompt_text = render_prompt(root / args.prompt, item)
     run_codex(
         prompt_text,
-        root / args.schema,
+        schema_path,
         implement_output,
         implement_log,
         args.profile,
