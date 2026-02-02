@@ -49,6 +49,9 @@ jobs:
         run: |
           python --version
           python -m pip --version
+      - name: Normalize Codex assets
+        shell: cmd
+        run: python scripts\\agent\\normalize_codex_assets.py
       - name: Install Python deps (Linux/macOS)
         if: runner.os != 'Windows'
         shell: bash
