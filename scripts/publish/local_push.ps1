@@ -26,10 +26,11 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 & git rev-parse --abbrev-ref --symbolic-full-name '@{u}' | Out-Null
+$env:GIT_TERMINAL_PROMPT = "0"
 if ($LASTEXITCODE -eq 0) {
-  & git -c credential.helper= -c credential.helper="!gh auth git-credential get" push
+  & git -c credential.helper= -c credential.helper="!gh auth git-credential" push
 } else {
-  & git -c credential.helper= -c credential.helper="!gh auth git-credential get" push -u origin $branch
+  & git -c credential.helper= -c credential.helper="!gh auth git-credential" push -u origin $branch
 }
 
 if (-not $PrTitle) { $PrTitle = $branch }
