@@ -35,6 +35,7 @@ env/
 
 # Data
 data/
+!data/
 data/raw/*.jsonl
 data/processed/
 data/state/fetch_state.json
