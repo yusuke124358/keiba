@@ -160,23 +160,47 @@ def ensure_codex_ready(codex_bin):
         )
 
 
+def codex_help(codex_bin: str) -> str:
+    result = subprocess.run(
+        [codex_bin, "exec", "--help"], capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        return ""
+    return (result.stdout or "") + (result.stderr or "")
+
+
+def flag_supported(help_text: str, flag: str) -> bool:
+    return flag in help_text
+
+
 def run_codex(prompt_text, schema_path, output_path, log_path, profile, codex_bin):
-    cmd = [
-        codex_bin,
-        "exec",
-        "--profile",
-        profile,
-        "--ask-for-approval",
-        "never",
-        "--sandbox",
-        "workspace-write",
-        "--output-schema",
-        str(schema_path),
-        "--output-last-message",
-        str(output_path),
-    ]
-    with open(log_path, "w", encoding="utf-8") as log:
-        result = subprocess.run(cmd + [prompt_text], stdout=log, stderr=log, text=True)
+    help_text = codex_help(codex_bin)
+    cmd = [codex_bin, "exec"]
+    if not help_text or flag_supported(help_text, "--profile"):
+        cmd.extend(["--profile", profile])
+    if flag_supported(help_text, "--ask-for-approval"):
+        cmd.extend(["--ask-for-approval", "never"])
+    if flag_supported(help_text, "--sandbox"):
+        cmd.extend(["--sandbox", "workspace-write"])
+    if flag_supported(help_text, "--output-schema"):
+        cmd.extend(["--output-schema", str(schema_path)])
+    supports_output_last = flag_supported(help_text, "--output-last-message")
+    if supports_output_last:
+        cmd.extend(["--output-last-message", str(output_path)])
+
+    if supports_output_last:
+        with open(log_path, "w", encoding="utf-8") as log:
+            result = subprocess.run(
+                cmd + [prompt_text], stdout=log, stderr=log, text=True
+            )
+    else:
+        result = subprocess.run(cmd + [prompt_text], capture_output=True, text=True)
+        with open(log_path, "w", encoding="utf-8") as log:
+            log.write(result.stdout or "")
+            if result.stderr:
+                log.write("\n")
+                log.write(result.stderr)
+
     if result.returncode != 0:
         tail = ""
         try:
@@ -188,6 +212,9 @@ def run_codex(prompt_text, schema_path, output_path, log_path, profile, codex_bi
         if tail:
             message = f"{message}\n--- codex log tail ---\n{tail}"
         raise RuntimeError(message)
+
+    if not supports_output_last:
+        output_path.write_text(result.stdout or "", encoding="utf-8")
 
 
 def diff_size(root):
