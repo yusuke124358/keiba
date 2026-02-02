@@ -30,7 +30,7 @@ base_branch="${BASE_BRANCH:-main}"
 pr_title="${PR_TITLE:-$branch}"
 pr_body_file="${PR_BODY_FILE:-}"
 
-if gh pr view --head "$branch" >/dev/null 2>&1; then
+if gh pr view "$branch" >/dev/null 2>&1; then
   echo "PR already exists for $branch."
   exit 0
 fi

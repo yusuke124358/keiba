@@ -34,7 +34,7 @@ if ($LASTEXITCODE -eq 0) {
 
 if (-not $PrTitle) { $PrTitle = $branch }
 
-& gh pr view --head $branch | Out-Null
+& gh pr view $branch | Out-Null
 if ($LASTEXITCODE -eq 0) {
   Write-Host "PR already exists for $branch."
   exit 0
