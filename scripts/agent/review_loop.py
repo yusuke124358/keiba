@@ -145,7 +145,7 @@ def list_target_prs(label, needs_human_label):
     )
     prs = []
     for pr in data:
-        labels = {l.get("name") for l in pr.get("labels", [])}
+        labels = {label.get("name") for label in pr.get("labels", [])}
         if needs_human_label in labels:
             continue
         prs.append(pr)
@@ -432,7 +432,7 @@ def collect(args, config):
                 {"should_run": False, "reason": "fork_pr", "pr": args.pr}
             )
             return None
-        labels = {l.get("name") for l in pr_data.get("labels", [])}
+        labels = {label.get("name") for label in pr_data.get("labels", [])}
         if auto_label not in labels or needs_label in labels:
             ensure_current_run(
                 {"should_run": False, "reason": "label_not_eligible", "pr": args.pr}
@@ -494,7 +494,7 @@ def collect(args, config):
             "title": pr_data.get("title", ""),
             "head_ref": head_ref,
             "base_ref": base_ref,
-            "labels": [l.get("name") for l in pr_data.get("labels", [])],
+            "labels": [label.get("name") for label in pr_data.get("labels", [])],
         },
         "signals": {
             "comments": new_comments,
