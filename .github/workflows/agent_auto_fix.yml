@@ -108,8 +108,8 @@ jobs:
           GH_TOKEN: ${{ secrets.AUTO_FIX_PUSH_TOKEN }}
         shell: cmd
         run: |
-          set PR=${{ steps.pr_win.outputs.pr_number }}
-          if not "%PR%"=="" (
+          set "PR=${{ steps.pr_win.outputs.pr_number }}"
+          if not "%PR%"=="" if not "%PR%"=="\n" (
             python scripts\\agent\\review_loop.py --pr %PR%
           ) else (
             python scripts\\agent\\review_loop.py
