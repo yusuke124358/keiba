@@ -25,4 +25,4 @@ jobs:
       - name: Verify
         env:
           VERIFY_BASE: origin/main
-        run: bash scripts/verify.sh
+        run: make ci

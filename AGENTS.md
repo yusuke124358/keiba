@@ -55,6 +55,32 @@ Purpose: prioritize reproducibility and leakage prevention for keiba AI developm
 - All workers report to `tasks/outbox/` (no cross-terminal assumptions).
 - Reviewer scope fixed to PR diff only: `git diff main...<branch>`.
 
+## Review Automation Protocol
+- Inputs:
+  - PR上のレビューコメント（CodeRabbit, Bugbot, @codex review 等すべて）
+  - CI失敗ログ（check runs の summary）
+- Roles (sequential, not parallel):
+  1) Reviewer: raw signals → normalized issues list (JSON)
+  2) Manager: issues list + business rules → decisions/tasks (JSON)
+  3) Fixer: tasks(decision=DO)のみ実行し、テスト/Evalを通してPR更新
+- Business rules (このプロジェクト固有の要件を書く場所):
+  - データリーク禁止 / 時系列分割の厳守 / 指標の下限 / 再現性(Seed固定) / 学習・推論の整合
+- Manager decision rubric:
+  - DO: ビジネス整合OK かつ CI/Evalで検証可能
+  - DEFER: 今やらなくてもビジネス影響が小さい（後回し）
+  - REJECT: ビジネス要件と矛盾、または不要（理由を必ず書く）
+  - NEEDS_HUMAN: 仕様が曖昧/設計判断が必要/high-risk
+  - 時間がかかることは却下理由にしない。ビジネス要件整合が最優先。
+- Stop conditions:
+  - 同一PRでN回連続失敗したら needs-human
+  - 同一指摘が再発する場合、根本原因の修正 or テスト追加を優先
+- Issue id rule:
+  - `iss_` + sha1(`source|file|line|normalized_message`) の先頭12桁
+- Git operations:
+  - Codex (interactive/local) does not git push.
+  - Auto-fix workflow publisher may push to the PR branch after gates pass.
+  - Never push to protected branches (main).
+
 ## Data and leakage rules
 - Use time-based splits only (train < valid < test). Never shuffle across time.
 - Feature engineering must use data available at or before race time and buy time.

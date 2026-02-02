@@ -1,9 +1,11 @@
 PY ?= py64_analysis/.venv/bin/python
 
-.PHONY: verify pdf-spec
+.PHONY: verify pdf-spec ci
 
-verify:
-	bash scripts/verify.sh
+ci:
+	bash scripts/ci.sh
+
+verify: ci
 
 pdf-spec:
 	@if [ -z "$(PDF)" ]; then \
