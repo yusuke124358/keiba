@@ -1,3 +1,9 @@
+---
+name: manager-approve
+description: Codex skill manager-approve
+version: 0.1
+---
+
 # manager-approve
 
 Purpose: decide which review issues to fix based on business rules.

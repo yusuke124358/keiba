@@ -1,3 +1,9 @@
+---
+name: paper-ingest
+description: Codex skill paper-ingest
+version: 0.1
+---
+
 ﻿---
 name: paper-ingest
 description: Convert a research paper PDF into a structured markdown summary with reproducible details.

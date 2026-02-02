@@ -1,3 +1,9 @@
+---
+name: jravan-spec-to-schema
+description: Codex skill jravan-spec-to-schema
+version: 0.1
+---
+
 ﻿---
 name: jravan-spec-to-schema
 description: Generate or update JRA-VAN JSON schemas from spec markdown and validate outputs.

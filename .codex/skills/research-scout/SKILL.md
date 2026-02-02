@@ -1,3 +1,9 @@
+---
+name: research-scout
+description: Codex skill research-scout
+version: 0.1
+---
+
 ﻿---
 name: research-scout
 description: Perform web-search-based research to build a reading list and experiment ideas backlog.
