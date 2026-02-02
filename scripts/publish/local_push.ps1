@@ -1,7 +1,8 @@
-﻿param(
+param(
   [string]$BaseBranch = "main",
   [string]$PrTitle = "",
-  [string]$PrBodyFile = ""
+  [string]$PrBodyFile = "",
+  [string]$Labels = ""
 )
 
 $root = (& git rev-parse --show-toplevel).Trim()
@@ -35,14 +36,26 @@ if ($LASTEXITCODE -eq 0) {
 
 if (-not $PrTitle) { $PrTitle = $branch }
 
+$prExists = $false
 & gh pr view $branch | Out-Null
-if ($LASTEXITCODE -eq 0) {
-  Write-Host "PR already exists for $branch."
-  exit 0
+if ($LASTEXITCODE -eq 0) { $prExists = $true }
+
+if (-not $prExists) {
+  if ($PrBodyFile -and (Test-Path $PrBodyFile)) {
+    & gh pr create --base $BaseBranch --head $branch --title $PrTitle --body-file $PrBodyFile
+  } else {
+    & gh pr create --base $BaseBranch --head $branch --title $PrTitle --body "Automated publisher PR for $branch"
+  }
 }
 
-if ($PrBodyFile -and (Test-Path $PrBodyFile)) {
-  & gh pr create --base $BaseBranch --head $branch --title $PrTitle --body-file $PrBodyFile
-} else {
-  & gh pr create --base $BaseBranch --head $branch --title $PrTitle --body "Automated publisher PR for $branch"
+if (-not $Labels) { $Labels = $env:PR_LABELS }
+if ($Labels) {
+  $labelList = $Labels.Split(",") | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" }
+  foreach ($label in $labelList) {
+    & gh pr edit $branch --add-label $label | Out-Null
+  }
+}
+
+if ($prExists) {
+  Write-Host "PR already exists for $branch."
 }

@@ -11,10 +11,11 @@ Optional env vars:
 - `BASE_BRANCH` (default: `main`)
 - `PR_TITLE` (default: branch name)
 - `PR_BODY_FILE` (path to PR body)
+- `PR_LABELS` (comma-separated labels)
 
 Windows:
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\publish\local_push.ps1
+powershell -ExecutionPolicy Bypass -File scripts\publish\local_push.ps1 -Labels "autogen,auto-fix"
 ```
 
 ## GitHub Actions publisher

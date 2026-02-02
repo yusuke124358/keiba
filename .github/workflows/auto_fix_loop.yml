@@ -1,17 +1,27 @@
 name: auto-fix-loop
 
 on:
+  issue_comment:
+    types: [created]
+  pull_request_review:
+    types: [submitted]
+  workflow_run:
+    workflows: ["ci"]
+    types: [completed]
   schedule:
     - cron: "*/15 * * * *"
   workflow_dispatch:
 
 concurrency:
-  group: auto-fix-${{ github.ref }}
+  group: auto-fix-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
   cancel-in-progress: true
 
 jobs:
   auto_fix:
-    runs-on: ubuntu-latest
+    if: >
+      (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'failure')
+      && (github.event_name != 'issue_comment' || github.event.issue.pull_request != null)
+    runs-on: self-hosted
     permissions:
       contents: read
       pull-requests: write
@@ -68,12 +78,38 @@ jobs:
           gh label create "${{ steps.cfg.outputs.auto_fix_label }}" --color "0E8A16" --description "Auto-fix eligible PR" --force || true
           gh label create "${{ steps.cfg.outputs.needs_human_label }}" --color "B60205" --description "Needs human decision" --force || true
 
+      - name: Resolve PR number
+        id: pr
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text(encoding="utf-8"))
+          pr_number = ""
+          if "pull_request" in event and event["pull_request"]:
+            pr_number = str(event["pull_request"].get("number", ""))
+          elif "issue" in event and event["issue"] and event["issue"].get("pull_request"):
+            pr_number = str(event["issue"].get("number", ""))
+          elif "workflow_run" in event:
+            prs = event["workflow_run"].get("pull_requests") or []
+            if prs:
+              pr_number = str(prs[0].get("number", ""))
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+            fh.write(f"pr_number={pr_number}\n")
+          PY
+
       - name: Collect signals
         id: collect
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          py64_analysis/.venv/bin/python scripts/agent/review_loop.py --stage collect
+          if [ -n "${{ steps.pr.outputs.pr_number }}" ]; then
+            py64_analysis/.venv/bin/python scripts/agent/review_loop.py --stage collect --pr "${{ steps.pr.outputs.pr_number }}"
+          else
+            py64_analysis/.venv/bin/python scripts/agent/review_loop.py --stage collect
+          fi
           py64_analysis/.venv/bin/python - <<'PY'
           import json
           import os

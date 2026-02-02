@@ -1,0 +1,77 @@
+name: human-command
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  handle:
+    if: github.event.issue.pull_request != null
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install deps
+        run: python -m pip install pyyaml
+
+      - name: Load config
+        id: cfg
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          import yaml
+
+          data = yaml.safe_load(Path("config/auto_fix.yml").read_text(encoding="utf-8")) or {}
+          labels = data.get("labels") or {}
+          auto_fix = labels.get("auto_fix", "auto-fix")
+          needs_human = labels.get("needs_human", "needs-human")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              fh.write(f"auto_fix_label={auto_fix}\n")
+              fh.write(f"needs_human_label={needs_human}\n")
+          PY
+
+      - name: Parse command
+        id: cmd
+        run: |
+          python - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          body = Path(os.environ["GITHUB_EVENT_PATH"]).read_text(encoding="utf-8")
+          import json
+          data = json.loads(body)
+          text = (data.get("comment") or {}).get("body", "")
+          m = re.search(r"/human\\s+(approve|clarify|reject)\\b", text, re.IGNORECASE)
+          if not m:
+              with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+                  fh.write("command=\n")
+              raise SystemExit(0)
+          cmd = m.group(1).lower()
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              fh.write(f"command={cmd}\n")
+          PY
+
+      - name: Apply command
+        if: steps.cmd.outputs.command != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pr_number="${{ github.event.issue.number }}"
+          cmd="${{ steps.cmd.outputs.command }}"
+          auto_fix="${{ steps.cfg.outputs.auto_fix_label }}"
+          needs_human="${{ steps.cfg.outputs.needs_human_label }}"
+
+          if [ "$cmd" = "approve" ] || [ "$cmd" = "clarify" ]; then
+            gh pr edit "$pr_number" --remove-label "$needs_human" >/dev/null 2>&1 || true
+            gh pr edit "$pr_number" --add-label "$auto_fix" >/dev/null 2>&1 || true
+            gh pr comment "$pr_number" --body "Human command received: $cmd. Auto-fix resumed." || true
+          elif [ "$cmd" = "reject" ]; then
+            gh pr edit "$pr_number" --remove-label "$auto_fix" >/dev/null 2>&1 || true
+            gh pr edit "$pr_number" --add-label "$needs_human" >/dev/null 2>&1 || true
+            gh pr comment "$pr_number" --body "Human command received: reject. Auto-fix paused." || true
+          fi

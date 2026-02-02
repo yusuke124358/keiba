@@ -2,8 +2,13 @@ PY ?= py64_analysis/.venv/bin/python
 
 .PHONY: verify pdf-spec ci
 
+ifeq ($(OS),Windows_NT)
+ci:
+	powershell -ExecutionPolicy Bypass -File scripts/ci.ps1
+else
 ci:
 	bash scripts/ci.sh
+endif
 
 verify: ci
 
