@@ -1,4 +1,5 @@
 import argparse
+import base64
 import datetime as dt
 import json
 import os
@@ -568,9 +569,21 @@ def main():
             https_url = f"https://github.com/{repo}.git" if repo else remote_url
         else:
             https_url = remote_url
-        push_url = https_url.replace("https://", f"https://x-access-token:{token}@")
-        run(["git", "remote", "set-url", "--push", "origin", push_url], cwd=root)
-        run(["git", "push", "origin", f"HEAD:{branch}"], cwd=root)
+        auth = base64.b64encode(f"x-access-token:{token}".encode("utf-8")).decode(
+            "ascii"
+        )
+        header = f"AUTHORIZATION: basic {auth}"
+        run(
+            [
+                "git",
+                "-c",
+                f"http.extraHeader={header}",
+                "push",
+                https_url,
+                f"HEAD:{branch}",
+            ],
+            cwd=root,
+        )
 
         env = os.environ.copy()
         if not env.get("GH_TOKEN"):
