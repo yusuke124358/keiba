@@ -9,7 +9,7 @@
     "risks": {"type": "array", "items": {"type": "string"}},
     "metrics": {
       "type": "object",
-      "additionalProperties": true,
+      "additionalProperties": false,
       "properties": {
         "roi": {"type": "string"},
         "total_stake": {"type": "string"},
