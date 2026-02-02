@@ -127,7 +127,18 @@ def gh_pr_view(pr_number):
         "reviewThreads",
         "statusCheckRollup",
     ]
-    return gh_json(["pr", "view", str(pr_number), "--json", ",".join(fields)])
+    try:
+        return gh_json(["pr", "view", str(pr_number), "--json", ",".join(fields)])
+    except RuntimeError as exc:
+        message = str(exc)
+        if 'Unknown JSON field: "reviewThreads"' in message:
+            fallback_fields = [f for f in fields if f != "reviewThreads"]
+            data = gh_json(
+                ["pr", "view", str(pr_number), "--json", ",".join(fallback_fields)]
+            )
+            data["reviewThreads"] = []
+            return data
+        raise
 
 
 def list_target_prs(label, needs_human_label):
