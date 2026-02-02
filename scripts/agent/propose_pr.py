@@ -338,7 +338,7 @@ def main():
     max_diff_size = int(item.get("max_diff_size", 200))
 
     branch = f"agent/{exp_id}-{slugify(title)}"
-    run(["git", "checkout", "-b", branch], cwd=root)
+    run(["git", "checkout", "-B", branch], cwd=root)
 
     update_item(item, branch)
     save_backlog(backlog_path, data)
