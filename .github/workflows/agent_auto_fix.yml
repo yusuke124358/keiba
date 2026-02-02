@@ -49,9 +49,16 @@ jobs:
           if not exist "%USERPROFILE%\\.codex" mkdir "%USERPROFILE%\\.codex"
           copy /Y .github\\runner\\codex.config.toml "%USERPROFILE%\\.codex\\config.toml"
       - name: Setup Python
+        if: runner.os != 'Windows'
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - name: Verify Python (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          python --version
+          python -m pip --version
       - name: Install Python deps (Linux/macOS)
         if: runner.os != 'Windows'
         shell: bash
