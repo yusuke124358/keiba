@@ -28,6 +28,12 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+          clean: true
+      - name: Ensure clean workspace
+        shell: cmd
+        run: |
+          git reset --hard
+          git clean -fdx
       - name: Preflight (Linux/macOS)
         if: runner.os != 'Windows'
         shell: bash
