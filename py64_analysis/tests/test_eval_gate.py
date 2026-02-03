@@ -40,10 +40,10 @@ def test_eval_gate_experiment_requires_metrics(tmp_path):
         """,
     )
     errors = validate_eval_fields(path)
-    assert any("roi must not be N/A" in e.lower() for e in errors)
-    assert any("total stake must not be N/A" in e.lower() for e in errors)
-    assert any("n_bets must not be N/A" in e.lower() for e in errors)
-    assert any("max drawdown must not be N/A" in e.lower() for e in errors)
+    assert any("roi must not be n/a" in e.lower() for e in errors)
+    assert any("total stake must not be n/a" in e.lower() for e in errors)
+    assert any("n_bets must not be n/a" in e.lower() for e in errors)
+    assert any("max drawdown must not be n/a" in e.lower() for e in errors)
 
 
 def test_eval_gate_experiment_test_period_format(tmp_path):
