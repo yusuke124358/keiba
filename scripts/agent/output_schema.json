@@ -32,5 +32,14 @@
     "pr_body": {"type": "string"},
     "followups": {"type": "array", "items": {"type": "string"}}
   },
-  "required": ["summary", "change_summary", "tests_run", "pr_body"]
+  "required": [
+    "summary",
+    "change_summary",
+    "tests_run",
+    "risks",
+    "metrics",
+    "artifacts",
+    "pr_body",
+    "followups"
+  ]
 }
