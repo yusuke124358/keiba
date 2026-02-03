@@ -18,33 +18,25 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Preflight
-        shell: powershell
-        run: scripts/agent/preflight.ps1
+        shell: cmd
+        run: powershell -ExecutionPolicy Bypass -File scripts\agent\preflight.ps1
       - name: Configure Codex
-        shell: powershell
-        run: |
-          New-Item -ItemType Directory -Force -Path "$HOME\.codex" | Out-Null
-          Copy-Item -Path .github/runner/codex.config.toml -Destination "$HOME\.codex\config.toml" -Force
+        shell: cmd
+        run: powershell -ExecutionPolicy Bypass -Command "New-Item -ItemType Directory -Force -Path \"$env:USERPROFILE\\.codex\" | Out-Null; Copy-Item -Path .github/runner/codex.config.toml -Destination \"$env:USERPROFILE\\.codex\\config.toml\" -Force"
       - name: Run Scientist Loop (one action)
-        shell: powershell
-        run: python scripts/agent/loop.py --once
+        shell: cmd
+        run: python scripts\agent\loop.py --once
       - name: Publish If Changes
-        shell: powershell
+        shell: cmd
         env:
           AUTO_FIX_PUSH_TOKEN: ${{ secrets.AUTO_FIX_PUSH_TOKEN }}
         run: |
-          $ahead = git rev-list --count origin/main..HEAD
-          if ($ahead -eq 0) {
-            Write-Host "No changes to publish."
-            exit 0
-          }
-          $title = "autogen: scientist loop"
-          $body = "docs/automation.md"
-          $labels = "autogen,auto-fix"
-          if (Test-Path "artifacts/agent/loop_pr_body.md") {
-            $body = "artifacts/agent/loop_pr_body.md"
-          }
-          if (Test-Path "artifacts/agent/loop_labels.txt") {
-            $labels = (Get-Content "artifacts/agent/loop_labels.txt" -Raw).Trim()
-          }
-          python scripts/publish/publisher.py --base main --title "$title" --body-file "$body" --labels "$labels"
+          powershell -ExecutionPolicy Bypass -Command ^
+            "$ahead = git rev-list --count origin/main..HEAD; ^
+             if ($ahead -eq 0) { Write-Host 'No changes to publish.'; exit 0 }; ^
+             $title = 'autogen: scientist loop'; ^
+             $body = 'docs/automation.md'; ^
+             $labels = 'autogen,auto-fix'; ^
+             if (Test-Path 'artifacts/agent/loop_pr_body.md') { $body = 'artifacts/agent/loop_pr_body.md' }; ^
+             if (Test-Path 'artifacts/agent/loop_labels.txt') { $labels = (Get-Content 'artifacts/agent/loop_labels.txt' -Raw).Trim() }; ^
+             python scripts/publish/publisher.py --base main --title $title --body-file $body --labels $labels"
