@@ -4,6 +4,7 @@ Purpose: prioritize reproducibility and leakage prevention for keiba AI developm
 
 ## Project objective
 - Build reproducible, leakage-safe horse-racing AI with time-based evaluation and auditable, incremental changes.
+- Run a Scientist Loop that proposes experiments from seed hypotheses, executes them, and checkpoints every 50 runs.
 
 ## Prohibited actions
 - Never delete or overwrite `data/raw`, `data/processed`, or `baselines` without explicit human approval.
@@ -16,12 +17,14 @@ Purpose: prioritize reproducibility and leakage prevention for keiba AI developm
 - For agent automation, sandbox permissions may be set to maximum.
 - If running on shared runners, prefer conservative settings unless explicitly approved.
 - Default to network OFF; use cached web search unless live access is explicitly approved.
+- Scientist Loop runs on self-hosted runner with Codex CLI login; `OPENAI_API_KEY` is not used in GitHub Actions.
 
 ## Definition of Done
 - Change is small and focused on a single hypothesis.
 - Tests and evaluation gates are added or updated for the change.
 - `make ci` passes (`scripts/verify.ps1` / `scripts/verify.sh` call it).
 - Experiment log is saved to `docs/experiments/<id>.md` with required metrics fields.
+- Every 50 runs, generate a checkpoint summary and stop for human review (`needs-human`).
 
 ## Recommended commands (repo-detected)
 - format: `py64_analysis\.venv\Scripts\python.exe -m ruff format py64_analysis` (optional)

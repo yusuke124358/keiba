@@ -1,323 +1,107 @@
 #!/usr/bin/env python3
 import argparse
-import datetime as dt
-import os
-import re
-import shutil
 import subprocess
-import sys
+from datetime import datetime
 from pathlib import Path
 
-try:
-    import yaml
-except Exception:
-    print(
-        "PyYAML is required to run the agent loop. Install with: pip install pyyaml",
-        file=sys.stderr,
-    )
-    raise
 
-
-def run(cmd, cwd=None, check=True, capture_output=True, text=True):
-    result = subprocess.run(
-        cmd, cwd=cwd, check=False, capture_output=capture_output, text=text
-    )
-    if check and result.returncode != 0:
-        stderr = result.stderr.strip() if result.stderr else ""
-        raise RuntimeError(
-            f"Command failed ({result.returncode}): {' '.join(cmd)}\n{stderr}"
-        )
-    return result
-
-
-def repo_root():
-    out = run(["git", "rev-parse", "--show-toplevel"]).stdout.strip()
+def repo_root() -> Path:
+    out = subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"],
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout.strip()
     return Path(out)
 
 
-def slugify(text):
-    text = text.lower()
-    text = re.sub(r"[^a-z0-9]+", "-", text)
-    return text.strip("-") or "change"
-
-
-def ensure_clean(root):
-    status = run(["git", "status", "--porcelain"], cwd=root).stdout.strip()
-    if status:
-        raise RuntimeError(
-            "Working tree not clean. Commit or stash changes before running the loop."
-        )
-
-
-def git_fetch_checkout(root, remote, base_branch):
-    run(["git", "fetch", remote], cwd=root)
-    run(["git", "checkout", base_branch], cwd=root)
-    run(["git", "pull", "--ff-only", remote, base_branch], cwd=root)
-
-
-def load_backlog(path):
-    data = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
-    if not isinstance(data, dict) or "items" not in data:
-        raise RuntimeError("Invalid backlog format: expected top-level 'items'")
-    return data
-
-
-def pick_item(items, pick_id=None):
-    if pick_id:
-        for item in items:
-            if item.get("id") == pick_id:
-                return item
-        return None
-    for item in items:
-        status = str(item.get("status", "todo")).lower()
-        if status in {"todo", "ready"}:
-            return item
-    return None
-
-
-def update_item(item, branch):
-    item["status"] = "in_progress"
-    item["picked_at"] = dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
-    item["branch"] = branch
-
-
-def save_backlog(path, data):
-    Path(path).write_text(
-        yaml.safe_dump(data, sort_keys=False, allow_unicode=False), encoding="utf-8"
+def gh_has_needs_human(root: Path, label: str) -> bool:
+    result = subprocess.run(
+        ["gh", "pr", "list", "--label", label, "--state", "open", "--limit", "1"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
     )
+    return bool(result.stdout.strip())
 
 
-def ensure_experiment_log(root, exp_id, title, risk_level, max_diff_size):
-    log_path = root / "docs" / "experiments" / f"{exp_id}.md"
-    if log_path.exists():
-        return log_path
-
-    template_path = root / "docs" / "experiments" / "_template.md"
-    if not template_path.exists():
-        raise RuntimeError("Missing docs/experiments/_template.md")
-
-    text = template_path.read_text(encoding="utf-8")
-    text = text.replace("<id>", exp_id)
-    text = text.replace("<title>", title)
-    text = text.replace("<low|medium|high>", str(risk_level))
-    text = text.replace("<int>", str(max_diff_size))
-    text = text.replace("experiment|infra", "experiment")
-    log_path.write_text(text, encoding="utf-8")
-    return log_path
-
-
-def render_prompt(template_path, item):
-    text = Path(template_path).read_text(encoding="utf-8")
-
-    def render_list(value):
-        if not value:
-            return "- (none)"
-        if isinstance(value, str):
-            return f"- {value}"
-        return "\n".join(f"- {v}" for v in value)
-
-    replacements = {
-        "{{id}}": item.get("id", ""),
-        "{{title}}": item.get("title", ""),
-        "{{hypothesis}}": item.get("hypothesis", ""),
-        "{{risk_level}}": item.get("risk_level", ""),
-        "{{max_diff_size}}": str(item.get("max_diff_size", "")),
-        "{{change_scope}}": render_list(item.get("change_scope")),
-        "{{acceptance_criteria}}": render_list(item.get("acceptance_criteria")),
-        "{{metrics}}": render_list(item.get("metrics")),
-    }
-    for k, v in replacements.items():
-        text = text.replace(k, v)
-    return text
-
-
-def find_codex_bin():
-    if os.name == "nt":
-        for name in ("codex.cmd", "codex.exe", "codex"):
-            path = shutil.which(name)
-            if path:
-                return path
-    return shutil.which("codex")
-
-
-def run_codex(
-    root, prompt_text, schema_path, output_last_message, profile, log_path, codex_bin
-):
-    cmd = [
-        codex_bin,
-        "exec",
-        "--profile",
-        profile,
-        "--full-auto",
-        "--output-schema",
-        str(schema_path),
-        "--output-last-message",
-        str(output_last_message),
-    ]
-
-    with open(log_path, "w", encoding="utf-8") as log:
-        result = subprocess.run(
-            cmd + [prompt_text],
-            cwd=root,
-            stdout=log,
-            stderr=log,
-            text=True,
-        )
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"codex exec failed with code {result.returncode}. See {log_path}"
-        )
-
-
-def diff_size(root):
-    run(["git", "add", "-A"], cwd=root)
-    out = run(["git", "diff", "--cached", "--numstat"], cwd=root).stdout.strip()
-    added = deleted = 0
-    for line in out.splitlines():
-        parts = line.split("\t")
-        if len(parts) < 2:
-            continue
-        try:
-            a = int(parts[0]) if parts[0].isdigit() else 0
-            d = int(parts[1]) if parts[1].isdigit() else 0
-        except ValueError:
-            a = d = 0
-        added += a
-        deleted += d
-    return added + deleted
-
-
-def run_verify(root):
-    if os.name == "nt":
-        cmd = [
-            "powershell",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-File",
-            str(root / "scripts" / "verify.ps1"),
-        ]
-    else:
-        cmd = ["bash", str(root / "scripts" / "verify.sh")]
+def run(cmd, root: Path) -> None:
     result = subprocess.run(cmd, cwd=root)
     if result.returncode != 0:
-        raise RuntimeError(f"verify failed with code {result.returncode}")
+        raise RuntimeError(f"Command failed ({result.returncode}): {' '.join(cmd)}")
 
-
-def write_patch(root, base_ref, patch_path):
-    diff = run(["git", "diff", f"{base_ref}...HEAD"], cwd=root).stdout
-    patch_path.write_text(diff, encoding="utf-8")
-    return patch_path
-
-
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--backlog", default="experiments/backlog.yml")
-    parser.add_argument("--id", default="")
-    parser.add_argument("--base-branch", default="main")
-    parser.add_argument("--remote", default="origin")
-    parser.add_argument("--profile", default="agent_loop")
-    parser.add_argument("--schema", default="scripts/agent/output_schema.json")
-    parser.add_argument("--prompt", default="scripts/agent/prompt.md")
-    parser.add_argument("--output-dir", default="artifacts/agent")
-    parser.add_argument("--skip-codex", action="store_true")
-    parser.add_argument("--skip-tests", action="store_true")
-    parser.add_argument(
-        "--publisher", choices=["none", "local", "actions"], default="none"
+def git_ahead_count(root: Path, base_ref: str = "origin/main") -> int:
+    result = subprocess.run(
+        ["git", "rev-list", "--count", f"{base_ref}..HEAD"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
     )
-    parser.add_argument("--patch-dir", default="artifacts/patches")
-    args = parser.parse_args()
+    try:
+        return int(result.stdout.strip())
+    except Exception:
+        return 0
+
+
+def write_loop_artifacts(root: Path, title: str, labels: str) -> Path:
+    out_dir = root / "artifacts" / "agent"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    body_path = out_dir / "loop_pr_body.md"
+    body = [
+        "# Scientist Loop PR",
+        "",
+        f"- Generated at: {datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')}",
+        f"- Title: {title}",
+        "",
+        "## Repro",
+        "- `make ci`",
+        "",
+        "## Notes",
+        "- This PR was created by the scientist loop.",
+    ]
+    body_path.write_text("\n".join(body), encoding="utf-8")
+    (out_dir / "loop_labels.txt").write_text(labels, encoding="utf-8")
+    return body_path
+
+
+def main() -> int:
+    p = argparse.ArgumentParser()
+    p.add_argument("--once", action="store_true", help="Run at most one action.")
+    p.add_argument("--needs-human-label", default="needs-human")
+    args = p.parse_args()
 
     root = repo_root()
-    os.chdir(root)
 
-    ensure_clean(root)
-    git_fetch_checkout(root, args.remote, args.base_branch)
-
-    backlog_path = root / args.backlog
-    data = load_backlog(backlog_path)
-    item = pick_item(data.get("items", []), args.id or None)
-    if not item:
-        print("No backlog items available.")
+    if gh_has_needs_human(root, args.needs_human_label):
+        print("needs-human present; skipping loop.")
         return 0
 
-    exp_id = item.get("id")
-    title = item.get("title", "")
-    risk_level = item.get("risk_level", "medium")
-    max_diff_size = int(item.get("max_diff_size", 200))
+    # Step 1: checkpoint if due
+    try:
+        run(["python", "scripts/agent/checkpoint.py"], root)
+        if git_ahead_count(root) > 0:
+            labels = "checkpoint,needs-human"
+            write_loop_artifacts(root, "checkpoint", labels)
+            print("Checkpoint created; stopping after one action.")
+            return 0
+    except Exception:
+        pass
 
-    branch = f"agent/{exp_id}-{slugify(title)}"
-    run(["git", "checkout", "-b", branch], cwd=root)
-
-    update_item(item, branch)
-    save_backlog(backlog_path, data)
-
-    ensure_experiment_log(root, exp_id, title, risk_level, max_diff_size)
-
-    ts = dt.datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    out_dir = Path(args.output_dir) / f"{exp_id}_{ts}"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    codex_log = out_dir / "codex_exec.log"
-    codex_last = out_dir / "codex_last_message.json"
-
-    if not args.skip_codex:
-        codex_bin = find_codex_bin()
-        if not codex_bin:
-            raise RuntimeError("codex CLI not found in PATH")
-        prompt_text = render_prompt(root / args.prompt, item)
-        run_codex(
-            root,
-            prompt_text,
-            root / args.schema,
-            codex_last,
-            args.profile,
-            codex_log,
-            codex_bin,
-        )
-
-    total_diff = diff_size(root)
-    if total_diff > max_diff_size:
-        run(["git", "reset"], cwd=root, check=False)
-        raise RuntimeError(
-            f"Diff size {total_diff} exceeds max_diff_size {max_diff_size}"
-        )
-
-    if not args.skip_tests:
-        run_verify(root)
-
-    run(["git", "add", "-A"], cwd=root)
-    status = run(["git", "status", "--porcelain"], cwd=root).stdout.strip()
-    if not status:
-        print("No changes to commit.")
+    # Step 2: plan + run one experiment
+    run(["python", "scripts/agent/plan_next_experiment.py"], root)
+    plans = sorted((root / "artifacts" / "agent").glob("plan_*.json"))
+    if not plans:
+        print("No plan generated.")
         return 0
-
-    commit_msg = f"agent: {exp_id} {slugify(title)}"
-    run(["git", "commit", "-m", commit_msg], cwd=root)
-
-    if args.publisher == "actions":
-        patch_dir = Path(args.patch_dir)
-        patch_dir.mkdir(parents=True, exist_ok=True)
-        patch_path = patch_dir / f"{exp_id}_{slugify(title)}_{ts}.diff"
-        write_patch(root, args.base_branch, patch_path)
-        print(f"Patch written for publisher workflow: {patch_path}")
-        return 0
-
-    if args.publisher == "local":
-        if os.name == "nt":
-            publisher = root / "scripts" / "publish" / "local_push.ps1"
-            run(
-                ["powershell", "-ExecutionPolicy", "Bypass", "-File", str(publisher)],
-                cwd=root,
-            )
-        else:
-            publisher = root / "scripts" / "publish" / "local_push.sh"
-            run(["bash", str(publisher)], cwd=root)
-        return 0
-
-    print(
-        "Publisher is set to 'none'. Commit created locally; no push or PR performed."
-    )
+    plan_path = plans[-1]
+    run(["python", "scripts/agent/run_experiment.py", "--plan", str(plan_path)], root)
+    if git_ahead_count(root) > 0:
+        write_loop_artifacts(root, "experiment", "autogen,auto-fix")
+    print("Experiment run complete.")
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())

@@ -1,0 +1,60 @@
+﻿{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ExperimentResult",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "run_id",
+    "seed_id",
+    "title",
+    "status",
+    "metrics",
+    "artifacts"
+  ],
+  "properties": {
+    "run_id": {"type": "string"},
+    "seed_id": {"type": "string"},
+    "title": {"type": "string"},
+    "status": {"type": "string", "enum": ["pass", "fail", "inconclusive"]},
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "roi",
+        "total_stake",
+        "n_bets",
+        "test_period",
+        "max_drawdown",
+        "rolling",
+        "design_window",
+        "eval_window",
+        "paired_delta",
+        "pooled_vs_step14_mismatch",
+        "preferred_roi"
+      ],
+      "properties": {
+        "roi": {"type": "number"},
+        "total_stake": {"type": "number"},
+        "n_bets": {"type": "integer"},
+        "test_period": {"type": "string"},
+        "max_drawdown": {"type": "number"},
+        "rolling": {"type": "string", "enum": ["yes", "no"]},
+        "design_window": {"type": "string"},
+        "eval_window": {"type": "string"},
+        "paired_delta": {"type": "string"},
+        "pooled_vs_step14_mismatch": {"type": "string", "enum": ["yes", "no"]},
+        "preferred_roi": {"type": "string", "enum": ["step14", "pooled"]}
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["metrics_json", "comparison_json", "report"],
+      "properties": {
+        "metrics_json": {"type": "string"},
+        "comparison_json": {"type": "string"},
+        "report": {"type": "string"}
+      }
+    }
+  }
+}

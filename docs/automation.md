@@ -38,6 +38,7 @@
 ## Workflows
 - `agent_propose_pr.yml`: runs propose loop on a self-hosted runner.
 - `agent_auto_fix.yml`: runs reviewer/manager/fixer loop on a self-hosted runner.
+- `agent_scientist_loop.yml`: runs scientist loop (plan -> run -> commit -> publisher).
 - `needs_human_notify.yml`: posts Human Packet and assigns the PR author.
 - `human_command.yml`: processes `/human` commands and updates labels.
 
@@ -45,3 +46,12 @@
 - Codex (interactive/local) does not push. Only the self-hosted workflow publisher may push to PR branches.
 - Protected branches (main) are never pushed.
 - All fixes must pass `make ci`.
+
+## Scientist Loop
+- Seed hypotheses: `experiments/seed_hypotheses.yaml`
+- Runs: `experiments/runs/<run_id>.json` and `docs/experiments/<run_id>.md`
+- Checkpoints: every 50 runs: `reports/checkpoints/<checkpoint_id>.md` and `experiments/checkpoints/<checkpoint_id>.json`
+- Loop behavior (one action per run):
+  - Stop if any PR has `needs-human`
+  - If checkpoint due, generate summary and stop (publisher adds `needs-human`)
+  - Otherwise generate and run one experiment

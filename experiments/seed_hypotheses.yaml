@@ -1,0 +1,38 @@
+﻿- id: SEED-001
+  title: Odds cap tightening for win bets
+  hypothesis: Tightening max odds for win bets reduces tail risk and improves risk-adjusted ROI without reducing n_bets too much.
+  change_scope: config/selection thresholds
+  acceptance_criteria:
+    - ROI >= baseline
+    - Max drawdown <= baseline
+    - n_bets drop <= 20%
+  metrics:
+    - roi
+    - max_drawdown
+    - n_bets
+  risk_level: low
+  max_diff_size: 30
+- id: SEED-002
+  title: Remove pace-derived features for leak audit
+  hypothesis: Excluding pace-derived features reduces leakage risk with minimal ROI degradation.
+  change_scope: feature set
+  acceptance_criteria:
+    - ROI drop <= 0.5pp
+    - No leakage signals in history feature audit
+  metrics:
+    - roi
+    - leakage_flags
+  risk_level: medium
+  max_diff_size: 60
+- id: SEED-003
+  title: Stake dampening for high-variance windows
+  hypothesis: Stake dampening based on rolling volatility reduces drawdown while preserving ROI.
+  change_scope: betting policy
+  acceptance_criteria:
+    - Max drawdown improves by >= 10%
+    - ROI within 0.2pp of baseline
+  metrics:
+    - roi
+    - max_drawdown
+  risk_level: medium
+  max_diff_size: 80

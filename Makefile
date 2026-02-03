@@ -1,6 +1,6 @@
 PY ?= py64_analysis/.venv/bin/python
 
-.PHONY: verify pdf-spec ci
+.PHONY: verify pdf-spec ci eval
 
 ifeq ($(OS),Windows_NT)
 ci:
@@ -11,6 +11,8 @@ ci:
 endif
 
 verify: ci
+
+eval: ci
 
 pdf-spec:
 	@if [ -z "$(PDF)" ]; then \
