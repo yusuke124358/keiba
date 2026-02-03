@@ -16,7 +16,7 @@ items:
   risk_level: medium
   max_diff_size: 200
   status: in_progress
-  picked_at: '2026-02-03T07:49:05Z'
+  picked_at: '2026-02-03T08:08:39Z'
   branch: agent/EXP-001-odds-cap-tightening-for-win-bets
 - id: EXP-002
   title: Feature coverage audit for new speed signal
