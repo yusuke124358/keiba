@@ -1,2 +1,3 @@
 .codex/skills/**/SKILL.md text eol=lf
 scripts/agent/output_schema.json text eol=lf
+py64_analysis/tests/test_eval_gate.py text eol=lf

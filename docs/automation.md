@@ -26,6 +26,10 @@
 ## Secrets
 - `AUTO_FIX_PUSH_TOKEN`: publisher PAT (fine-grained) used only for push/PR operations.
 
+## Evaluation Gate
+- `scripts/eval_gate.py` runs as part of `make ci`.
+- If experiment logs are changed, metrics fields must not be N/A (infra logs are exempt).
+
 ## Human Commands
 - When `needs-human` is added, the bot posts a Human Packet with `/human` commands.
 - `/human approve` or `/human clarify` removes `needs-human` and resumes auto-fix.

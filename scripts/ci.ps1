@@ -33,6 +33,7 @@ Run-Step "check_system_status" { & $py py64_analysis\scripts\check_system_status
 Run-Step "validate_data_manifest" { & $py scripts\validate_data_manifest.py }
 Run-Step "validate_json_schemas" { & $py scripts\validate_json_schemas.py }
 Run-Step "verify_experiment_log" { & $py scripts\verify_experiment_log.py --base $baseRef }
+Run-Step "eval_gate" { & $py scripts\eval_gate.py --base $baseRef }
 
 if ($env:PDF_SPEC) {
   $args = @($env:PDF_SPEC)
