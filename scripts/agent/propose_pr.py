@@ -238,8 +238,26 @@ def diff_size(root):
 def run_make_ci(root, base_ref):
     env = os.environ.copy()
     env["VERIFY_BASE"] = base_ref
-    result = subprocess.run(["make", "ci"], cwd=root, env=env)
-    return result.returncode
+    if shutil.which("make"):
+        result = subprocess.run(["make", "ci"], cwd=root, env=env)
+        return result.returncode
+    ci_ps1 = Path(root) / "scripts" / "ci.ps1"
+    verify_ps1 = Path(root) / "scripts" / "verify.ps1"
+    if ci_ps1.exists():
+        result = subprocess.run(
+            ["powershell", "-ExecutionPolicy", "Bypass", "-File", str(ci_ps1)],
+            cwd=root,
+            env=env,
+        )
+        return result.returncode
+    if verify_ps1.exists():
+        result = subprocess.run(
+            ["powershell", "-ExecutionPolicy", "Bypass", "-File", str(verify_ps1)],
+            cwd=root,
+            env=env,
+        )
+        return result.returncode
+    raise RuntimeError("make not found and no scripts/ci.ps1 or scripts/verify.ps1")
 
 
 def normalize_review_items(review_items_path):
