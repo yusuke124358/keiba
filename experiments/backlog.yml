@@ -1,49 +1,50 @@
-﻿version: 1
+version: 1
 items:
-  - id: EXP-001
-    title: "Odds cap tightening for win bets"
-    hypothesis: "Limiting max odds to 30 reduces drawdown without materially harming ROI."
-    change_scope:
-      - "config/"
-      - "py64_analysis/src/keiba/betting/"
-    acceptance_criteria:
-      - "ROI >= baseline - 0.01"
-      - "Max drawdown improves by >= 5%"
-    metrics:
-      - "backtest.roi"
-      - "backtest.max_drawdown"
-    risk_level: "medium"
-    max_diff_size: 200
-    status: "todo"
-
-  - id: EXP-002
-    title: "Feature coverage audit for new speed signal"
-    hypothesis: "Adding a coverage/dispersion audit prevents no-op feature releases."
-    change_scope:
-      - "py64_analysis/src/keiba/features/"
-      - "py64_analysis/scripts/"
-    acceptance_criteria:
-      - "Non-null rate >= 0.95"
-      - "Signal stddev > 0"
-    metrics:
-      - "feature.coverage"
-      - "feature.stddev"
-    risk_level: "low"
-    max_diff_size: 150
-    status: "todo"
-
-  - id: EXP-003
-    title: "Selector threshold change for high takeout races"
-    hypothesis: "Tightening selector thresholds reduces negative ROI windows."
-    change_scope:
-      - "py64_analysis/src/keiba/betting/"
-      - "config/"
-    acceptance_criteria:
-      - "ROI >= baseline"
-      - "Negative-ROI windows reduced by >= 10%"
-    metrics:
-      - "backtest.roi"
-      - "rolling.neg_roi_window_rate"
-    risk_level: "high"
-    max_diff_size: 120
-    status: "todo"
+- id: EXP-001
+  title: Odds cap tightening for win bets
+  hypothesis: Limiting max odds to 30 reduces drawdown without materially harming
+    ROI.
+  change_scope:
+  - config/
+  - py64_analysis/src/keiba/betting/
+  acceptance_criteria:
+  - ROI >= baseline - 0.01
+  - Max drawdown improves by >= 5%
+  metrics:
+  - backtest.roi
+  - backtest.max_drawdown
+  risk_level: medium
+  max_diff_size: 200
+  status: in_progress
+  picked_at: '2026-02-02T23:46:13Z'
+  branch: agent/EXP-001-odds-cap-tightening-for-win-bets
+- id: EXP-002
+  title: Feature coverage audit for new speed signal
+  hypothesis: Adding a coverage/dispersion audit prevents no-op feature releases.
+  change_scope:
+  - py64_analysis/src/keiba/features/
+  - py64_analysis/scripts/
+  acceptance_criteria:
+  - Non-null rate >= 0.95
+  - Signal stddev > 0
+  metrics:
+  - feature.coverage
+  - feature.stddev
+  risk_level: low
+  max_diff_size: 150
+  status: todo
+- id: EXP-003
+  title: Selector threshold change for high takeout races
+  hypothesis: Tightening selector thresholds reduces negative ROI windows.
+  change_scope:
+  - py64_analysis/src/keiba/betting/
+  - config/
+  acceptance_criteria:
+  - ROI >= baseline
+  - Negative-ROI windows reduced by >= 10%
+  metrics:
+  - backtest.roi
+  - rolling.neg_roi_window_rate
+  risk_level: high
+  max_diff_size: 120
+  status: todo
