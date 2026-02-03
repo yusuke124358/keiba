@@ -18,33 +18,33 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Preflight
-        shell: bash
-        run: scripts/agent/preflight.sh
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File scripts/agent/preflight.ps1
       - name: Configure Codex
-        shell: bash
+        shell: pwsh
         run: |
-          mkdir -p ~/.codex
-          cp .github/runner/codex.config.toml ~/.codex/config.toml
+          New-Item -ItemType Directory -Force -Path "$HOME\.codex" | Out-Null
+          Copy-Item -Path .github/runner/codex.config.toml -Destination "$HOME\.codex\config.toml" -Force
       - name: Run Scientist Loop (one action)
-        shell: bash
+        shell: pwsh
         run: python scripts/agent/loop.py --once
       - name: Publish If Changes
-        shell: bash
+        shell: pwsh
         env:
           AUTO_FIX_PUSH_TOKEN: ${{ secrets.AUTO_FIX_PUSH_TOKEN }}
         run: |
-          ahead=$(git rev-list --count origin/main..HEAD)
-          if [ "$ahead" = "0" ]; then
-            echo "No changes to publish."
+          $ahead = git rev-list --count origin/main..HEAD
+          if ($ahead -eq 0) {
+            Write-Host "No changes to publish."
             exit 0
-          fi
-          title="autogen: scientist loop"
-          body="docs/automation.md"
-          labels="autogen,auto-fix"
-          if [ -f artifacts/agent/loop_pr_body.md ]; then
-            body="artifacts/agent/loop_pr_body.md"
-          fi
-          if [ -f artifacts/agent/loop_labels.txt ]; then
-            labels=$(cat artifacts/agent/loop_labels.txt | tr -d '\n')
-          fi
+          }
+          $title = "autogen: scientist loop"
+          $body = "docs/automation.md"
+          $labels = "autogen,auto-fix"
+          if (Test-Path "artifacts/agent/loop_pr_body.md") {
+            $body = "artifacts/agent/loop_pr_body.md"
+          }
+          if (Test-Path "artifacts/agent/loop_labels.txt") {
+            $labels = (Get-Content "artifacts/agent/loop_labels.txt" -Raw).Trim()
+          }
           python scripts/publish/publisher.py --base main --title "$title" --body-file "$body" --labels "$labels"
