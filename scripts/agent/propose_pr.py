@@ -319,11 +319,16 @@ def build_review_prompt(diff_path):
 
 def build_manager_prompt(review_items_path):
     base = load_prompt(PROMPTS_DIR / "manager.md")
+    review_text = ""
+    if review_items_path.exists():
+        review_text = review_items_path.read_text(encoding="utf-8").strip()
     return "\n".join(
         [
             base,
             "",
-            f"Review items JSON: {review_items_path}",
+            f"Review items JSON path: {review_items_path}",
+            "Review items JSON content:",
+            review_text or "{}",
             "Apply business rules from AGENTS.md.",
         ]
     )
@@ -331,12 +336,22 @@ def build_manager_prompt(review_items_path):
 
 def build_fixer_prompt(manager_path, review_items_path):
     base = load_prompt(PROMPTS_DIR / "fixer.md")
+    manager_text = ""
+    review_text = ""
+    if manager_path.exists():
+        manager_text = manager_path.read_text(encoding="utf-8").strip()
+    if review_items_path.exists():
+        review_text = review_items_path.read_text(encoding="utf-8").strip()
     return "\n".join(
         [
             base,
             "",
-            f"Manager decisions: {manager_path}",
-            f"Review items: {review_items_path}",
+            f"Manager decisions path: {manager_path}",
+            "Manager decisions JSON:",
+            manager_text or "{}",
+            f"Review items path: {review_items_path}",
+            "Review items JSON:",
+            review_text or "{}",
         ]
     )
 
