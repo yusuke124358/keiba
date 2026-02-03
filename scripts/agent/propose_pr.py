@@ -578,10 +578,11 @@ def main():
         run(["git", "remote", "set-url", "--push", "origin", push_url], cwd=root)
         run(["git", "push", "origin", f"HEAD:{branch}"], cwd=root)
 
-        env = os.environ.copy()
-        if not env.get("GH_TOKEN"):
-            env["GH_TOKEN"] = token
-        result = run(["gh", "pr", "view", branch], cwd=root, check=False, env=env)
+        gh_env = os.environ.copy()
+        gh_token = os.environ.get("AUTO_FIX_GH_TOKEN") or os.environ.get("GH_TOKEN")
+        if gh_token:
+            gh_env["GH_TOKEN"] = gh_token
+        result = run(["gh", "pr", "view", branch], cwd=root, check=False, env=gh_env)
         if result.returncode != 0:
             run(
                 [
@@ -598,7 +599,7 @@ def main():
                     str(pr_body_path),
                 ],
                 cwd=root,
-                env=env,
+                env=gh_env,
             )
         for label in label_str.split(","):
             label = label.strip()
@@ -607,7 +608,7 @@ def main():
                     ["gh", "pr", "edit", branch, "--add-label", label],
                     cwd=root,
                     check=False,
-                    env=env,
+                    env=gh_env,
                 )
     elif args.publisher == "actions":
         patch_dir = root / "artifacts" / "patches"
