@@ -18,18 +18,18 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Preflight
-        shell: pwsh
-        run: powershell -ExecutionPolicy Bypass -File scripts/agent/preflight.ps1
+        shell: powershell
+        run: scripts/agent/preflight.ps1
       - name: Configure Codex
-        shell: pwsh
+        shell: powershell
         run: |
           New-Item -ItemType Directory -Force -Path "$HOME\.codex" | Out-Null
           Copy-Item -Path .github/runner/codex.config.toml -Destination "$HOME\.codex\config.toml" -Force
       - name: Run Scientist Loop (one action)
-        shell: pwsh
+        shell: powershell
         run: python scripts/agent/loop.py --once
       - name: Publish If Changes
-        shell: pwsh
+        shell: powershell
         env:
           AUTO_FIX_PUSH_TOKEN: ${{ secrets.AUTO_FIX_PUSH_TOKEN }}
         run: |
