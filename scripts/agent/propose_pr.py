@@ -241,9 +241,13 @@ def run_make_ci(root, base_ref):
     # Ensure pytest temp dir is writable on Windows runners.
     tmp_root = Path(root) / "tmp" / "pytest"
     tmp_root.mkdir(parents=True, exist_ok=True)
-    env.setdefault("TMP", str(tmp_root))
-    env.setdefault("TEMP", str(tmp_root))
-    env.setdefault("TMPDIR", str(tmp_root))
+    run_id = dt.datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    tmp_session = tmp_root / f"pytest_{run_id}"
+    tmp_session.mkdir(parents=True, exist_ok=True)
+    env.setdefault("TMP", str(tmp_session))
+    env.setdefault("TEMP", str(tmp_session))
+    env.setdefault("TMPDIR", str(tmp_session))
+    env.setdefault("PYTEST_TMPDIR", str(tmp_session))
     if shutil.which("make"):
         result = subprocess.run(["make", "ci"], cwd=root, env=env)
         return result.returncode
