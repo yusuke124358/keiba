@@ -119,7 +119,7 @@ def main() -> int:
 
     schema_path = root / args.schema
     normalized_schema = normalize_schema(
-        json.loads(schema_path.read_text(encoding="utf-8"))
+        json.loads(schema_path.read_text(encoding="utf-8-sig"))
     )
     normalized_schema_path = (
         root / "artifacts" / "agent" / "schema_experiment_plan.normalized.json"
