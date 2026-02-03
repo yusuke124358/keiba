@@ -293,6 +293,19 @@ def normalize_review_items(review_items_path):
     return data
 
 
+def default_manager_decision(manager_path, reason):
+    decision = {
+        "approved": True,
+        "summary": reason,
+        "tasks": [],
+        "automerge_eligible": True,
+    }
+    manager_path.write_text(
+        json.dumps(decision, ensure_ascii=True, indent=2) + "\n", encoding="utf-8"
+    )
+    return decision
+
+
 def build_diff(root, base_ref, out_path):
     diff = run(["git", "diff", f"{base_ref}...HEAD"], cwd=root).stdout
     out_path.write_text(diff, encoding="utf-8")
@@ -457,19 +470,25 @@ def main():
         args.profile,
         codex_bin,
     )
-    normalize_review_items(review_items_path)
+    review_data = normalize_review_items(review_items_path)
 
     manager_path = out_dir / "manager_decision.json"
     manager_log = out_dir / "manager_codex.log"
-    manager_prompt = build_manager_prompt(review_items_path=review_items_path)
-    run_codex(
-        manager_prompt,
-        root / "schemas/agent/manager_decision.schema.json",
-        manager_path,
-        manager_log,
-        args.profile,
-        codex_bin,
-    )
+    if not review_data.get("issues"):
+        default_manager_decision(
+            manager_path,
+            "No review issues detected; proceeding without Manager tasks.",
+        )
+    else:
+        manager_prompt = build_manager_prompt(review_items_path=review_items_path)
+        run_codex(
+            manager_prompt,
+            root / "schemas/agent/manager_decision.schema.json",
+            manager_path,
+            manager_log,
+            args.profile,
+            codex_bin,
+        )
 
     fixer_report_path = out_dir / "fixer_report.json"
     fixer_log = out_dir / "fixer_codex.log"
