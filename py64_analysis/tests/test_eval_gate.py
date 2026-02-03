@@ -1,8 +1,6 @@
 import textwrap
 from pathlib import Path
 
-
-
 def _write(tmp_path: Path, content: str) -> Path:
     path = tmp_path / "log.md"
     path.write_text(textwrap.dedent(content).strip() + "\n", encoding="utf-8")
