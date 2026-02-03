@@ -30,13 +30,5 @@ jobs:
         shell: cmd
         env:
           AUTO_FIX_PUSH_TOKEN: ${{ secrets.AUTO_FIX_PUSH_TOKEN }}
-        run: |
-          powershell -ExecutionPolicy Bypass -Command ^
-            "$ahead = git rev-list --count origin/main..HEAD; ^
-             if ($ahead -eq 0) { Write-Host 'No changes to publish.'; exit 0 }; ^
-             $title = 'autogen: scientist loop'; ^
-             $body = 'docs/automation.md'; ^
-             $labels = 'autogen,auto-fix'; ^
-             if (Test-Path 'artifacts/agent/loop_pr_body.md') { $body = 'artifacts/agent/loop_pr_body.md' }; ^
-             if (Test-Path 'artifacts/agent/loop_labels.txt') { $labels = (Get-Content 'artifacts/agent/loop_labels.txt' -Raw).Trim() }; ^
-             python scripts/publish/publisher.py --base main --title $title --body-file $body --labels $labels"
+        run: >
+          powershell -ExecutionPolicy Bypass -Command "$ahead = git rev-list --count origin/main..HEAD; if ($ahead -eq 0) { Write-Host 'No changes to publish.'; exit 0 }; $title = 'autogen: scientist loop'; $body = 'docs/automation.md'; $labels = 'autogen,auto-fix'; if (Test-Path 'artifacts/agent/loop_pr_body.md') { $body = 'artifacts/agent/loop_pr_body.md' }; if (Test-Path 'artifacts/agent/loop_labels.txt') { $labels = (Get-Content 'artifacts/agent/loop_labels.txt' -Raw).Trim() }; python scripts/publish/publisher.py --base main --title $title --body-file $body --labels $labels"
