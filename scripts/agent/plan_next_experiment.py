@@ -140,6 +140,14 @@ def main() -> int:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     run_codex(root, prompt, normalized_schema_path, out_path, args.profile)
     plan = json.loads(out_path.read_text(encoding="utf-8"))
+    if plan.get("decision") != "do":
+        reason = plan.get("reason", "").strip()
+        if reason:
+            reason = f"{reason} (overridden to do)"
+        else:
+            reason = "overridden to do"
+        plan["decision"] = "do"
+        plan["reason"] = reason
     if not plan.get("run_id"):
         plan["run_id"] = dt.datetime.utcnow().strftime("RUN_%Y%m%d_%H%M%S")
     out_path.write_text(json.dumps(plan, ensure_ascii=True, indent=2), encoding="utf-8")
