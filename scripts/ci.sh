@@ -29,6 +29,7 @@ fi
 "$py" scripts/validate_data_manifest.py
 "$py" scripts/validate_json_schemas.py
 "$py" scripts/verify_experiment_log.py --base "$base_ref"
+"$py" scripts/eval_gate.py --base "$base_ref"
 
 if [ -n "${PDF_SPEC:-}" ]; then
   make pdf-spec PDF="$PDF_SPEC" ${PDF_SPEC_METHOD:+METHOD=$PDF_SPEC_METHOD} ${PDF_SPEC_OUT_DIR:+OUT_DIR=$PDF_SPEC_OUT_DIR}
