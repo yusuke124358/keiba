@@ -62,6 +62,31 @@ def run_codex(
         )
 
 
+def normalize_schema(node):
+    if isinstance(node, dict):
+        node = dict(node)
+        if node.get("type") == "object":
+            props = node.get("properties")
+            if isinstance(props, dict):
+                node.setdefault("additionalProperties", False)
+                req = list(node.get("required", []))
+                for key in props.keys():
+                    if key not in req:
+                        req.append(key)
+                node["required"] = req
+                node["properties"] = {
+                    key: normalize_schema(value) for key, value in props.items()
+                }
+            else:
+                node.setdefault("additionalProperties", False)
+        if "items" in node:
+            node["items"] = normalize_schema(node["items"])
+        return node
+    if isinstance(node, list):
+        return [normalize_schema(item) for item in node]
+    return node
+
+
 def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--seed", default="experiments/seed_hypotheses.yaml")
@@ -92,6 +117,18 @@ def main() -> int:
     }
     prompt = prompt_text + "\n\nINPUT_JSON:\n" + json.dumps(payload, ensure_ascii=True)
 
+    schema_path = root / args.schema
+    normalized_schema = normalize_schema(
+        json.loads(schema_path.read_text(encoding="utf-8"))
+    )
+    normalized_schema_path = (
+        root / "artifacts" / "agent" / "schema_experiment_plan.normalized.json"
+    )
+    normalized_schema_path.parent.mkdir(parents=True, exist_ok=True)
+    normalized_schema_path.write_text(
+        json.dumps(normalized_schema, ensure_ascii=True, indent=2), encoding="utf-8"
+    )
+
     out_path = (
         Path(args.out)
         if args.out
@@ -101,7 +138,7 @@ def main() -> int:
         / f"plan_{dt.datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.json"
     )
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    run_codex(root, prompt, root / args.schema, out_path, args.profile)
+    run_codex(root, prompt, normalized_schema_path, out_path, args.profile)
     plan = json.loads(out_path.read_text(encoding="utf-8"))
     if not plan.get("run_id"):
         plan["run_id"] = dt.datetime.utcnow().strftime("RUN_%Y%m%d_%H%M%S")
