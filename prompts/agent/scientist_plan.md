@@ -10,5 +10,6 @@ Rules:
 - Use decision = "defer" only if the experiment cannot be executed without external data or blocking uncertainty.
 - Use decision = "needs_human" only for hard blockers that cannot be safely assumed.
 - If a bug or data-processing issue is discovered during execution, stop and let Fixer handle it, then re-run.
+- If you believe approval is needed, still set decision = "do" and write assumptions in "reason".
 
 Return only JSON.
