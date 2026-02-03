@@ -1,0 +1,50 @@
+﻿name: agent_scientist_loop
+
+on:
+  schedule:
+    - cron: "*/20 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: agent-scientist-loop
+  cancel-in-progress: true
+
+jobs:
+  loop:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Preflight
+        shell: bash
+        run: scripts/agent/preflight.sh
+      - name: Configure Codex
+        shell: bash
+        run: |
+          mkdir -p ~/.codex
+          cp .github/runner/codex.config.toml ~/.codex/config.toml
+      - name: Run Scientist Loop (one action)
+        shell: bash
+        run: python scripts/agent/loop.py --once
+      - name: Publish If Changes
+        shell: bash
+        env:
+          AUTO_FIX_PUSH_TOKEN: ${{ secrets.AUTO_FIX_PUSH_TOKEN }}
+        run: |
+          ahead=$(git rev-list --count origin/main..HEAD)
+          if [ "$ahead" = "0" ]; then
+            echo "No changes to publish."
+            exit 0
+          fi
+          title="autogen: scientist loop"
+          body="docs/automation.md"
+          labels="autogen,auto-fix"
+          if [ -f artifacts/agent/loop_pr_body.md ]; then
+            body="artifacts/agent/loop_pr_body.md"
+          fi
+          if [ -f artifacts/agent/loop_labels.txt ]; then
+            labels=$(cat artifacts/agent/loop_labels.txt | tr -d '\n')
+          fi
+          python scripts/publish/publisher.py --base main --title "$title" --body-file "$body" --labels "$labels"

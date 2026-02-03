@@ -1,0 +1,46 @@
+﻿{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ExperimentPlan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "run_id",
+    "seed_id",
+    "title",
+    "hypothesis",
+    "change_scope",
+    "acceptance_criteria",
+    "metrics",
+    "risk_level",
+    "max_diff_size",
+    "eval_command",
+    "metrics_path",
+    "decision",
+    "reason"
+  ],
+  "properties": {
+    "run_id": {"type": "string"},
+    "seed_id": {"type": "string"},
+    "title": {"type": "string"},
+    "hypothesis": {"type": "string"},
+    "change_scope": {"type": "string"},
+    "acceptance_criteria": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "metrics": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "risk_level": {"type": "string", "enum": ["low", "medium", "high"]},
+    "max_diff_size": {"type": "integer", "minimum": 1},
+    "eval_command": {
+      "type": "array",
+      "items": {"type": "string"},
+      "minItems": 1
+    },
+    "metrics_path": {"type": "string"},
+    "decision": {"type": "string", "enum": ["do", "defer", "needs_human"]},
+    "reason": {"type": "string"}
+  }
+}
