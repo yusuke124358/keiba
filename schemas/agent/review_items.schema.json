@@ -8,7 +8,17 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["id", "source", "type", "severity", "message"],
+        "required": [
+          "id",
+          "source",
+          "type",
+          "severity",
+          "file",
+          "line",
+          "message",
+          "suggested_fix",
+          "acceptance_check"
+        ],
         "properties": {
           "id": { "type": "string" },
           "source": { "type": "string" },
@@ -17,11 +27,11 @@
             "type": "string",
             "enum": ["low", "medium", "high", "critical"]
           },
-          "file": { "type": "string" },
-          "line": { "type": "integer" },
+          "file": { "type": ["string", "null"] },
+          "line": { "type": ["integer", "null"] },
           "message": { "type": "string" },
-          "suggested_fix": { "type": "string" },
-          "acceptance_check": { "type": "string" }
+          "suggested_fix": { "type": ["string", "null"] },
+          "acceptance_check": { "type": ["string", "null"] }
         },
         "additionalProperties": false
       }
