@@ -1,7 +1,6 @@
 import textwrap
 from pathlib import Path
 
-import pytest
 
 
 def _write(tmp_path: Path, content: str) -> Path:
