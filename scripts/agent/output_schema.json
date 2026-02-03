@@ -9,23 +9,25 @@
     "risks": {"type": "array", "items": {"type": "string"}},
     "metrics": {
       "type": "object",
-      "additionalProperties": true,
+      "additionalProperties": false,
       "properties": {
         "roi": {"type": "string"},
         "total_stake": {"type": "string"},
         "n_bets": {"type": "string"},
         "test_period": {"type": "string"},
         "max_drawdown": {"type": "string"}
-      }
+      },
+      "required": ["roi", "total_stake", "n_bets", "test_period", "max_drawdown"]
     },
     "artifacts": {
       "type": "object",
-      "additionalProperties": true,
+      "additionalProperties": false,
       "properties": {
         "metrics_json": {"type": "string"},
         "comparison_json": {"type": "string"},
         "experiment_log": {"type": "string"}
-      }
+      },
+      "required": ["metrics_json", "comparison_json", "experiment_log"]
     },
     "pr_body": {"type": "string"},
     "followups": {"type": "array", "items": {"type": "string"}}
