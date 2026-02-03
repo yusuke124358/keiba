@@ -50,7 +50,9 @@ def ensure_clean(root: Path) -> None:
         raise RuntimeError("Working tree not clean. Commit or stash changes first.")
 
 
-def render_experiment_log(template: Path, out_path: Path, plan: dict, result: dict) -> None:
+def render_experiment_log(
+    template: Path, out_path: Path, plan: dict, result: dict
+) -> None:
     text = template.read_text(encoding="utf-8")
     text = text.replace("<id>", plan["run_id"])
     text = text.replace("<title>", plan["title"])
@@ -75,15 +77,26 @@ def render_experiment_log(template: Path, out_path: Path, plan: dict, result: di
     out_path.write_text(text, encoding="utf-8")
 
 
-def run_codex(root: Path, prompt_path: Path, plan: dict, profile: str, log_path: Path) -> None:
+def run_codex(
+    root: Path, prompt_path: Path, plan: dict, profile: str, log_path: Path
+) -> None:
     codex_bin = find_codex_bin()
     prompt_text = prompt_path.read_text(encoding="utf-8")
     payload = json.dumps(plan, ensure_ascii=True)
-    cmd = [codex_bin, "exec", "--profile", profile, "--full-auto", prompt_text + "\n\nPLAN_JSON:\n" + payload]
+    cmd = [
+        codex_bin,
+        "exec",
+        "--profile",
+        profile,
+        "--full-auto",
+        prompt_text + "\n\nPLAN_JSON:\n" + payload,
+    ]
     with open(log_path, "w", encoding="utf-8") as log:
         result = subprocess.run(cmd, cwd=root, stdout=log, stderr=log, text=True)
     if result.returncode != 0:
-        raise RuntimeError(f"codex exec failed with code {result.returncode}. See {log_path}")
+        raise RuntimeError(
+            f"codex exec failed with code {result.returncode}. See {log_path}"
+        )
 
 
 def main() -> int:
@@ -91,7 +104,9 @@ def main() -> int:
     p.add_argument("--plan", required=True, help="Path to experiment_plan.json")
     p.add_argument("--profile", default="agent_loop")
     p.add_argument("--prompt", default="prompts/agent/fixer_implement.md")
-    p.add_argument("--metrics-schema", default="schemas/agent/experiment_result.schema.json")
+    p.add_argument(
+        "--metrics-schema", default="schemas/agent/experiment_result.schema.json"
+    )
     args = p.parse_args()
 
     root = repo_root()
@@ -130,7 +145,9 @@ def main() -> int:
         "artifacts": metrics["artifacts"],
     }
     result_path = root / "experiments" / "runs" / f"{plan['run_id']}.json"
-    result_path.write_text(json.dumps(result, ensure_ascii=True, indent=2), encoding="utf-8")
+    result_path.write_text(
+        json.dumps(result, ensure_ascii=True, indent=2), encoding="utf-8"
+    )
 
     template = root / "docs" / "experiments" / "_template.md"
     log_path = root / "docs" / "experiments" / f"{plan['run_id']}.md"

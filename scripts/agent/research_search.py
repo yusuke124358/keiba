@@ -59,7 +59,7 @@ def write_paper_md(out_dir: Path, entry: dict) -> Path:
     if path.exists():
         return path
     text = [
-        f"# {entry.get('title','').strip()}",
+        f"# {entry.get('title', '').strip()}",
         "",
         "## Authors",
         ", ".join(entry.get("authors", [])) or "(unknown)",
@@ -79,7 +79,9 @@ def write_paper_md(out_dir: Path, entry: dict) -> Path:
 
 
 def main() -> int:
-    p = argparse.ArgumentParser(description="Search arXiv and store knowledge artifacts.")
+    p = argparse.ArgumentParser(
+        description="Search arXiv and store knowledge artifacts."
+    )
     p.add_argument("query", help="Search query")
     p.add_argument("--max-results", type=int, default=5)
     args = p.parse_args()

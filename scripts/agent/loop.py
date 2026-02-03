@@ -31,6 +31,7 @@ def run(cmd, root: Path) -> None:
     if result.returncode != 0:
         raise RuntimeError(f"Command failed ({result.returncode}): {' '.join(cmd)}")
 
+
 def git_ahead_count(root: Path, base_ref: str = "origin/main") -> int:
     result = subprocess.run(
         ["git", "rev-list", "--count", f"{base_ref}..HEAD"],

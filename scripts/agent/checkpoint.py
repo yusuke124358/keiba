@@ -44,7 +44,14 @@ def latest_checkpoint(checkpoints_dir: Path) -> dict | None:
         return None
 
 
-def run_codex(root: Path, prompt_path: Path, payload: dict, schema_path: Path, out_path: Path, profile: str) -> None:
+def run_codex(
+    root: Path,
+    prompt_path: Path,
+    payload: dict,
+    schema_path: Path,
+    out_path: Path,
+    profile: str,
+) -> None:
     codex_bin = find_codex_bin()
     prompt_text = prompt_path.read_text(encoding="utf-8")
     prompt = prompt_text + "\n\nINPUT_JSON:\n" + json.dumps(payload, ensure_ascii=True)
@@ -61,9 +68,13 @@ def run_codex(root: Path, prompt_path: Path, payload: dict, schema_path: Path, o
     ]
     log_path = out_path.with_suffix(".log")
     with open(log_path, "w", encoding="utf-8") as log:
-        result = subprocess.run(cmd + [prompt], cwd=root, stdout=log, stderr=log, text=True)
+        result = subprocess.run(
+            cmd + [prompt], cwd=root, stdout=log, stderr=log, text=True
+        )
     if result.returncode != 0:
-        raise RuntimeError(f"codex exec failed with code {result.returncode}. See {log_path}")
+        raise RuntimeError(
+            f"codex exec failed with code {result.returncode}. See {log_path}"
+        )
 
 
 def main() -> int:
@@ -101,7 +112,9 @@ def main() -> int:
     checkpoints_dir.mkdir(parents=True, exist_ok=True)
     reports_dir.mkdir(parents=True, exist_ok=True)
 
-    run_codex(root, root / args.prompt, payload, root / args.schema, out_path, args.profile)
+    run_codex(
+        root, root / args.prompt, payload, root / args.schema, out_path, args.profile
+    )
 
     summary = json.loads(out_path.read_text(encoding="utf-8"))
     report_path = reports_dir / f"{checkpoint_id}.md"
@@ -132,12 +145,16 @@ def main() -> int:
         "created_at": dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
     meta_path = checkpoints_dir / f"{checkpoint_id}.meta.json"
-    meta_path.write_text(json.dumps(meta, ensure_ascii=True, indent=2), encoding="utf-8")
+    meta_path.write_text(
+        json.dumps(meta, ensure_ascii=True, indent=2), encoding="utf-8"
+    )
 
     mem = root / "memory.md"
     if mem.exists():
         with mem.open("a", encoding="utf-8") as f:
-            f.write(f"\n\nCheckpoint {checkpoint_id}: {summary['range_start']} to {summary['range_end']}\n")
+            f.write(
+                f"\n\nCheckpoint {checkpoint_id}: {summary['range_start']} to {summary['range_end']}\n"
+            )
             for line in summary["top_wins"][:3]:
                 f.write(f"- {line}\n")
 

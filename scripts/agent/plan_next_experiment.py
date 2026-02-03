@@ -37,7 +37,9 @@ def load_jsons(path: Path) -> list[dict]:
     return items
 
 
-def run_codex(root: Path, prompt: str, schema: Path, output_path: Path, profile: str) -> None:
+def run_codex(
+    root: Path, prompt: str, schema: Path, output_path: Path, profile: str
+) -> None:
     codex_bin = find_codex_bin()
     cmd = [
         codex_bin,
@@ -52,9 +54,13 @@ def run_codex(root: Path, prompt: str, schema: Path, output_path: Path, profile:
     ]
     log_path = output_path.with_suffix(".log")
     with open(log_path, "w", encoding="utf-8") as log:
-        result = subprocess.run(cmd + [prompt], cwd=root, stdout=log, stderr=log, text=True)
+        result = subprocess.run(
+            cmd + [prompt], cwd=root, stdout=log, stderr=log, text=True
+        )
     if result.returncode != 0:
-        raise RuntimeError(f"codex exec failed with code {result.returncode}. See {log_path}")
+        raise RuntimeError(
+            f"codex exec failed with code {result.returncode}. See {log_path}"
+        )
 
 
 def main() -> int:
@@ -87,7 +93,14 @@ def main() -> int:
     }
     prompt = prompt_text + "\n\nINPUT_JSON:\n" + json.dumps(payload, ensure_ascii=True)
 
-    out_path = Path(args.out) if args.out else root / "artifacts" / "agent" / f"plan_{dt.datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.json"
+    out_path = (
+        Path(args.out)
+        if args.out
+        else root
+        / "artifacts"
+        / "agent"
+        / f"plan_{dt.datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.json"
+    )
     out_path.parent.mkdir(parents=True, exist_ok=True)
     run_codex(root, prompt, root / args.schema, out_path, args.profile)
     plan = json.loads(out_path.read_text(encoding="utf-8"))
