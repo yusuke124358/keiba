@@ -238,6 +238,12 @@ def diff_size(root):
 def run_make_ci(root, base_ref):
     env = os.environ.copy()
     env["VERIFY_BASE"] = base_ref
+    # Ensure pytest temp dir is writable on Windows runners.
+    tmp_root = Path(root) / "tmp" / "pytest"
+    tmp_root.mkdir(parents=True, exist_ok=True)
+    env.setdefault("TMP", str(tmp_root))
+    env.setdefault("TEMP", str(tmp_root))
+    env.setdefault("TMPDIR", str(tmp_root))
     if shutil.which("make"):
         result = subprocess.run(["make", "ci"], cwd=root, env=env)
         return result.returncode
