@@ -34,9 +34,9 @@ def fetch_arxiv(query: str, max_results: int) -> list[dict]:
         title = (entry.findtext("a:title", default="", namespaces=ns) or "").strip()
         summary = (entry.findtext("a:summary", default="", namespaces=ns) or "").strip()
         link = ""
-        for l in entry.findall("a:link", ns):
-            if l.attrib.get("rel") == "alternate":
-                link = l.attrib.get("href", "")
+        for link_elem in entry.findall("a:link", ns):
+            if link_elem.attrib.get("rel") == "alternate":
+                link = link_elem.attrib.get("href", "")
                 break
         authors = [
             (a.findtext("a:name", default="", namespaces=ns) or "").strip()
