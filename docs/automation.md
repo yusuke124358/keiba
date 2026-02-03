@@ -28,7 +28,7 @@
 
 ## Evaluation Gate
 - `scripts/eval_gate.py` runs as part of `make ci`.
-- For experiment logs (non-infra), metrics fields must not be N/A.
+- If experiment logs are changed, metrics fields must not be N/A (infra logs are exempt).
 
 ## Human Commands
 - When `needs-human` is added, the bot posts a Human Packet with `/human` commands.

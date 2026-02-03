@@ -36,7 +36,16 @@ def repo_root():
     return Path(run(["git", "rev-parse", "--show-toplevel"]))
 
 
+def ensure_ref_exists(ref, root):
+    try:
+        run(["git", "rev-parse", "--verify", ref], cwd=root)
+    except RuntimeError as exc:
+        raise RuntimeError(f"Missing git ref '{ref}': {exc}") from exc
+
+
 def changed_files(base, head, root):
+    ensure_ref_exists(base, root)
+    ensure_ref_exists(head, root)
     out = run(["git", "diff", "--name-only", f"{base}...{head}"], cwd=root)
     return [line.strip() for line in out.splitlines() if line.strip()]
 
@@ -101,7 +110,6 @@ def main():
         print("No changes detected; skipping evaluation gate.")
         return 0
 
-    code_changes = [f for f in files if is_code_change(f)]
     exp_logs = [
         f
         for f in files
@@ -110,8 +118,8 @@ def main():
         and not f.endswith("_template.md")
     ]
 
-    if not code_changes:
-        print("No code changes; skipping evaluation gate.")
+    if not exp_logs:
+        print("No experiment logs changed; skipping evaluation gate.")
         return 0
 
     failures = []
