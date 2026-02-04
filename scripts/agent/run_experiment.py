@@ -53,6 +53,8 @@ def run_shell_commands(commands, cwd=None):
                 cmd = "powershell -ExecutionPolicy Bypass -File scripts/ci.ps1"
         if isinstance(cmd, str):
             stripped = cmd.strip()
+            if not stripped:
+                continue
             if re.match(r"^(?:\\.\\\\)?py64_analysis[\\\\/].*\\.py(\\s|$)", stripped):
                 cmd = f"python {stripped}"
             elif stripped.lower().startswith(("py64_analysis/", "py64_analysis\\")):
@@ -108,6 +110,10 @@ def default_holdout_command(run_id: str) -> str:
 
 def normalize_eval_command(cmd: str, run_id: str) -> str:
     cmd = substitute_eval_command(cmd, run_id)
+    if "compare_metrics_json.py" in cmd and (
+        "<scenario>" in cmd or "baselines/<scenario>" in cmd
+    ):
+        return ""
     if "run_holdout.py" in cmd and "--train-start" not in cmd:
         return default_holdout_command(run_id)
     return cmd
