@@ -1,0 +1,104 @@
+name: agent_backlog_batch
+
+on:
+  workflow_dispatch:
+    inputs:
+      count:
+        description: "Number of backlog items to run."
+        required: false
+        default: "5"
+        type: string
+      publish:
+        description: "Create PRs after experiments."
+        required: false
+        default: "true"
+        type: string
+      push_base:
+        description: "Push backlog status commits to the base branch."
+        required: false
+        default: "true"
+        type: string
+      base_branch:
+        description: "Base branch to update backlog on (blank uses workflow ref)."
+        required: false
+        default: ""
+        type: string
+
+concurrency:
+  group: agent-backlog-batch
+  cancel-in-progress: true
+
+jobs:
+  batch:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Preflight (Linux/macOS)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: scripts/agent/preflight.sh
+      - name: Preflight (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: powershell -ExecutionPolicy Bypass -File scripts\agent\preflight.ps1
+      - name: Configure Codex (Linux/macOS)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          mkdir -p ~/.codex
+          cp .github/runner/codex.config.toml ~/.codex/config.toml
+      - name: Configure Codex (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          if not exist "%USERPROFILE%\\.codex" mkdir "%USERPROFILE%\\.codex"
+          copy /Y .github\\runner\\codex.config.toml "%USERPROFILE%\\.codex\\config.toml"
+      - name: Install Python deps (Linux/macOS)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: python -m pip install --upgrade pip pyyaml
+      - name: Install Python deps (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: python -m pip install --upgrade pip pyyaml
+      - name: Run backlog batch (Linux/macOS)
+        if: runner.os != 'Windows'
+        env:
+          AUTO_FIX_PUSH_TOKEN: ${{ secrets.AUTO_FIX_PUSH_TOKEN }}
+          GH_TOKEN: ${{ secrets.AUTO_FIX_PUSH_TOKEN }}
+          COUNT: ${{ inputs.count || '5' }}
+          PUBLISH: ${{ inputs.publish || 'true' }}
+          PUSH_BASE: ${{ inputs.push_base || 'true' }}
+          BASE_BRANCH: ${{ inputs.base_branch || github.ref_name }}
+        shell: bash
+        run: |
+          args=(--count "$COUNT")
+          if [[ "$PUBLISH" == "true" ]]; then
+            args+=(--publish)
+          fi
+          if [[ "$PUSH_BASE" == "true" ]]; then
+            args+=(--push-base)
+          fi
+          if [[ -n "$BASE_BRANCH" ]]; then
+            args+=(--base-branch "$BASE_BRANCH")
+          fi
+          python scripts/agent/run_backlog_batch.py "${args[@]}"
+      - name: Run backlog batch (Windows)
+        if: runner.os == 'Windows'
+        env:
+          AUTO_FIX_PUSH_TOKEN: ${{ secrets.AUTO_FIX_PUSH_TOKEN }}
+          GH_TOKEN: ${{ secrets.AUTO_FIX_PUSH_TOKEN }}
+          COUNT: ${{ inputs.count || '5' }}
+          PUBLISH: ${{ inputs.publish || 'true' }}
+          PUSH_BASE: ${{ inputs.push_base || 'true' }}
+          BASE_BRANCH: ${{ inputs.base_branch || github.ref_name }}
+        shell: cmd
+        run: |
+          set "ARGS=--count %COUNT%"
+          if /I "%PUBLISH%"=="true" set "ARGS=%ARGS% --publish"
+          if /I "%PUSH_BASE%"=="true" set "ARGS=%ARGS% --push-base"
+          if not "%BASE_BRANCH%"=="" set "ARGS=%ARGS% --base-branch %BASE_BRANCH%"
+          python scripts\\agent\\run_backlog_batch.py %ARGS%
