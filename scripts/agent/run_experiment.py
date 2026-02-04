@@ -34,6 +34,9 @@ def run(cmd, cwd=None, check=True):
 
 def run_shell_commands(commands, cwd=None):
     for cmd in commands:
+        if isinstance(cmd, str) and "py64_analysis\\.venv\\Scripts\\python.exe" in cmd:
+            if cwd is None or not (Path(cwd) / "py64_analysis" / ".venv" / "Scripts" / "python.exe").exists():
+                cmd = cmd.replace("py64_analysis\\.venv\\Scripts\\python.exe", "python")
         result = subprocess.run(cmd, cwd=cwd, check=False, shell=True)
         if result.returncode != 0:
             raise RuntimeError(f"Command failed ({result.returncode}): {cmd}")
