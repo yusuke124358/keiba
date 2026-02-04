@@ -69,7 +69,7 @@ items:
   - backtest.n_bets
   risk_level: medium
   max_diff_size: 200
-  status: in_progress
+  status: done
   picked_at: '2026-02-04T22:05:18Z'
   branch: agent/exp_20260204_220518-dynamic-odds-cap-by-field-size
 - id: EXP-005
