@@ -87,6 +87,42 @@ def normalize_schema(node):
     return node
 
 
+def contains_eval_metrics(eval_command) -> bool:
+    if not eval_command:
+        return False
+    tokens = eval_command if isinstance(eval_command, list) else [eval_command]
+    for cmd in tokens:
+        lowered = cmd.lower()
+        if "run_holdout.py" in lowered or "run_rolling_holdout.py" in lowered:
+            return True
+    return False
+
+
+def ensure_eval_plan(plan: dict) -> None:
+    run_id = plan.get("run_id") or dt.datetime.utcnow().strftime("RUN_%Y%m%d_%H%M%S")
+    plan["run_id"] = run_id
+    if contains_eval_metrics(plan.get("eval_command")):
+        return
+    plan["eval_command"] = [
+        "py64_analysis\\.venv\\Scripts\\python.exe py64_analysis/scripts/run_holdout.py",
+        "--train-start 2020-01-01",
+        "--train-end 2022-12-31",
+        "--valid-start 2023-01-01",
+        "--valid-end 2023-12-31",
+        "--test-start 2024-01-01",
+        "--test-end 2024-12-31",
+        f"--name {run_id}",
+        f"--out-dir data/holdout_runs/{run_id}",
+    ]
+    plan["metrics_path"] = f"data/holdout_runs/{run_id}/metrics.json"
+    reason = plan.get("reason", "").strip()
+    if reason:
+        reason = f"{reason} (eval_command overridden to run_holdout)"
+    else:
+        reason = "eval_command overridden to run_holdout"
+    plan["reason"] = reason
+
+
 def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--seed", default="experiments/seed_hypotheses.yaml")
@@ -148,8 +184,7 @@ def main() -> int:
             reason = "overridden to do"
         plan["decision"] = "do"
         plan["reason"] = reason
-    if not plan.get("run_id"):
-        plan["run_id"] = dt.datetime.utcnow().strftime("RUN_%Y%m%d_%H%M%S")
+    ensure_eval_plan(plan)
     out_path.write_text(json.dumps(plan, ensure_ascii=True, indent=2), encoding="utf-8")
     print(f"Wrote plan: {out_path}")
     return 0
