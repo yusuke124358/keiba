@@ -133,6 +133,25 @@ def normalize_eval_command(cmd: str, run_id: str) -> str:
     return cmd
 
 
+def coerce_eval_command(eval_command) -> list[str]:
+    if not eval_command:
+        return []
+    if isinstance(eval_command, str):
+        return [eval_command]
+    if not isinstance(eval_command, list):
+        return [str(eval_command)]
+    tokens = [str(item) for item in eval_command if str(item).strip()]
+    if not tokens:
+        return []
+    token_like = any(
+        token.startswith("-") or "<RUN_DIR>" in token or "<CONFIG_PATH>" in token
+        for token in tokens
+    )
+    if token_like:
+        return [" ".join(tokens)]
+    return tokens
+
+
 def find_codex_bin() -> str:
     if os.name == "nt":
         for name in ("codex.cmd", "codex.exe", "codex"):
@@ -292,8 +311,13 @@ def main() -> int:
     plan_path = Path(args.plan)
     plan = json.loads(plan_path.read_text(encoding="utf-8"))
     if plan.get("decision") != "do":
-        print("Plan decision is not 'do'; skipping.")
-        return 0
+        reason = plan.get("reason", "").strip()
+        if reason:
+            reason = f"{reason} (overridden to do)"
+        else:
+            reason = "overridden to do"
+        plan["decision"] = "do"
+        plan["reason"] = reason
     run_id = plan.get("run_id", "")
     if not run_id:
         raise RuntimeError("plan.run_id is required.")
@@ -306,15 +330,14 @@ def main() -> int:
     codex_log = log_dir / f"{plan['run_id']}_implement.log"
     run_codex(root, root / args.prompt, plan, args.profile, codex_log)
 
-    eval_cmd = plan["eval_command"]
+    eval_cmd = coerce_eval_command(plan.get("eval_command"))
     if not eval_cmd:
         raise RuntimeError("eval_command is empty.")
-    if isinstance(eval_cmd, list):
-        eval_cmd = [normalize_eval_command(cmd, run_id) for cmd in eval_cmd]
-        run_shell_commands(eval_cmd, cwd=root)
-    else:
-        eval_cmd = normalize_eval_command(eval_cmd, run_id)
-        run(eval_cmd, cwd=root, check=True)
+    normalized_cmds = [normalize_eval_command(cmd, run_id) for cmd in eval_cmd]
+    normalized_cmds = [cmd for cmd in normalized_cmds if cmd]
+    if not normalized_cmds:
+        normalized_cmds = [default_holdout_command(run_id)]
+    run_shell_commands(normalized_cmds, cwd=root)
 
     metrics_path = root / substitute_metrics_path(plan["metrics_path"], run_id)
     if not metrics_path.exists():
