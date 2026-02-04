@@ -37,6 +37,10 @@ def run_shell_commands(commands, cwd=None):
         if isinstance(cmd, str) and "py64_analysis\\.venv\\Scripts\\python.exe" in cmd:
             if cwd is None or not (Path(cwd) / "py64_analysis" / ".venv" / "Scripts" / "python.exe").exists():
                 cmd = cmd.replace("py64_analysis\\.venv\\Scripts\\python.exe", "python")
+        if isinstance(cmd, str):
+            lowered = cmd.strip().lower()
+            if lowered in {"ci", "make ci"} and os.name == "nt":
+                cmd = "powershell -ExecutionPolicy Bypass -File scripts/ci.ps1"
         result = subprocess.run(cmd, cwd=cwd, check=False, shell=True)
         if result.returncode != 0:
             raise RuntimeError(f"Command failed ({result.returncode}): {cmd}")
