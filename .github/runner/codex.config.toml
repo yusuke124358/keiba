@@ -1,7 +1,43 @@
-forced_login_method = "chatgpt"
-web_search = "cached"
+model = "gpt-5.2-codex"
+model_reasoning_effort = "xhigh"
+profile = "agent_loop"
 
-[profiles.agent_loop]
-web_search = "cached"
+web_search = "disabled"
+project_doc_fallback_filenames = ["memory.md"]
+
+[features]
+exec_policy = true
+powershell_utf8 = true
+
+[profiles.orchestrator]
+web_search = "disabled"
 sandbox_mode = "workspace-write"
 approval_policy = "on-request"
+
+[profiles.experiment]
+web_search = "disabled"
+sandbox_mode = "workspace-write"
+approval_policy = "on-request"
+
+[profiles.reviewer]
+web_search = "disabled"
+sandbox_mode = "read-only"
+approval_policy = "on-request"
+
+[profiles.research]
+web_search = "cached"
+sandbox_mode = "read-only"
+approval_policy = "on-request"
+
+[profiles.publisher]
+web_search = "disabled"
+sandbox_mode = "workspace-write"
+approval_policy = "on-request"
+
+[profiles.agent_loop]
+web_search = "disabled"
+sandbox_mode = "danger-full-access"
+approval_policy = "never"
+
+[sandbox_workspace_write]
+network_access = true

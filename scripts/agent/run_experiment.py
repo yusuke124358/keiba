@@ -62,9 +62,17 @@ def run_shell_commands(commands, cwd=None):
             stripped = cmd.strip()
             if not stripped:
                 continue
-            if re.match(r"^(?:\\.\\\\)?py64_analysis[\\\\/].*\\.py(\\s|$)", stripped):
+            lowered = stripped.lower()
+            if lowered.startswith(
+                (
+                    "py64_analysis\\.venv\\scripts\\python.exe",
+                    "py64_analysis/.venv/scripts/python.exe",
+                )
+            ):
+                pass
+            elif re.match(r"^(?:\\.\\\\)?py64_analysis[\\\\/].*\\.py(\\s|$)", stripped):
                 cmd = f"python {stripped}"
-            elif stripped.lower().startswith(("py64_analysis/", "py64_analysis\\")):
+            elif lowered.startswith(("py64_analysis/", "py64_analysis\\")):
                 cmd = f"python {stripped}"
         result = subprocess.run(cmd, cwd=cwd, check=False, shell=True)
         if result.returncode != 0:

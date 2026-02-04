@@ -3,9 +3,17 @@ import argparse
 import datetime as dt
 import json
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
+
+try:
+    import yaml
+except Exception as exc:
+    raise RuntimeError(
+        "PyYAML is required to run plan_next_experiment. Install with: pip install pyyaml"
+    ) from exc
 
 
 def repo_root() -> Path:
@@ -34,6 +42,169 @@ def load_jsons(path: Path) -> list[dict]:
         except Exception:
             continue
     return items
+
+
+def load_seed_hypotheses(path: Path) -> list[dict]:
+    if not path.exists():
+        raise RuntimeError(f"Seed hypotheses file not found: {path}")
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if not isinstance(data, list) or not data:
+        raise RuntimeError("seed_hypotheses.yaml must contain a non-empty list.")
+    required = {
+        "id",
+        "title",
+        "hypothesis",
+        "change_scope",
+        "acceptance_criteria",
+        "metrics",
+        "risk_level",
+        "max_diff_size",
+    }
+    seeds = []
+    for idx, item in enumerate(data):
+        if not isinstance(item, dict):
+            raise RuntimeError(f"seed_hypotheses entry {idx} is not a mapping.")
+        missing = required - set(item.keys())
+        if missing:
+            seed_name = item.get("id", idx)
+            raise RuntimeError(
+                f"seed_hypotheses entry {seed_name} missing keys: {sorted(missing)}"
+            )
+        if not isinstance(item["acceptance_criteria"], list) or not item[
+            "acceptance_criteria"
+        ]:
+            raise RuntimeError(
+                f"seed_hypotheses entry {item['id']} has empty acceptance_criteria."
+            )
+        if not isinstance(item["metrics"], list) or not item["metrics"]:
+            raise RuntimeError(f"seed_hypotheses entry {item['id']} has empty metrics.")
+        if item["risk_level"] not in {"low", "medium", "high"}:
+            raise RuntimeError(
+                f"seed_hypotheses entry {item['id']} has invalid risk_level."
+            )
+        try:
+            item["max_diff_size"] = int(item["max_diff_size"])
+        except Exception as exc:
+            raise RuntimeError(
+                f"seed_hypotheses entry {item['id']} has invalid max_diff_size."
+            ) from exc
+        seeds.append(item)
+    return seeds
+
+
+def collect_used_seed_ids(runs: list[dict]) -> set[str]:
+    used = set()
+    for run in runs:
+        seed_id = run.get("seed_id")
+        if seed_id:
+            used.add(str(seed_id))
+    return used
+
+
+def select_seed(seeds: list[dict], used_seed_ids: set[str]) -> dict:
+    for seed in seeds:
+        if str(seed.get("id")) not in used_seed_ids:
+            return seed
+    return seeds[0]
+
+
+def collect_existing_run_ids(runs_dir: Path, runs: list[dict]) -> set[str]:
+    ids = set()
+    if runs_dir.exists():
+        for p in runs_dir.glob("*.json"):
+            ids.add(p.stem)
+    for run in runs:
+        run_id = run.get("run_id")
+        if run_id:
+            ids.add(str(run_id))
+    return ids
+
+
+def is_blank_or_tbd(value) -> bool:
+    if not isinstance(value, str):
+        return True
+    stripped = value.strip()
+    if not stripped:
+        return True
+    return "tbd" in stripped.lower()
+
+
+def list_has_valid_text(values) -> bool:
+    if not isinstance(values, list) or not values:
+        return False
+    for item in values:
+        if is_blank_or_tbd(item):
+            return False
+    return True
+
+
+def plan_needs_seed_override(plan: dict, seed_ids: set[str], selected_seed_id: str) -> bool:
+    if not isinstance(plan, dict):
+        return True
+    seed_id = str(plan.get("seed_id") or "").strip()
+    if seed_id != selected_seed_id:
+        return True
+    if seed_id not in seed_ids:
+        return True
+    if is_blank_or_tbd(plan.get("title")):
+        return True
+    if is_blank_or_tbd(plan.get("hypothesis")):
+        return True
+    if is_blank_or_tbd(plan.get("change_scope")):
+        return True
+    if not list_has_valid_text(plan.get("acceptance_criteria")):
+        return True
+    if not list_has_valid_text(plan.get("metrics")):
+        return True
+    if plan.get("risk_level") not in {"low", "medium", "high"}:
+        return True
+    max_diff = plan.get("max_diff_size")
+    if not isinstance(max_diff, int) or max_diff < 1:
+        return True
+    return False
+
+
+def append_reason(plan: dict, note: str) -> None:
+    reason = str(plan.get("reason", "")).strip()
+    plan["reason"] = f"{reason} ({note})" if reason else note
+
+
+def apply_seed_to_plan(plan: dict, seed: dict, note: str) -> None:
+    plan["seed_id"] = seed["id"]
+    plan["title"] = seed["title"]
+    plan["hypothesis"] = seed["hypothesis"]
+    plan["change_scope"] = seed["change_scope"]
+    plan["acceptance_criteria"] = seed["acceptance_criteria"]
+    plan["metrics"] = seed["metrics"]
+    plan["risk_level"] = seed["risk_level"]
+    plan["max_diff_size"] = seed["max_diff_size"]
+    plan["decision"] = "do"
+    append_reason(plan, note)
+
+
+RUN_ID_PATTERN = re.compile(r"^exp_\d{8}_\d{6}(?:_\d{3})?$")
+
+
+def run_id_is_valid(run_id) -> bool:
+    return isinstance(run_id, str) and bool(RUN_ID_PATTERN.match(run_id))
+
+
+def build_run_id(now=None) -> str:
+    if now is None:
+        now = dt.datetime.utcnow()
+    return now.strftime("exp_%Y%m%d_%H%M%S")
+
+
+def ensure_unique_run_id(existing_ids: set[str], base_id: str) -> str:
+    if base_id not in existing_ids:
+        return base_id
+    idx = 1
+    while idx < 1000:
+        candidate = f"{base_id}_{idx:03d}"
+        if candidate not in existing_ids:
+            return candidate
+        idx += 1
+    raise RuntimeError("Unable to generate unique run_id after 999 attempts.")
 
 
 def run_codex(
@@ -98,10 +269,42 @@ def contains_eval_metrics(eval_command) -> bool:
     return False
 
 
+def has_eval_placeholders(value: str) -> bool:
+    lowered = value.lower()
+    if "<" in value and ">" in value:
+        return True
+    return any(
+        token in lowered
+        for token in (
+            "path/to/run_dir",
+            "path\\to\\run_dir",
+            "path/to/config.yaml",
+            "path\\to\\config.yaml",
+            "<run_dir>",
+            "<config_path>",
+            "<config>",
+            "<timestamp>",
+        )
+    )
+
+
+def eval_plan_needs_override(plan: dict) -> bool:
+    eval_command = plan.get("eval_command")
+    metrics_path = str(plan.get("metrics_path", ""))
+    if not eval_command:
+        return True
+    tokens = eval_command if isinstance(eval_command, list) else [eval_command]
+    if any(has_eval_placeholders(str(cmd)) for cmd in tokens):
+        return True
+    if not metrics_path or has_eval_placeholders(metrics_path):
+        return True
+    return not contains_eval_metrics(eval_command)
+
+
 def ensure_eval_plan(plan: dict) -> None:
     run_id = plan.get("run_id") or dt.datetime.utcnow().strftime("RUN_%Y%m%d_%H%M%S")
     plan["run_id"] = run_id
-    if contains_eval_metrics(plan.get("eval_command")):
+    if not eval_plan_needs_override(plan):
         return
     plan["eval_command"] = [
         "py64_analysis\\.venv\\Scripts\\python.exe py64_analysis/scripts/run_holdout.py "
@@ -131,9 +334,15 @@ def main() -> int:
     args = p.parse_args()
 
     root = repo_root()
-    seed_text = (root / args.seed).read_text(encoding="utf-8")
-    runs = load_jsons(root / args.runs)
+    seed_path = root / args.seed
+    seeds = load_seed_hypotheses(seed_path)
+    runs_dir = root / args.runs
+    runs = load_jsons(runs_dir)
     recent = runs[-10:] if len(runs) > 10 else runs
+    used_seed_ids = collect_used_seed_ids(runs)
+    selected_seed = select_seed(seeds, used_seed_ids)
+    seed_ids = {str(seed["id"]) for seed in seeds}
+    existing_run_ids = collect_existing_run_ids(runs_dir, runs)
 
     knowledge_dir = root / args.knowledge
     knowledge_files = []
@@ -142,6 +351,7 @@ def main() -> int:
             knowledge_files.append(str(p.relative_to(root)))
 
     prompt_text = (root / args.prompt).read_text(encoding="utf-8")
+    seed_text = yaml.safe_dump([selected_seed], sort_keys=False)
     payload = {
         "seed_hypotheses": seed_text,
         "recent_runs": recent,
@@ -180,6 +390,18 @@ def main() -> int:
             reason = "overridden to do"
         plan["decision"] = "do"
         plan["reason"] = reason
+    if plan_needs_seed_override(plan, seed_ids, str(selected_seed["id"])):
+        apply_seed_to_plan(
+            plan,
+            selected_seed,
+            "auto-corrected from seed due to invalid or mismatched plan output",
+        )
+    run_id = plan.get("run_id")
+    if run_id_is_valid(run_id):
+        base_id = run_id
+    else:
+        base_id = build_run_id()
+    plan["run_id"] = ensure_unique_run_id(existing_run_ids, base_id)
     ensure_eval_plan(plan)
     out_path.write_text(json.dumps(plan, ensure_ascii=True, indent=2), encoding="utf-8")
     print(f"Wrote plan: {out_path}")

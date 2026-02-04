@@ -55,3 +55,13 @@
   - Stop if any PR has `needs-human`
   - If checkpoint due, generate summary and stop (publisher adds `needs-human`)
   - Otherwise generate and run one experiment
+
+## Backlog Batch Runner
+- Backlog file: `experiments/backlog.yml` (status: `todo`, `in_progress`, `done`, `failed`).
+- Script: `scripts/agent/run_backlog_batch.py`.
+- Workflow: `.github/workflows/agent_backlog_batch.yml`.
+- Defaults: `--count 5`, stop on first failure (use `--continue-on-failure` to override).
+- Behavior:
+  - Picks `todo` items only.
+  - Marks `in_progress`, runs plan + experiment, then marks `done` or `failed`.
+  - Optional: push backlog status commits (`--push-base`) and publish PRs (`--publish`).
