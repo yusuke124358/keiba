@@ -13,13 +13,16 @@ def repo_root() -> Path:
 
 
 def run(cmd, cwd=None, check=True):
-    if isinstance(cmd, list) and cmd and all(isinstance(item, str) for item in cmd):
-        last = None
-        for item in cmd:
-            last = subprocess.run(item, cwd=cwd, check=False, shell=True)
-            if check and last.returncode != 0:
-                raise RuntimeError(f"Command failed ({last.returncode}): {item}")
-        return last
+    if isinstance(cmd, list):
+        if cmd and len(cmd) == 1 and isinstance(cmd[0], str):
+            result = subprocess.run(cmd[0], cwd=cwd, check=False, shell=True)
+            if check and result.returncode != 0:
+                raise RuntimeError(f"Command failed ({result.returncode}): {cmd[0]}")
+            return result
+        result = subprocess.run(cmd, cwd=cwd, check=False)
+        if check and result.returncode != 0:
+            raise RuntimeError(f"Command failed ({result.returncode}): {' '.join(cmd)}")
+        return result
     if isinstance(cmd, str):
         result = subprocess.run(cmd, cwd=cwd, check=False, shell=True)
     else:
