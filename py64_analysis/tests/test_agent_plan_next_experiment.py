@@ -65,3 +65,22 @@ def test_ensure_unique_run_id_suffix():
         MODULE.ensure_unique_run_id(existing, "exp_20260204_123456")
         == "exp_20260204_123456_001"
     )
+
+
+def test_ensure_eval_plan_overrides_placeholders():
+    plan = {
+        "run_id": "exp_20260204_0000",
+        "eval_command": [
+            "py64_analysis\\scripts\\run_holdout.py",
+            "--run-dir",
+            "<run_dir>",
+            "--config",
+            "<config_path>",
+        ],
+        "metrics_path": "<run_dir>\\analysis\\run_holdout\\<timestamp>\\metrics.json",
+    }
+    MODULE.ensure_eval_plan(plan)
+    eval_command = plan["eval_command"][0]
+    assert "run_holdout.py" in eval_command
+    assert "--train-start" in eval_command
+    assert plan["metrics_path"] == "data/holdout_runs/exp_20260204_0000/metrics.json"

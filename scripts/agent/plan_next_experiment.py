@@ -269,10 +269,42 @@ def contains_eval_metrics(eval_command) -> bool:
     return False
 
 
+def has_eval_placeholders(value: str) -> bool:
+    lowered = value.lower()
+    if "<" in value and ">" in value:
+        return True
+    return any(
+        token in lowered
+        for token in (
+            "path/to/run_dir",
+            "path\\to\\run_dir",
+            "path/to/config.yaml",
+            "path\\to\\config.yaml",
+            "<run_dir>",
+            "<config_path>",
+            "<config>",
+            "<timestamp>",
+        )
+    )
+
+
+def eval_plan_needs_override(plan: dict) -> bool:
+    eval_command = plan.get("eval_command")
+    metrics_path = str(plan.get("metrics_path", ""))
+    if not eval_command:
+        return True
+    tokens = eval_command if isinstance(eval_command, list) else [eval_command]
+    if any(has_eval_placeholders(str(cmd)) for cmd in tokens):
+        return True
+    if not metrics_path or has_eval_placeholders(metrics_path):
+        return True
+    return not contains_eval_metrics(eval_command)
+
+
 def ensure_eval_plan(plan: dict) -> None:
     run_id = plan.get("run_id") or dt.datetime.utcnow().strftime("RUN_%Y%m%d_%H%M%S")
     plan["run_id"] = run_id
-    if contains_eval_metrics(plan.get("eval_command")):
+    if not eval_plan_needs_override(plan):
         return
     plan["eval_command"] = [
         "py64_analysis\\.venv\\Scripts\\python.exe py64_analysis/scripts/run_holdout.py "
