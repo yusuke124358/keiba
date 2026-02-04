@@ -6,13 +6,13 @@
 import os
 import sys
 from pathlib import Path
-from datetime import date
-
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(PROJECT_ROOT / "py64_analysis" / "src"))
 
 from sqlalchemy import text
-from keiba.db.loader import get_session
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+SRC_PATH = PROJECT_ROOT / "py64_analysis" / "src"
+if str(SRC_PATH) not in sys.path:
+    sys.path.insert(0, str(SRC_PATH))
 
 
 def is_ci() -> bool:
@@ -46,20 +46,26 @@ def check_db():
     if should_skip_db():
         return {"skipped": True}
     try:
+        from keiba.db.loader import get_session
+
         session = get_session()
         try:
             # レース数（年度別）
             result = session.execute(
-                text("""
-                    SELECT 
+                text(
+                    """
+                    SELECT
                         EXTRACT(YEAR FROM date)::int as year,
                         COUNT(DISTINCT race_id) as n_races,
-                        COUNT(DISTINCT CASE WHEN pace_first3f IS NOT NULL THEN race_id END) as n_races_with_pace
+                        COUNT(
+                            DISTINCT CASE WHEN pace_first3f IS NOT NULL THEN race_id END
+                        ) as n_races_with_pace
                     FROM fact_race
                     WHERE date >= '2020-01-01' AND date < '2025-01-01'
                     GROUP BY EXTRACT(YEAR FROM date)
                     ORDER BY year
-                """)
+                    """
+                )
             )
             races_by_year = {row[0]: {"total": row[1], "with_pace": row[2]} for row in result}
 
@@ -75,8 +81,9 @@ def check_db():
 
             # 特徴量バージョン別
             result_features = session.execute(
-                text("""
-                    SELECT 
+                text(
+                    """
+                    SELECT
                         feature_version,
                         COUNT(DISTINCT race_id) as n_races,
                         COUNT(*) as n_features
@@ -85,7 +92,8 @@ def check_db():
                       AND SUBSTRING(race_id::text, 1, 8) < '20250101'
                     GROUP BY feature_version
                     ORDER BY feature_version DESC
-                """)
+                    """
+                )
             )
             features_by_version = {
                 row[0]: {"n_races": row[1], "n_features": row[2]} for row in result_features
@@ -156,9 +164,13 @@ def main():
         print("\n  年度別レース数:")
         for year in sorted(db_status["races_by_year"].keys()):
             info = db_status["races_by_year"][year]
-            pace_pct = (info["with_pace"] / info["total"] * 100) if info["total"] > 0 else 0
+            if info["total"] > 0:
+                pace_pct = info["with_pace"] / info["total"] * 100
+            else:
+                pace_pct = 0
             print(
-                f"    {year}: {info['total']:,} レース (ペースデータ: {info['with_pace']:,}, {pace_pct:.1f}%)"
+                f"    {year}: {info['total']:,} レース "
+                f"(ペースデータ: {info['with_pace']:,}, {pace_pct:.1f}%)"
             )
 
         print("\n  特徴量バージョン別:")
