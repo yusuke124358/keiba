@@ -46,6 +46,14 @@ def run_shell_commands(commands, cwd=None):
             raise RuntimeError(f"Command failed ({result.returncode}): {cmd}")
 
 
+def substitute_placeholders(text: str, run_id: str) -> str:
+    if not text:
+        return text
+    for token in ("<run_dir>", "<run_id>", "{run_dir}", "{run_id}"):
+        text = text.replace(token, run_id)
+    return text
+
+
 def find_codex_bin() -> str:
     if os.name == "nt":
         for name in ("codex.cmd", "codex.exe", "codex"):
@@ -143,8 +151,11 @@ def main() -> int:
     if plan.get("decision") != "do":
         print("Plan decision is not 'do'; skipping.")
         return 0
+    run_id = plan.get("run_id", "")
+    if not run_id:
+        raise RuntimeError("plan.run_id is required.")
 
-    branch = f"agent/{plan['run_id']}-{slugify(plan['title'])}"
+    branch = f"agent/{run_id}-{slugify(plan['title'])}"
     run(["git", "checkout", "-b", branch], cwd=root)
 
     log_dir = root / "artifacts" / "agent"
@@ -156,17 +167,19 @@ def main() -> int:
     if not eval_cmd:
         raise RuntimeError("eval_command is empty.")
     if isinstance(eval_cmd, list):
+        eval_cmd = [substitute_placeholders(cmd, run_id) for cmd in eval_cmd]
         run_shell_commands(eval_cmd, cwd=root)
     else:
+        eval_cmd = substitute_placeholders(eval_cmd, run_id)
         run(eval_cmd, cwd=root, check=True)
 
-    metrics_path = root / plan["metrics_path"]
+    metrics_path = root / substitute_placeholders(plan["metrics_path"], run_id)
     if not metrics_path.exists():
         raise RuntimeError(f"metrics_path not found: {metrics_path}")
     metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
 
     result = {
-        "run_id": plan["run_id"],
+        "run_id": run_id,
         "seed_id": plan["seed_id"],
         "title": plan["title"],
         "status": metrics.get("status", "inconclusive"),
