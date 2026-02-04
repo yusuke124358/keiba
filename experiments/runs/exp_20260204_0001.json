@@ -1,7 +1,7 @@
 {
   "run_id": "exp_20260204_0001",
-  "seed_id": "seed_leakage_safe_winprob_v1",
-  "title": "Leakage-Safe Time-Split Baseline Refresh",
+  "seed_id": "seed_20260204_0001",
+  "title": "Scientist Loop seed hypothesis: tighten leakage-safe time split validation",
   "status": "inconclusive",
   "metrics": {
     "roi": 0.10399002493765586,
