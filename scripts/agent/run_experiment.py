@@ -93,6 +93,8 @@ def substitute_metrics_path(text: str, run_id: str) -> str:
         return text
     for token in ("<RUN_DIR>", "<run_dir>", "{run_dir}"):
         text = text.replace(token, run_id)
+    text = text.replace("path\\to\\run_dir", f"data/holdout_runs/{run_id}")
+    text = text.replace("path/to/run_dir", f"data/holdout_runs/{run_id}")
     text = substitute_placeholders(text, run_id)
     text = text.replace("data/holdout_runs/data/holdout_runs/", "data/holdout_runs/")
     return text
@@ -110,6 +112,11 @@ def default_holdout_command(run_id: str) -> str:
 
 def normalize_eval_command(cmd: str, run_id: str) -> str:
     cmd = substitute_eval_command(cmd, run_id)
+    if "path\\to\\config.yaml" in cmd or "path/to/config.yaml" in cmd:
+        return ""
+    if "path\\to\\run_dir" in cmd or "path/to/run_dir" in cmd:
+        if "run_holdout.py" in cmd:
+            return default_holdout_command(run_id)
     if "compare_metrics_json.py" in cmd and (
         "<scenario>" in cmd or "baselines/<scenario>" in cmd
     ):
@@ -193,6 +200,30 @@ def render_experiment_log(
     template: Path, out_path: Path, plan: dict, result: dict
 ) -> None:
     text = template.read_text(encoding="utf-8")
+    status = result.get("status", "inconclusive")
+    next_action = "iterate"
+    if status == "pass":
+        next_action = "merge"
+    elif status == "fail":
+        next_action = "abandon"
+    text = re.sub(
+        r"(Experiment type:\s*)experiment\|infra",
+        r"\1experiment",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(
+        r"(status:\s*)pass\|fail\|inconclusive",
+        rf"\1{status}",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(
+        r"(next_action:\s*)merge\|iterate\|abandon",
+        rf"\1{next_action}",
+        text,
+        flags=re.IGNORECASE,
+    )
     text = text.replace("<id>", plan["run_id"])
     text = text.replace("<title>", plan["title"])
     text = text.replace("<write the hypothesis>", plan["hypothesis"])
