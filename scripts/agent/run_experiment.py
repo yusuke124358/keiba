@@ -96,6 +96,23 @@ def substitute_metrics_path(text: str, run_id: str) -> str:
     return text
 
 
+def default_holdout_command(run_id: str) -> str:
+    return (
+        "python py64_analysis/scripts/run_holdout.py"
+        " --train-start 2020-01-01 --train-end 2022-12-31"
+        " --valid-start 2023-01-01 --valid-end 2023-12-31"
+        " --test-start 2024-01-01 --test-end 2024-12-31"
+        f" --name {run_id} --out-dir data/holdout_runs/{run_id}"
+    )
+
+
+def normalize_eval_command(cmd: str, run_id: str) -> str:
+    cmd = substitute_eval_command(cmd, run_id)
+    if "run_holdout.py" in cmd and "--train-start" not in cmd:
+        return default_holdout_command(run_id)
+    return cmd
+
+
 def find_codex_bin() -> str:
     if os.name == "nt":
         for name in ("codex.cmd", "codex.exe", "codex"):
@@ -249,10 +266,10 @@ def main() -> int:
     if not eval_cmd:
         raise RuntimeError("eval_command is empty.")
     if isinstance(eval_cmd, list):
-        eval_cmd = [substitute_eval_command(cmd, run_id) for cmd in eval_cmd]
+        eval_cmd = [normalize_eval_command(cmd, run_id) for cmd in eval_cmd]
         run_shell_commands(eval_cmd, cwd=root)
     else:
-        eval_cmd = substitute_eval_command(eval_cmd, run_id)
+        eval_cmd = normalize_eval_command(eval_cmd, run_id)
         run(eval_cmd, cwd=root, check=True)
 
     metrics_path = root / substitute_metrics_path(plan["metrics_path"], run_id)
