@@ -32,6 +32,13 @@ def run(cmd, cwd=None, check=True):
     return result
 
 
+def run_shell_commands(commands, cwd=None):
+    for cmd in commands:
+        result = subprocess.run(cmd, cwd=cwd, check=False, shell=True)
+        if result.returncode != 0:
+            raise RuntimeError(f"Command failed ({result.returncode}): {cmd}")
+
+
 def find_codex_bin() -> str:
     if os.name == "nt":
         for name in ("codex.cmd", "codex.exe", "codex"):
@@ -141,7 +148,10 @@ def main() -> int:
     eval_cmd = plan["eval_command"]
     if not eval_cmd:
         raise RuntimeError("eval_command is empty.")
-    run(eval_cmd, cwd=root, check=True)
+    if isinstance(eval_cmd, list):
+        run_shell_commands(eval_cmd, cwd=root)
+    else:
+        run(eval_cmd, cwd=root, check=True)
 
     metrics_path = root / plan["metrics_path"]
     if not metrics_path.exists():
