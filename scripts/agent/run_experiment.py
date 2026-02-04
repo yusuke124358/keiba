@@ -41,6 +41,10 @@ def run_shell_commands(commands, cwd=None):
             lowered = cmd.strip().lower()
             if lowered in {"ci", "make ci"} and os.name == "nt":
                 cmd = "powershell -ExecutionPolicy Bypass -File scripts/ci.ps1"
+        if isinstance(cmd, str):
+            stripped = cmd.strip()
+            if re.match(r"^(?:\\.\\\\)?py64_analysis[\\\\/].*\\.py(\\s|$)", stripped):
+                cmd = f"python {stripped}"
         result = subprocess.run(cmd, cwd=cwd, check=False, shell=True)
         if result.returncode != 0:
             raise RuntimeError(f"Command failed ({result.returncode}): {cmd}")
