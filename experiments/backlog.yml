@@ -49,17 +49,20 @@ items:
   - rolling.neg_roi_window_rate
   risk_level: high
   max_diff_size: 120
-  status: todo
+  status: in_progress
+  picked_at: '2026-02-04T21:53:10Z'
+  branch: agent/exp_20260204_215310-selector-threshold-change-for-high-takeout-races
 - id: EXP-004
   title: Dynamic odds cap by field size
-  hypothesis: Tightening max-odds caps more aggressively in large fields reduces tail loss without harming ROI.
+  hypothesis: Tightening max-odds caps more aggressively in large fields reduces tail
+    loss without harming ROI.
   change_scope:
   - config/
   - py64_analysis/src/keiba/betting/
   acceptance_criteria:
-  - "ROI >= baseline - 0.01"
-  - "Max drawdown improves by >= 5%"
-  - "n_bets >= baseline * 0.90"
+  - ROI >= baseline - 0.01
+  - Max drawdown improves by >= 5%
+  - n_bets >= baseline * 0.90
   metrics:
   - backtest.roi
   - backtest.max_drawdown
@@ -67,17 +70,17 @@ items:
   risk_level: medium
   max_diff_size: 200
   status: todo
-
 - id: EXP-005
   title: EV margin schedule by odds bucket
-  hypothesis: Requiring a higher EV margin for high-odds bets increases realized ROI stability.
+  hypothesis: Requiring a higher EV margin for high-odds bets increases realized ROI
+    stability.
   change_scope:
   - config/
   - py64_analysis/src/keiba/betting/
   acceptance_criteria:
-  - "ROI >= baseline + 0.005"
-  - "Max drawdown improves by >= 3%"
-  - "n_bets >= baseline * 0.80"
+  - ROI >= baseline + 0.005
+  - Max drawdown improves by >= 3%
+  - n_bets >= baseline * 0.80
   metrics:
   - backtest.roi
   - backtest.max_drawdown
@@ -85,33 +88,33 @@ items:
   risk_level: medium
   max_diff_size: 200
   status: todo
-
 - id: EXP-006
   title: Adaptive fractional Kelly under drawdown
-  hypothesis: Lowering Kelly fraction during drawdowns reduces max drawdown with minimal ROI loss.
+  hypothesis: Lowering Kelly fraction during drawdowns reduces max drawdown with minimal
+    ROI loss.
   change_scope:
   - config/
   - py64_analysis/src/keiba/betting/
   acceptance_criteria:
-  - "ROI >= baseline - 0.005"
-  - "Max drawdown improves by >= 7%"
+  - ROI >= baseline - 0.005
+  - Max drawdown improves by >= 7%
   metrics:
   - backtest.roi
   - backtest.max_drawdown
   risk_level: low
   max_diff_size: 150
   status: todo
-
 - id: EXP-007
   title: Per-race stake cap as bankroll percentage
-  hypothesis: Adding a per-race stake cap reduces worst-case loss and drawdown with little impact on ROI.
+  hypothesis: Adding a per-race stake cap reduces worst-case loss and drawdown with
+    little impact on ROI.
   change_scope:
   - config/
   - py64_analysis/src/keiba/betting/
   acceptance_criteria:
-  - "ROI >= baseline - 0.005"
-  - "Max drawdown improves by >= 5%"
-  - "Worst-day loss improves by >= 10%"
+  - ROI >= baseline - 0.005
+  - Max drawdown improves by >= 5%
+  - Worst-day loss improves by >= 10%
   metrics:
   - backtest.roi
   - backtest.max_drawdown
@@ -119,7 +122,6 @@ items:
   risk_level: low
   max_diff_size: 150
   status: todo
-
 - id: EXP-008
   title: Daily stop-loss / stop-win guardrails
   hypothesis: Daily stop rules reduce deep drawdowns and tail losses in volatile periods.
@@ -128,9 +130,9 @@ items:
   - py64_analysis/src/keiba/betting/
   - py64_analysis/src/keiba/backtest/
   acceptance_criteria:
-  - "ROI >= baseline - 0.01"
-  - "Max drawdown improves by >= 8%"
-  - "Daily loss p95 improves by >= 10%"
+  - ROI >= baseline - 0.01
+  - Max drawdown improves by >= 8%
+  - Daily loss p95 improves by >= 10%
   metrics:
   - backtest.roi
   - backtest.max_drawdown
@@ -138,17 +140,17 @@ items:
   risk_level: medium
   max_diff_size: 200
   status: todo
-
 - id: EXP-009
   title: Skip low-field-size races
-  hypothesis: Avoiding small fields reduces slippage/selection noise and improves risk-adjusted returns.
+  hypothesis: Avoiding small fields reduces slippage/selection noise and improves
+    risk-adjusted returns.
   change_scope:
   - config/
   - py64_analysis/src/keiba/betting/
   acceptance_criteria:
-  - "ROI >= baseline"
-  - "Max drawdown improves by >= 3%"
-  - "n_bets >= baseline * 0.70"
+  - ROI >= baseline
+  - Max drawdown improves by >= 3%
+  - n_bets >= baseline * 0.70
   metrics:
   - backtest.roi
   - backtest.max_drawdown
@@ -156,17 +158,17 @@ items:
   risk_level: low
   max_diff_size: 120
   status: todo
-
 - id: EXP-010
   title: Minimum odds floor for win bets
-  hypothesis: Skipping extremely low odds improves ROI after takeout and reduces opportunity cost.
+  hypothesis: Skipping extremely low odds improves ROI after takeout and reduces opportunity
+    cost.
   change_scope:
   - config/
   - py64_analysis/src/keiba/betting/
   acceptance_criteria:
-  - "ROI improves by >= 0.005"
-  - "Max drawdown does not worsen by > 2%"
-  - "n_bets >= baseline * 0.85"
+  - ROI improves by >= 0.005
+  - Max drawdown does not worsen by > 2%
+  - n_bets >= baseline * 0.85
   metrics:
   - backtest.roi
   - backtest.max_drawdown
@@ -174,102 +176,102 @@ items:
   risk_level: low
   max_diff_size: 120
   status: todo
-
 - id: EXP-011
   title: Odds drift robustness filter
-  hypothesis: Betting only when EV remains positive under a conservative odds-drop scenario improves realized ROI.
+  hypothesis: Betting only when EV remains positive under a conservative odds-drop
+    scenario improves realized ROI.
   change_scope:
   - config/
   - py64_analysis/src/keiba/betting/
   - py64_analysis/src/keiba/backtest/
   acceptance_criteria:
-  - "ROI >= baseline"
-  - "Slippage-stress ROI improves by >= 0.01"
+  - ROI >= baseline
+  - Slippage-stress ROI improves by >= 0.01
   metrics:
   - backtest.roi
   - backtest.roi_slippage_stress
   risk_level: medium
   max_diff_size: 200
   status: todo
-
 - id: EXP-012
   title: Tune closing_odds_multiplier quantile
-  hypothesis: Using a more conservative closing-mult quantile improves realized ROI when betting before close.
+  hypothesis: Using a more conservative closing-mult quantile improves realized ROI
+    when betting before close.
   change_scope:
   - config/
   - py64_analysis/scripts/
   - py64_analysis/src/keiba/backtest/
   acceptance_criteria:
-  - "ROI >= baseline"
-  - "EV overestimation rate improves by >= 10%"
+  - ROI >= baseline
+  - EV overestimation rate improves by >= 10%
   metrics:
   - backtest.roi
   - odds.ev_overestimation_rate
   risk_level: medium
   max_diff_size: 200
   status: todo
-
 - id: EXP-013
   title: Closing multiplier by odds bucket
-  hypothesis: Estimating closing-mult per odds bucket reduces EV error and improves selection quality.
+  hypothesis: Estimating closing-mult per odds bucket reduces EV error and improves
+    selection quality.
   change_scope:
   - py64_analysis/scripts/
   - py64_analysis/src/keiba/backtest/
   - py64_analysis/src/keiba/betting/
   acceptance_criteria:
-  - "ROI >= baseline + 0.005"
-  - "Closing-mult MAE improves by >= 5%"
+  - ROI >= baseline + 0.005
+  - Closing-mult MAE improves by >= 5%
   metrics:
   - backtest.roi
   - odds.closing_mult_mae
   risk_level: medium
   max_diff_size: 200
   status: todo
-
 - id: EXP-014
   title: Odds time-series movement features (0B41/0B42)
-  hypothesis: Incorporating odds movement features improves calibration and ROI versus static odds snapshots.
+  hypothesis: Incorporating odds movement features improves calibration and ROI versus
+    static odds snapshots.
   change_scope:
   - py32_fetcher/
   - py64_analysis/src/keiba/features/
   - py64_analysis/src/keiba/modeling/
   acceptance_criteria:
-  - "ROI >= baseline + 0.005"
-  - "Logloss improves by >= 0.5%"
+  - ROI >= baseline + 0.005
+  - Logloss improves by >= 0.5%
   metrics:
   - backtest.roi
   - model.logloss
   risk_level: high
   max_diff_size: 200
   status: todo
-
 - id: EXP-015
   title: Calibration method sweep (isotonic vs temperature)
-  hypothesis: Better probability calibration improves EV-based selection and realized ROI.
+  hypothesis: Better probability calibration improves EV-based selection and realized
+    ROI.
   change_scope:
   - py64_analysis/src/keiba/modeling/
   - py64_analysis/src/keiba/backtest/
   acceptance_criteria:
-  - "ECE improves by >= 10%"
-  - "ROI >= baseline"
+  - ECE improves by >= 10%
+  - ROI >= baseline
   metrics:
   - calibration.ece
   - backtest.roi
   risk_level: medium
   max_diff_size: 180
   status: todo
-
 - id: EXP-016
   title: Shrink model probs toward market implied
-  hypothesis: Blending toward market implied probability reduces overconfidence and improves risk-adjusted ROI.
+  hypothesis: Blending toward market implied probability reduces overconfidence and
+    improves risk-adjusted ROI.
   change_scope:
   - py64_analysis/src/keiba/modeling/
   - py64_analysis/src/keiba/betting/
   - config/
   acceptance_criteria:
-  - "ECE improves by >= 10%"
-  - "Max drawdown improves by >= 3%"
-  - "ROI >= baseline - 0.005"
+  - ECE improves by >= 10%
+  - Max drawdown improves by >= 3%
+  - ROI >= baseline - 0.005
   metrics:
   - calibration.ece
   - backtest.max_drawdown
@@ -277,7 +279,6 @@ items:
   risk_level: medium
   max_diff_size: 200
   status: todo
-
 - id: EXP-017
   title: Separate models by surface (turf vs dirt)
   hypothesis: Surface-specialized models improve predictive performance and ROI.
@@ -285,15 +286,14 @@ items:
   - py64_analysis/src/keiba/modeling/
   - py64_analysis/src/keiba/features/
   acceptance_criteria:
-  - "Logloss improves by >= 0.5%"
-  - "ROI >= baseline + 0.005"
+  - Logloss improves by >= 0.5%
+  - ROI >= baseline + 0.005
   metrics:
   - model.logloss
   - backtest.roi
   risk_level: high
   max_diff_size: 200
   status: todo
-
 - id: EXP-018
   title: Distance bucket models
   hypothesis: Training per-distance buckets improves fit vs a single global model.
@@ -301,15 +301,14 @@ items:
   - py64_analysis/src/keiba/modeling/
   - py64_analysis/src/keiba/features/
   acceptance_criteria:
-  - "Logloss improves by >= 0.3%"
-  - "ROI >= baseline"
+  - Logloss improves by >= 0.3%
+  - ROI >= baseline
   metrics:
   - model.logloss
   - backtest.roi
   risk_level: high
   max_diff_size: 200
   status: todo
-
 - id: EXP-019
   title: Recency-weighted training
   hypothesis: Recency weighting improves out-of-sample stability under regime shifts.
@@ -317,47 +316,46 @@ items:
   - py64_analysis/src/keiba/modeling/
   - py64_analysis/scripts/
   acceptance_criteria:
-  - "Rolling ROI stddev improves by >= 5%"
-  - "ROI >= baseline"
+  - Rolling ROI stddev improves by >= 5%
+  - ROI >= baseline
   metrics:
   - rolling.roi_std
   - backtest.roi
   risk_level: medium
   max_diff_size: 160
   status: todo
-
 - id: EXP-020
   title: Multi-task top1 + top3 probabilities
-  hypothesis: Learning top1 and top3 jointly yields better calibrated win probabilities and improved betting decisions.
+  hypothesis: Learning top1 and top3 jointly yields better calibrated win probabilities
+    and improved betting decisions.
   change_scope:
   - py64_analysis/src/keiba/modeling/
   - py64_analysis/src/keiba/backtest/
   acceptance_criteria:
-  - "Brier score improves by >= 1%"
-  - "ROI >= baseline"
+  - Brier score improves by >= 1%
+  - ROI >= baseline
   metrics:
   - calibration.brier
   - backtest.roi
   risk_level: high
   max_diff_size: 200
   status: todo
-
 - id: EXP-021
   title: Plackett-Luce style finish-order model
-  hypothesis: Modeling the finish order distribution improves win-prob estimation and downstream EV.
+  hypothesis: Modeling the finish order distribution improves win-prob estimation
+    and downstream EV.
   change_scope:
   - py64_analysis/src/keiba/modeling/
   - py64_analysis/src/keiba/backtest/
   acceptance_criteria:
-  - "Logloss improves by >= 0.5%"
-  - "ROI >= baseline"
+  - Logloss improves by >= 0.5%
+  - ROI >= baseline
   metrics:
   - model.logloss
   - backtest.roi
   risk_level: high
   max_diff_size: 200
   status: todo
-
 - id: EXP-022
   title: Hyperparameter tuning via rolling CV
   hypothesis: Lightweight tuning over rolling CV improves robustness vs fixed params.
@@ -365,32 +363,31 @@ items:
   - py64_analysis/src/keiba/modeling/
   - py64_analysis/scripts/
   acceptance_criteria:
-  - "Logloss improves by >= 0.3%"
-  - "Rolling ROI mean improves by >= 0.003"
+  - Logloss improves by >= 0.3%
+  - Rolling ROI mean improves by >= 0.003
   metrics:
   - model.logloss
   - rolling.roi_mean
   risk_level: medium
   max_diff_size: 200
   status: todo
-
 - id: EXP-023
   title: Uncertainty-aware staking (ensemble variance)
-  hypothesis: Scaling stakes down when prediction uncertainty is high reduces drawdown with small ROI impact.
+  hypothesis: Scaling stakes down when prediction uncertainty is high reduces drawdown
+    with small ROI impact.
   change_scope:
   - py64_analysis/src/keiba/modeling/
   - py64_analysis/src/keiba/betting/
   - py64_analysis/src/keiba/backtest/
   acceptance_criteria:
-  - "ROI >= baseline - 0.005"
-  - "Max drawdown improves by >= 7%"
+  - ROI >= baseline - 0.005
+  - Max drawdown improves by >= 7%
   metrics:
   - backtest.roi
   - backtest.max_drawdown
   risk_level: high
   max_diff_size: 200
   status: todo
-
 - id: EXP-024
   title: Odds feature transforms (log-odds, clipped odds)
   hypothesis: Better odds transforms reduce model brittleness and improve calibration.
@@ -398,15 +395,14 @@ items:
   - py64_analysis/src/keiba/features/
   - py64_analysis/src/keiba/modeling/
   acceptance_criteria:
-  - "ECE improves by >= 5%"
-  - "ROI >= baseline"
+  - ECE improves by >= 5%
+  - ROI >= baseline
   metrics:
   - calibration.ece
   - backtest.roi
   risk_level: low
   max_diff_size: 150
   status: todo
-
 - id: EXP-025
   title: Speed figure normalized by course/distance/going
   hypothesis: A normalized speed figure adds predictive signal beyond raw times/positions.
@@ -414,95 +410,94 @@ items:
   - py64_analysis/src/keiba/features/
   - py64_analysis/src/keiba/modeling/
   acceptance_criteria:
-  - "Logloss improves by >= 0.3%"
-  - "ROI >= baseline"
+  - Logloss improves by >= 0.3%
+  - ROI >= baseline
   metrics:
   - model.logloss
   - backtest.roi
   risk_level: medium
   max_diff_size: 200
   status: todo
-
 - id: EXP-026
   title: Pace pressure features
-  hypothesis: Pace scenario features (early speed vs closers) improve win probability estimation.
+  hypothesis: Pace scenario features (early speed vs closers) improve win probability
+    estimation.
   change_scope:
   - py64_analysis/src/keiba/features/
   - py64_analysis/src/keiba/modeling/
   acceptance_criteria:
-  - "Logloss improves by >= 0.3%"
-  - "ROI >= baseline"
+  - Logloss improves by >= 0.3%
+  - ROI >= baseline
   metrics:
   - model.logloss
   - backtest.roi
   risk_level: medium
   max_diff_size: 200
   status: todo
-
 - id: EXP-027
   title: Form-cycle features (improving/declining)
-  hypothesis: Detecting form cycles improves prediction for non-favorites and increases ROI.
+  hypothesis: Detecting form cycles improves prediction for non-favorites and increases
+    ROI.
   change_scope:
   - py64_analysis/src/keiba/features/
   - py64_analysis/src/keiba/modeling/
   acceptance_criteria:
-  - "ROI improves by >= 0.005"
-  - "n_bets >= baseline * 0.90"
+  - ROI improves by >= 0.005
+  - n_bets >= baseline * 0.90
   metrics:
   - backtest.roi
   - backtest.n_bets
   risk_level: medium
   max_diff_size: 180
   status: todo
-
 - id: EXP-028
   title: Layoff and freshness features
-  hypothesis: Layoff-related features improve calibration and reduce bad bets after long breaks.
+  hypothesis: Layoff-related features improve calibration and reduce bad bets after
+    long breaks.
   change_scope:
   - py64_analysis/src/keiba/features/
   - py64_analysis/src/keiba/modeling/
   acceptance_criteria:
-  - "ECE improves by >= 5%"
-  - "ROI >= baseline"
+  - ECE improves by >= 5%
+  - ROI >= baseline
   metrics:
   - calibration.ece
   - backtest.roi
   risk_level: low
   max_diff_size: 160
   status: todo
-
 - id: EXP-029
   title: Weight carried and weight-change interactions
-  hypothesis: Modeling weight and weight changes improves predictions especially across distances.
+  hypothesis: Modeling weight and weight changes improves predictions especially across
+    distances.
   change_scope:
   - py64_analysis/src/keiba/features/
   - py64_analysis/src/keiba/modeling/
   acceptance_criteria:
-  - "Logloss improves by >= 0.2%"
-  - "ROI >= baseline"
+  - Logloss improves by >= 0.2%
+  - ROI >= baseline
   metrics:
   - model.logloss
   - backtest.roi
   risk_level: low
   max_diff_size: 160
   status: todo
-
 - id: EXP-030
   title: Jockey/trainer conditional win rates
-  hypothesis: Track- and distance-conditional jockey/trainer stats add signal beyond raw win rates.
+  hypothesis: Track- and distance-conditional jockey/trainer stats add signal beyond
+    raw win rates.
   change_scope:
   - py64_analysis/src/keiba/features/
   - py64_analysis/src/keiba/modeling/
   acceptance_criteria:
-  - "Logloss improves by >= 0.2%"
-  - "ROI >= baseline"
+  - Logloss improves by >= 0.2%
+  - ROI >= baseline
   metrics:
   - model.logloss
   - backtest.roi
   risk_level: medium
   max_diff_size: 200
   status: todo
-
 - id: EXP-031
   title: Jockey-horse synergy feature
   hypothesis: Explicit synergy features improve selection among similarly rated horses.
@@ -510,258 +505,257 @@ items:
   - py64_analysis/src/keiba/features/
   - py64_analysis/src/keiba/modeling/
   acceptance_criteria:
-  - "Logloss improves by >= 0.2%"
-  - "ROI >= baseline"
+  - Logloss improves by >= 0.2%
+  - ROI >= baseline
   metrics:
   - model.logloss
   - backtest.roi
   risk_level: medium
   max_diff_size: 180
   status: todo
-
 - id: EXP-032
   title: Gate/draw bias interactions by course
-  hypothesis: Modeling gate bias per course improves predictions and avoids systematically bad positions.
+  hypothesis: Modeling gate bias per course improves predictions and avoids systematically
+    bad positions.
   change_scope:
   - py64_analysis/src/keiba/features/
   - py64_analysis/src/keiba/modeling/
   acceptance_criteria:
-  - "ROI >= baseline + 0.003"
-  - "Max drawdown does not worsen by > 2%"
+  - ROI >= baseline + 0.003
+  - Max drawdown does not worsen by > 2%
   metrics:
   - backtest.roi
   - backtest.max_drawdown
   risk_level: medium
   max_diff_size: 200
   status: todo
-
 - id: EXP-033
   title: Course record features (horse/trainer)
-  hypothesis: Course/distance history features improve prediction where specialization matters.
+  hypothesis: Course/distance history features improve prediction where specialization
+    matters.
   change_scope:
   - py64_analysis/src/keiba/features/
   - py64_analysis/src/keiba/modeling/
   acceptance_criteria:
-  - "Logloss improves by >= 0.2%"
-  - "ROI >= baseline"
+  - Logloss improves by >= 0.2%
+  - ROI >= baseline
   metrics:
   - model.logloss
   - backtest.roi
   risk_level: medium
   max_diff_size: 200
   status: todo
-
 - id: EXP-034
   title: Distance change suitability
-  hypothesis: Capturing distance-up/down suitability improves predictions for tactical changes.
+  hypothesis: Capturing distance-up/down suitability improves predictions for tactical
+    changes.
   change_scope:
   - py64_analysis/src/keiba/features/
   - py64_analysis/src/keiba/modeling/
   acceptance_criteria:
-  - "Logloss improves by >= 0.2%"
-  - "ROI >= baseline"
+  - Logloss improves by >= 0.2%
+  - ROI >= baseline
   metrics:
   - model.logloss
   - backtest.roi
   risk_level: low
   max_diff_size: 160
   status: todo
-
 - id: EXP-035
   title: Surface-switch features (turf<->dirt)
-  hypothesis: Explicit surface-switch indicators improve calibration and reduce mispriced bets.
+  hypothesis: Explicit surface-switch indicators improve calibration and reduce mispriced
+    bets.
   change_scope:
   - py64_analysis/src/keiba/features/
   - py64_analysis/src/keiba/modeling/
   acceptance_criteria:
-  - "ECE improves by >= 5%"
-  - "ROI >= baseline"
+  - ECE improves by >= 5%
+  - ROI >= baseline
   metrics:
   - calibration.ece
   - backtest.roi
   risk_level: low
   max_diff_size: 160
   status: todo
-
 - id: EXP-036
   title: Going/track-condition interactions
-  hypothesis: Interaction features with going improve prediction especially in extreme conditions.
+  hypothesis: Interaction features with going improve prediction especially in extreme
+    conditions.
   change_scope:
   - py64_analysis/src/keiba/features/
   - py64_analysis/src/keiba/modeling/
   acceptance_criteria:
-  - "Logloss improves by >= 0.2%"
-  - "ROI >= baseline"
+  - Logloss improves by >= 0.2%
+  - ROI >= baseline
   metrics:
   - model.logloss
   - backtest.roi
   risk_level: medium
   max_diff_size: 180
   status: todo
-
 - id: EXP-037
   title: Class step-up/down features
-  hypothesis: Class movement features improve generalization and reduce overbetting on weak opposition wins.
+  hypothesis: Class movement features improve generalization and reduce overbetting
+    on weak opposition wins.
   change_scope:
   - py64_analysis/src/keiba/features/
   - py64_analysis/src/keiba/modeling/
   acceptance_criteria:
-  - "Logloss improves by >= 0.2%"
-  - "ROI >= baseline"
+  - Logloss improves by >= 0.2%
+  - ROI >= baseline
   metrics:
   - model.logloss
   - backtest.roi
   risk_level: medium
   max_diff_size: 180
   status: todo
-
 - id: EXP-038
   title: Field strength proxy
-  hypothesis: A field-strength feature reduces false positives in weakly identified races.
+  hypothesis: A field-strength feature reduces false positives in weakly identified
+    races.
   change_scope:
   - py64_analysis/src/keiba/features/
   - py64_analysis/src/keiba/modeling/
   acceptance_criteria:
-  - "ROI improves by >= 0.003"
-  - "Negative-ROI windows reduced by >= 5%"
+  - ROI improves by >= 0.003
+  - Negative-ROI windows reduced by >= 5%
   metrics:
   - backtest.roi
   - rolling.neg_roi_window_rate
   risk_level: medium
   max_diff_size: 200
   status: todo
-
 - id: EXP-039
   title: Running-style classification features
-  hypothesis: Running-style clusters improve predictions by matching pace profiles to race shape.
+  hypothesis: Running-style clusters improve predictions by matching pace profiles
+    to race shape.
   change_scope:
   - py64_analysis/src/keiba/features/
   - py64_analysis/src/keiba/modeling/
   acceptance_criteria:
-  - "Logloss improves by >= 0.3%"
-  - "ROI >= baseline"
+  - Logloss improves by >= 0.3%
+  - ROI >= baseline
   metrics:
   - model.logloss
   - backtest.roi
   risk_level: high
   max_diff_size: 200
   status: todo
-
 - id: EXP-040
   title: Market overround and dispersion features
-  hypothesis: Market-level features (overround/dispersion) help detect inefficient markets and improve ROI.
+  hypothesis: Market-level features (overround/dispersion) help detect inefficient
+    markets and improve ROI.
   change_scope:
   - py64_analysis/src/keiba/features/
   - py64_analysis/src/keiba/modeling/
   - py64_analysis/src/keiba/betting/
   acceptance_criteria:
-  - "ROI improves by >= 0.005"
-  - "n_bets >= baseline * 0.90"
+  - ROI improves by >= 0.005
+  - n_bets >= baseline * 0.90
   metrics:
   - backtest.roi
   - backtest.n_bets
   risk_level: medium
   max_diff_size: 200
   status: todo
-
 - id: EXP-041
   title: Rolling holdout step-size sweep (14 -> 7)
-  hypothesis: Smaller step sizes detect instability earlier and improve selection robustness decisions.
+  hypothesis: Smaller step sizes detect instability earlier and improve selection
+    robustness decisions.
   change_scope:
   - py64_analysis/scripts/
   - py64_analysis/src/keiba/backtest/
   acceptance_criteria:
-  - "Rolling ROI stddev improves by >= 5%"
-  - "Runtime increases by <= 2x"
+  - Rolling ROI stddev improves by >= 5%
+  - Runtime increases by <= 2x
   metrics:
   - rolling.roi_std
   - ops.runtime_seconds
   risk_level: low
   max_diff_size: 150
   status: todo
-
 - id: EXP-042
   title: Add a gap window to reduce leakage risk
-  hypothesis: Introducing a gap between training and test reduces subtle leakage and improves true OOS stability.
+  hypothesis: Introducing a gap between training and test reduces subtle leakage and
+    improves true OOS stability.
   change_scope:
   - py64_analysis/scripts/
   - py64_analysis/src/keiba/modeling/
   - py64_analysis/src/keiba/backtest/
   acceptance_criteria:
-  - "Rolling ROI mean does not degrade by > 0.003"
-  - "Leakage check violations drop to 0"
+  - Rolling ROI mean does not degrade by > 0.003
+  - Leakage check violations drop to 0
   metrics:
   - rolling.roi_mean
   - quality.leakage_violations
   risk_level: medium
   max_diff_size: 200
   status: todo
-
 - id: EXP-043
-  title: "Slippage model: quantile-based vs fixed multiplier"
-  hypothesis: A quantile-based slippage model better matches realized outcomes and improves policy tuning.
+  title: 'Slippage model: quantile-based vs fixed multiplier'
+  hypothesis: A quantile-based slippage model better matches realized outcomes and
+    improves policy tuning.
   change_scope:
   - py64_analysis/src/keiba/backtest/
   - config/
   acceptance_criteria:
-  - "Backtest-vs-real slippage error improves by >= 10%"
-  - "ROI >= baseline"
+  - Backtest-vs-real slippage error improves by >= 10%
+  - ROI >= baseline
   metrics:
   - odds.slippage_error
   - backtest.roi
   risk_level: medium
   max_diff_size: 180
   status: todo
-
 - id: EXP-044
   title: Bootstrap confidence intervals for ROI deltas
-  hypothesis: Using bootstrap CIs reduces false-positive strategy changes and stabilizes iteration.
+  hypothesis: Using bootstrap CIs reduces false-positive strategy changes and stabilizes
+    iteration.
   change_scope:
   - py64_analysis/src/keiba/backtest/
   - py64_analysis/scripts/
   acceptance_criteria:
-  - "False-positive rate on random splits decreases"
-  - "Decision stability improves (fewer flip-flops)"
+  - False-positive rate on random splits decreases
+  - Decision stability improves (fewer flip-flops)
   metrics:
   - stats.false_positive_rate
   - process.decision_flip_rate
   risk_level: low
   max_diff_size: 200
   status: todo
-
 - id: EXP-045
   title: Segmented evaluation by track/season
-  hypothesis: Segment-aware evaluation prevents overfitting to a single venue/season and improves robustness.
+  hypothesis: Segment-aware evaluation prevents overfitting to a single venue/season
+    and improves robustness.
   change_scope:
   - py64_analysis/src/keiba/backtest/
   - py64_analysis/scripts/
   acceptance_criteria:
-  - "Worst-segment ROI improves by >= 0.003"
-  - "Overall ROI >= baseline"
+  - Worst-segment ROI improves by >= 0.003
+  - Overall ROI >= baseline
   metrics:
   - rolling.worst_segment_roi
   - backtest.roi
   risk_level: low
   max_diff_size: 200
   status: todo
-
 - id: EXP-046
   title: Strict pre-race feature whitelist (leakage prevention)
-  hypothesis: Enforcing a pre-race whitelist eliminates accidental leakage and increases trust in OOS results.
+  hypothesis: Enforcing a pre-race whitelist eliminates accidental leakage and increases
+    trust in OOS results.
   change_scope:
   - py64_analysis/src/keiba/features/
   - py64_analysis/src/keiba/db/
   - py64_analysis/tests/
   acceptance_criteria:
-  - "Leakage check violations drop to 0"
-  - "ROI does not degrade by > 0.005"
+  - Leakage check violations drop to 0
+  - ROI does not degrade by > 0.005
   metrics:
   - quality.leakage_violations
   - backtest.roi
   risk_level: medium
   max_diff_size: 200
   status: todo
-
 - id: EXP-047
   title: Missing-value strategy sweep (impute vs sentinel)
   hypothesis: A consistent missing-value strategy improves model stability and calibration.
@@ -769,15 +763,14 @@ items:
   - py64_analysis/src/keiba/features/
   - py64_analysis/src/keiba/modeling/
   acceptance_criteria:
-  - "ECE improves by >= 5%"
-  - "Logloss improves by >= 0.2%"
+  - ECE improves by >= 5%
+  - Logloss improves by >= 0.2%
   metrics:
   - calibration.ece
   - model.logloss
   risk_level: low
   max_diff_size: 180
   status: todo
-
 - id: EXP-048
   title: Feature drift monitoring
   hypothesis: Detecting feature drift early reduces silent performance degradation.
@@ -786,40 +779,40 @@ items:
   - py64_analysis/scripts/
   - docs/
   acceptance_criteria:
-  - "Drift alerts correlate with ROI drops in rolling windows"
+  - Drift alerts correlate with ROI drops in rolling windows
   metrics:
   - quality.drift_alert_precision
   risk_level: low
   max_diff_size: 200
   status: todo
-
 - id: EXP-049
   title: Data completeness gate for new JV-Data types
-  hypothesis: Enforcing per-type completeness thresholds prevents partial ingestion from corrupting backtests.
+  hypothesis: Enforcing per-type completeness thresholds prevents partial ingestion
+    from corrupting backtests.
   change_scope:
   - py32_fetcher/
   - py64_analysis/src/keiba/db/
   - py64_analysis/tests/
   acceptance_criteria:
-  - "Ingestion completeness >= 0.99 for required types"
-  - "Loader errors reduced by >= 50%"
+  - Ingestion completeness >= 0.99 for required types
+  - Loader errors reduced by >= 50%
   metrics:
   - data.completeness
   - ops.loader_error_rate
   risk_level: medium
   max_diff_size: 200
   status: todo
-
 - id: EXP-050
   title: PDF spec ingestion to schemas/dictionary
-  hypothesis: Parsing JRA-VAN PDF specs into machine-readable schemas reduces integration errors and speeds feature work.
+  hypothesis: Parsing JRA-VAN PDF specs into machine-readable schemas reduces integration
+    errors and speeds feature work.
   change_scope:
   - scripts/
   - schemas/
   - docs/
   acceptance_criteria:
-  - "Schema coverage increases (fields documented) by >= 20%"
-  - "Parser-related bugs reduced"
+  - Schema coverage increases (fields documented) by >= 20%
+  - Parser-related bugs reduced
   metrics:
   - docs.schema_coverage
   - ops.parser_bug_rate
