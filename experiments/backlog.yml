@@ -89,7 +89,7 @@ items:
   - backtest.n_bets
   risk_level: medium
   max_diff_size: 200
-  status: in_progress
+  status: done
   picked_at: '2026-02-04T22:13:35Z'
   branch: agent/exp_20260204_221334-ev-margin-schedule-by-odds-bucket
 - id: EXP-006
