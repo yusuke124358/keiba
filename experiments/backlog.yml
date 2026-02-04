@@ -89,7 +89,9 @@ items:
   - backtest.n_bets
   risk_level: medium
   max_diff_size: 200
-  status: todo
+  status: in_progress
+  picked_at: '2026-02-04T22:13:35Z'
+  branch: agent/exp_20260204_221334-ev-margin-schedule-by-odds-bucket
 - id: EXP-006
   title: Adaptive fractional Kelly under drawdown
   hypothesis: Lowering Kelly fraction during drawdowns reduces max drawdown with minimal
