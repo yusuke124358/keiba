@@ -28,6 +28,12 @@ if ($mypyFiles.Count -gt 0) {
 } else {
   Write-Host "No changed src files; skipping mypy."
 }
+$tmpRoot = Join-Path $root ".tmp"
+$pytestTmp = Join-Path $tmpRoot "pytest"
+New-Item -ItemType Directory -Force -Path $pytestTmp | Out-Null
+$env:PYTEST_TMPDIR = $pytestTmp
+$env:TEMP = $pytestTmp
+$env:TMP = $pytestTmp
 Run-Step "pytest" { & $py -m pytest py64_analysis\tests }
 Run-Step "check_system_status" { & $py py64_analysis\scripts\check_system_status.py }
 Run-Step "validate_data_manifest" { & $py scripts\validate_data_manifest.py }
