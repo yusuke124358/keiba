@@ -3,6 +3,7 @@ import argparse
 import datetime as dt
 import os
 import subprocess
+import time
 from pathlib import Path
 from typing import Iterable, Tuple
 
@@ -129,25 +130,30 @@ def ensure_labels(root: Path, labels: Iterable[str], env: dict) -> None:
         )
 
 
-def find_pr_number(root: Path, branch: str, env: dict) -> str:
-    code, number = run_capture(
-        [
-            "gh",
-            "pr",
-            "view",
-            "--json",
-            "number",
-            "--head",
-            branch,
-            "-q",
-            ".number",
-        ],
-        cwd=root,
-        env=env,
-    )
-    if code != 0 or not number:
-        return ""
-    return number
+def find_pr_number(
+    root: Path, branch: str, env: dict, retries: int = 3, delay: float = 2.0
+) -> str:
+    for attempt in range(max(retries, 1)):
+        code, number = run_capture(
+            [
+                "gh",
+                "pr",
+                "view",
+                "--json",
+                "number",
+                "--head",
+                branch,
+                "-q",
+                ".number",
+            ],
+            cwd=root,
+            env=env,
+        )
+        if code == 0 and number:
+            return number
+        if attempt < retries - 1:
+            time.sleep(delay)
+    return ""
 
 
 def ensure_infra_experiment_log(root: Path, base_ref: str) -> None:
@@ -292,14 +298,14 @@ def main() -> int:
         labels = normalize_labels(args.labels)
         ensure_labels(root, labels, env)
         pr_number = find_pr_number(root, branch, env)
-        if pr_number:
-            for label in labels:
-                run(
-                    ["gh", "pr", "edit", pr_number, "--add-label", label],
-                    cwd=root,
-                    env=env,
-                    check=False,
-                )
+        pr_selector = pr_number or branch
+        for label in labels:
+            run(
+                ["gh", "pr", "edit", pr_selector, "--add-label", label],
+                cwd=root,
+                env=env,
+                check=False,
+            )
     return 0
 
 
