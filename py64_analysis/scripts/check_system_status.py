@@ -2,6 +2,7 @@
 システム全体の進捗状況を確認するスクリプト
 - venv/DB/JV-Link/データ取得状況を確認
 """
+import os
 import sys
 from pathlib import Path
 from datetime import date
@@ -11,6 +12,20 @@ sys.path.insert(0, str(PROJECT_ROOT / "py64_analysis" / "src"))
 
 from sqlalchemy import text
 from keiba.db.loader import get_session
+
+
+def is_ci() -> bool:
+    return os.environ.get("GITHUB_ACTIONS", "").lower() == "true" or os.environ.get(
+        "CI", ""
+    ).lower() == "true"
+
+
+def should_skip_db() -> bool:
+    return os.environ.get("KEIBA_SKIP_DB_CHECK", "") == "1" or is_ci()
+
+
+def should_skip_py32() -> bool:
+    return os.environ.get("KEIBA_SKIP_PY32_CHECK", "") == "1" or is_ci()
 
 
 def check_venv():
@@ -26,6 +41,8 @@ def check_venv():
 
 def check_db():
     """DB接続とデータ量確認"""
+    if should_skip_db():
+        return {"skipped": True}
     try:
         session = get_session()
         try:
@@ -118,13 +135,18 @@ def main():
     # venv確認
     print("\n[1] venv環境")
     venv_status = check_venv()
-    print(f"  py32_fetcher: {'OK' if venv_status['py32_fetcher'] else 'NG'}")
+    if should_skip_py32():
+        print("  py32_fetcher: SKIP")
+    else:
+        print(f"  py32_fetcher: {'OK' if venv_status['py32_fetcher'] else 'NG'}")
     print(f"  py64_analysis: {'OK' if venv_status['py64_analysis'] else 'NG'}")
     
     # DB確認
     print("\n[2] PostgreSQL")
     db_status = check_db()
-    if db_status.get("connected"):
+    if db_status.get("skipped"):
+        print("  Connection: SKIP (CI)")
+    elif db_status.get("connected"):
         print("  接続: OK")
         print(f"  総レース数（2020-2024）: {db_status['n_races_total']:,}")
         print("\n  年度別レース数:")
@@ -157,4 +179,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
