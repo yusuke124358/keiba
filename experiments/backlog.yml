@@ -698,7 +698,7 @@ items:
   status: todo
 
 - id: EXP-043
-  title: Slippage model: quantile-based vs fixed multiplier
+  title: "Slippage model: quantile-based vs fixed multiplier"
   hypothesis: A quantile-based slippage model better matches realized outcomes and improves policy tuning.
   change_scope:
   - py64_analysis/src/keiba/backtest/
