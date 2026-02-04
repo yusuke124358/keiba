@@ -1,5 +1,7 @@
-approval_policy = "on-request"
-sandbox_mode = "workspace-write"
+model = "gpt-5.2-codex"
+model_reasoning_effort = "xhigh"
+profile = "agent_loop"
+
 web_search = "disabled"
 project_doc_fallback_filenames = ["memory.md"]
 
@@ -34,10 +36,8 @@ approval_policy = "on-request"
 
 [profiles.agent_loop]
 web_search = "disabled"
-sandbox_mode = "workspace-write"
-approval_policy = "on-request"
-# Update the model here when changing loop behavior/cost.
-model = "gpt-5-codex"
+sandbox_mode = "danger-full-access"
+approval_policy = "never"
 
 [sandbox_workspace_write]
-network_access = false
+network_access = true
