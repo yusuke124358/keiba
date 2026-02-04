@@ -1,7 +1,7 @@
 {
   "run_id": "exp_20260204_001",
-  "seed_id": "seed_20260204_001",
-  "title": "Time-safe experiment placeholder plan",
+  "seed_id": "seed_hypothesis_001",
+  "title": "Ablate Feature Group X to Test Leakage-Safe Contribution",
   "status": "inconclusive",
   "metrics": {
     "roi": 0.10399002493765586,
