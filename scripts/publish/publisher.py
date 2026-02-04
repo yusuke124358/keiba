@@ -129,6 +129,27 @@ def ensure_labels(root: Path, labels: Iterable[str], env: dict) -> None:
         )
 
 
+def find_pr_number(root: Path, branch: str, env: dict) -> str:
+    code, number = run_capture(
+        [
+            "gh",
+            "pr",
+            "view",
+            "--json",
+            "number",
+            "--head",
+            branch,
+            "-q",
+            ".number",
+        ],
+        cwd=root,
+        env=env,
+    )
+    if code != 0 or not number:
+        return ""
+    return number
+
+
 def ensure_infra_experiment_log(root: Path, base_ref: str) -> None:
     changed = (
         subprocess.run(
@@ -270,13 +291,15 @@ def main() -> int:
     if args.labels:
         labels = normalize_labels(args.labels)
         ensure_labels(root, labels, env)
-        for label in labels:
-            run(
-                ["gh", "pr", "edit", branch, "--add-label", label],
-                cwd=root,
-                env=env,
-                check=False,
-            )
+        pr_number = find_pr_number(root, branch, env)
+        if pr_number:
+            for label in labels:
+                run(
+                    ["gh", "pr", "edit", pr_number, "--add-label", label],
+                    cwd=root,
+                    env=env,
+                    check=False,
+                )
     return 0
 
 
