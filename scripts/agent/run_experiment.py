@@ -33,7 +33,17 @@ def run(cmd, cwd=None, check=True):
 
 
 def run_shell_commands(commands, cwd=None):
-    for cmd in commands:
+    index = 0
+    while index < len(commands):
+        cmd = commands[index]
+        next_cmd = commands[index + 1] if index + 1 < len(commands) else None
+        ps_env = isinstance(cmd, str) and re.match(r"^\\s*\\$env:[A-Za-z_][A-Za-z0-9_]*\\s*=", cmd)
+        if ps_env and next_cmd:
+            ps_line = f"{cmd}; {next_cmd}".replace('"', '`"')
+            cmd = f"powershell -ExecutionPolicy Bypass -Command \"{ps_line}\""
+            index += 2
+        else:
+            index += 1
         if isinstance(cmd, str) and "py64_analysis\\.venv\\Scripts\\python.exe" in cmd:
             if cwd is None or not (Path(cwd) / "py64_analysis" / ".venv" / "Scripts" / "python.exe").exists():
                 cmd = cmd.replace("py64_analysis\\.venv\\Scripts\\python.exe", "python")
