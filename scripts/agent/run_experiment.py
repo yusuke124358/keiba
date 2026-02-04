@@ -112,6 +112,46 @@ def slugify(text: str) -> str:
     return text.strip("-") or "experiment"
 
 
+def _format_metric(value):
+    return "N/A" if value is None else value
+
+
+def normalize_metrics(metrics_json: dict) -> dict:
+    backtest = metrics_json.get("backtest")
+    if backtest is None:
+        raise RuntimeError("metrics.json missing required 'backtest' section.")
+    run_kind = metrics_json.get("run_kind", "holdout")
+    split = metrics_json.get("split", {})
+    test_split = split.get("test", {}) if isinstance(split, dict) else {}
+    test_period = f"{test_split.get('start', 'N/A')} to {test_split.get('end', 'N/A')}"
+
+    roi = backtest.get("roi")
+    step14 = metrics_json.get("step14") or {}
+    step14_roi = step14.get("roi")
+    pooled_vs_step14_mismatch = "no"
+    preferred_roi = "pooled"
+    if run_kind == "rolling_holdout" and step14_roi is not None and roi is not None:
+        if (roi >= 0) != (step14_roi >= 0):
+            pooled_vs_step14_mismatch = "yes"
+            preferred_roi = "step14"
+        else:
+            preferred_roi = "step14"
+
+    return {
+        "roi": _format_metric(roi),
+        "total_stake": _format_metric(backtest.get("total_stake")),
+        "n_bets": _format_metric(backtest.get("n_bets")),
+        "max_drawdown": _format_metric(backtest.get("max_drawdown")),
+        "test_period": test_period,
+        "rolling": "yes" if run_kind == "rolling_holdout" else "no",
+        "design_window": "N/A",
+        "eval_window": "N/A",
+        "paired_delta": "N/A",
+        "pooled_vs_step14_mismatch": pooled_vs_step14_mismatch,
+        "preferred_roi": preferred_roi,
+    }
+
+
 def ensure_clean(root: Path) -> None:
     status = subprocess.run(
         ["git", "status", "--porcelain"],
@@ -218,13 +258,29 @@ def main() -> int:
         raise RuntimeError(f"metrics_path not found: {metrics_path}")
     metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
 
+    normalized = normalize_metrics(metrics)
+    run_dir = metrics.get("run_dir", f"data/holdout_runs/{run_id}")
+    metrics_json_path = str(metrics_path.relative_to(root)).replace("\\", "/")
+    report_path = "N/A"
+    comparison_path = "N/A"
+    report_candidate = root / run_dir / "report" / "backtest.md"
+    if report_candidate.exists():
+        report_path = str(report_candidate.relative_to(root)).replace("\\", "/")
+    comparison_candidate = root / run_dir / "comparison.json"
+    if comparison_candidate.exists():
+        comparison_path = str(comparison_candidate.relative_to(root)).replace("\\", "/")
+
     result = {
         "run_id": run_id,
         "seed_id": plan["seed_id"],
         "title": plan["title"],
         "status": metrics.get("status", "inconclusive"),
-        "metrics": metrics["metrics"],
-        "artifacts": metrics["artifacts"],
+        "metrics": normalized,
+        "artifacts": {
+            "metrics_json": metrics_json_path,
+            "comparison_json": comparison_path,
+            "report": report_path,
+        },
     }
     result_path = root / "experiments" / "runs" / f"{plan['run_id']}.json"
     result_path.write_text(
