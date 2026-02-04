@@ -127,7 +127,7 @@ items:
   - backtest.worst_day_loss
   risk_level: low
   max_diff_size: 150
-  status: in_progress
+  status: done
   picked_at: '2026-02-04T22:43:12Z'
   branch: agent/exp_20260204_224312-per-race-stake-cap-as-bankroll-percentage
 - id: EXP-008
