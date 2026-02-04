@@ -49,11 +49,8 @@ def run_shell_commands(commands, cwd=None):
 def substitute_placeholders(text: str, run_id: str) -> str:
     if not text:
         return text
-    run_dir = f"data/holdout_runs/{run_id}"
     for token in ("<run_id>", "{run_id}"):
         text = text.replace(token, run_id)
-    for token in ("<run_dir>", "{run_dir}", "<RUN_DIR>"):
-        text = text.replace(token, run_dir)
     for token in ("<CONFIG_PATH>", "<config_path>"):
         text = text.replace(token, "")
     text = re.sub(r"--config\\s+<CONFIG_PATH>", "", text, flags=re.IGNORECASE)
@@ -61,6 +58,25 @@ def substitute_placeholders(text: str, run_id: str) -> str:
     text = re.sub(r"--config=\\s*<CONFIG_PATH>", "", text, flags=re.IGNORECASE)
     text = re.sub(r"--config=\\s*<config_path>", "", text, flags=re.IGNORECASE)
     text = re.sub(r"\\s+", " ", text).strip()
+    return text
+
+
+def substitute_eval_command(text: str, run_id: str) -> str:
+    if not text:
+        return text
+    run_dir = f"data/holdout_runs/{run_id}"
+    for token in ("<RUN_DIR>", "<run_dir>", "{run_dir}"):
+        text = text.replace(token, run_dir)
+    return substitute_placeholders(text, run_id)
+
+
+def substitute_metrics_path(text: str, run_id: str) -> str:
+    if not text:
+        return text
+    for token in ("<RUN_DIR>", "<run_dir>", "{run_dir}"):
+        text = text.replace(token, run_id)
+    text = substitute_placeholders(text, run_id)
+    text = text.replace("data/holdout_runs/data/holdout_runs/", "data/holdout_runs/")
     return text
 
 
@@ -177,13 +193,13 @@ def main() -> int:
     if not eval_cmd:
         raise RuntimeError("eval_command is empty.")
     if isinstance(eval_cmd, list):
-        eval_cmd = [substitute_placeholders(cmd, run_id) for cmd in eval_cmd]
+        eval_cmd = [substitute_eval_command(cmd, run_id) for cmd in eval_cmd]
         run_shell_commands(eval_cmd, cwd=root)
     else:
-        eval_cmd = substitute_placeholders(eval_cmd, run_id)
+        eval_cmd = substitute_eval_command(eval_cmd, run_id)
         run(eval_cmd, cwd=root, check=True)
 
-    metrics_path = root / substitute_placeholders(plan["metrics_path"], run_id)
+    metrics_path = root / substitute_metrics_path(plan["metrics_path"], run_id)
     if not metrics_path.exists():
         raise RuntimeError(f"metrics_path not found: {metrics_path}")
     metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
