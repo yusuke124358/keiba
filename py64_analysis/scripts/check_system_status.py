@@ -2,6 +2,7 @@
 システム全体の進捗状況を確認するスクリプト
 - venv/DB/JV-Link/データ取得状況を確認
 """
+
 import os
 import sys
 from pathlib import Path
@@ -15,9 +16,10 @@ from keiba.db.loader import get_session
 
 
 def is_ci() -> bool:
-    return os.environ.get("GITHUB_ACTIONS", "").lower() == "true" or os.environ.get(
-        "CI", ""
-    ).lower() == "true"
+    return (
+        os.environ.get("GITHUB_ACTIONS", "").lower() == "true"
+        or os.environ.get("CI", "").lower() == "true"
+    )
 
 
 def should_skip_db() -> bool:
@@ -32,7 +34,7 @@ def check_venv():
     """venvの存在確認"""
     py32_venv = PROJECT_ROOT / "py32_fetcher" / ".venv"
     py64_venv = PROJECT_ROOT / "py64_analysis" / ".venv"
-    
+
     return {
         "py32_fetcher": py32_venv.exists(),
         "py64_analysis": py64_venv.exists(),
@@ -60,7 +62,7 @@ def check_db():
                 """)
             )
             races_by_year = {row[0]: {"total": row[1], "with_pace": row[2]} for row in result}
-            
+
             # 総レース数
             result_total = session.execute(
                 text("""
@@ -70,7 +72,7 @@ def check_db():
                 """)
             )
             n_races_total = result_total.fetchone()[0]
-            
+
             # 特徴量バージョン別
             result_features = session.execute(
                 text("""
@@ -85,8 +87,10 @@ def check_db():
                     ORDER BY feature_version DESC
                 """)
             )
-            features_by_version = {row[0]: {"n_races": row[1], "n_features": row[2]} for row in result_features}
-            
+            features_by_version = {
+                row[0]: {"n_races": row[1], "n_features": row[2]} for row in result_features
+            }
+
             # オッズデータ（0B41）
             result_odds = session.execute(
                 text("""
@@ -96,7 +100,7 @@ def check_db():
                 """)
             )
             n_races_with_odds = result_odds.fetchone()[0]
-            
+
             return {
                 "connected": True,
                 "n_races_total": n_races_total,
@@ -118,7 +122,7 @@ def check_data_files():
     raw_dir = PROJECT_ROOT / "data" / "raw"
     if not raw_dir.exists():
         return {"exists": False}
-    
+
     jsonl_files = list(raw_dir.glob("*.jsonl"))
     return {
         "exists": True,
@@ -131,7 +135,7 @@ def main():
     print("=" * 60)
     print("システム進捗状況確認")
     print("=" * 60)
-    
+
     # venv確認
     print("\n[1] venv環境")
     venv_status = check_venv()
@@ -140,7 +144,7 @@ def main():
     else:
         print(f"  py32_fetcher: {'OK' if venv_status['py32_fetcher'] else 'NG'}")
     print(f"  py64_analysis: {'OK' if venv_status['py64_analysis'] else 'NG'}")
-    
+
     # DB確認
     print("\n[2] PostgreSQL")
     db_status = check_db()
@@ -150,21 +154,23 @@ def main():
         print("  接続: OK")
         print(f"  総レース数（2020-2024）: {db_status['n_races_total']:,}")
         print("\n  年度別レース数:")
-        for year in sorted(db_status['races_by_year'].keys()):
-            info = db_status['races_by_year'][year]
-            pace_pct = (info['with_pace'] / info['total'] * 100) if info['total'] > 0 else 0
-            print(f"    {year}: {info['total']:,} レース (ペースデータ: {info['with_pace']:,}, {pace_pct:.1f}%)")
-        
+        for year in sorted(db_status["races_by_year"].keys()):
+            info = db_status["races_by_year"][year]
+            pace_pct = (info["with_pace"] / info["total"] * 100) if info["total"] > 0 else 0
+            print(
+                f"    {year}: {info['total']:,} レース (ペースデータ: {info['with_pace']:,}, {pace_pct:.1f}%)"
+            )
+
         print("\n  特徴量バージョン別:")
-        for version in sorted(db_status['features_by_version'].keys(), reverse=True):
-            info = db_status['features_by_version'][version]
+        for version in sorted(db_status["features_by_version"].keys(), reverse=True):
+            info = db_status["features_by_version"][version]
             print(f"    {version}: {info['n_races']:,} レース, {info['n_features']:,} 特徴量")
-        
+
         print(f"\n  オッズデータ（0B41）: {db_status['n_races_with_odds']:,} レース")
     else:
         print("  接続: NG")
         print(f"  エラー: {db_status.get('error', 'Unknown')}")
-    
+
     # データファイル確認
     print("\n[3] raw JSONLファイル")
     file_status = check_data_files()
@@ -173,7 +179,7 @@ def main():
         print(f"  総サイズ: {file_status['total_size_mb']:.1f} MB")
     else:
         print("  ディレクトリが存在しません")
-    
+
     print("\n" + "=" * 60)
 
 
