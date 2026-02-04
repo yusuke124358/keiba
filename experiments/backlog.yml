@@ -49,7 +49,7 @@ items:
   - rolling.neg_roi_window_rate
   risk_level: high
   max_diff_size: 120
-  status: in_progress
+  status: done
   picked_at: '2026-02-04T21:53:10Z'
   branch: agent/exp_20260204_215310-selector-threshold-change-for-high-takeout-races
 - id: EXP-004
