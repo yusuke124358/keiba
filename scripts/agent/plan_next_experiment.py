@@ -104,15 +104,11 @@ def ensure_eval_plan(plan: dict) -> None:
     if contains_eval_metrics(plan.get("eval_command")):
         return
     plan["eval_command"] = [
-        "py64_analysis\\.venv\\Scripts\\python.exe py64_analysis/scripts/run_holdout.py",
-        "--train-start 2020-01-01",
-        "--train-end 2022-12-31",
-        "--valid-start 2023-01-01",
-        "--valid-end 2023-12-31",
-        "--test-start 2024-01-01",
-        "--test-end 2024-12-31",
-        f"--name {run_id}",
-        f"--out-dir data/holdout_runs/{run_id}",
+        "py64_analysis\\.venv\\Scripts\\python.exe py64_analysis/scripts/run_holdout.py "
+        "--train-start 2020-01-01 --train-end 2022-12-31 "
+        "--valid-start 2023-01-01 --valid-end 2023-12-31 "
+        "--test-start 2024-01-01 --test-end 2024-12-31 "
+        f"--name {run_id} --out-dir data/holdout_runs/{run_id}"
     ]
     plan["metrics_path"] = f"data/holdout_runs/{run_id}/metrics.json"
     reason = plan.get("reason", "").strip()
