@@ -49,8 +49,18 @@ def run_shell_commands(commands, cwd=None):
 def substitute_placeholders(text: str, run_id: str) -> str:
     if not text:
         return text
-    for token in ("<run_dir>", "<run_id>", "{run_dir}", "{run_id}"):
+    run_dir = f"data/holdout_runs/{run_id}"
+    for token in ("<run_id>", "{run_id}"):
         text = text.replace(token, run_id)
+    for token in ("<run_dir>", "{run_dir}", "<RUN_DIR>"):
+        text = text.replace(token, run_dir)
+    for token in ("<CONFIG_PATH>", "<config_path>"):
+        text = text.replace(token, "")
+    text = re.sub(r"--config\\s+<CONFIG_PATH>", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"--config\\s+<config_path>", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"--config=\\s*<CONFIG_PATH>", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"--config=\\s*<config_path>", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\\s+", " ", text).strip()
     return text
 
 
