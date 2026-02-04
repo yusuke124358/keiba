@@ -70,13 +70,17 @@ def resolve_base_ref(root: Path, base: str) -> str:
 
 
 def ensure_infra_experiment_log(root: Path, base_ref: str) -> None:
-    changed = subprocess.run(
-        ["git", "diff", "--name-only", f"{base_ref}..HEAD"],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        check=False,
-    ).stdout.strip().splitlines()
+    changed = (
+        subprocess.run(
+            ["git", "diff", "--name-only", f"{base_ref}..HEAD"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        .stdout.strip()
+        .splitlines()
+    )
     files = [f.strip() for f in changed if f.strip()]
     if not files:
         return
