@@ -99,7 +99,7 @@ def main() -> int:
     delta = len(runs) - start_idx
     if delta < args.threshold:
         print(f"Checkpoint not due: delta={delta}, threshold={args.threshold}")
-        return 0
+        return 2
 
     checkpoint_id = dt.datetime.utcnow().strftime("ckpt_%Y%m%d_%H%M%S")
     payload = {

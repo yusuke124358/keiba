@@ -80,15 +80,19 @@ def main() -> int:
         return 0
 
     # Step 1: checkpoint if due
-    try:
-        run(["python", "scripts/agent/checkpoint.py"], root)
+    checkpoint_result = subprocess.run(
+        ["python", "scripts/agent/checkpoint.py"], cwd=root
+    )
+    if checkpoint_result.returncode == 0:
         if git_ahead_count(root) > 0:
             labels = "checkpoint,needs-human"
             write_loop_artifacts(root, "checkpoint", labels)
             print("Checkpoint created; stopping after one action.")
             return 0
-    except Exception:
-        pass
+    elif checkpoint_result.returncode != 2:
+        raise RuntimeError(
+            f"Command failed ({checkpoint_result.returncode}): python scripts/agent/checkpoint.py"
+        )
 
     # Step 2: plan + run one experiment
     run(["python", "scripts/agent/plan_next_experiment.py"], root)
