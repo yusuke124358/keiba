@@ -96,11 +96,11 @@ def main() -> int:
 
     # Step 2: plan + run one experiment
     run(["python", "scripts/agent/plan_next_experiment.py"], root)
-    plans = sorted((root / "artifacts" / "agent").glob("plan_*.json"))
+    plans = list((root / "artifacts" / "agent").glob("plan_*.json"))
     if not plans:
         print("No plan generated.")
         return 0
-    plan_path = plans[-1]
+    plan_path = max(plans, key=lambda p: p.stat().st_mtime)
     run(["python", "scripts/agent/run_experiment.py", "--plan", str(plan_path)], root)
     if git_ahead_count(root) > 0:
         write_loop_artifacts(root, "experiment", "autogen,auto-fix")
