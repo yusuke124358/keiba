@@ -1,8 +1,6 @@
 ﻿name: agent_scientist_loop
 
 on:
-  schedule:
-    - cron: "*/20 * * * *"
   workflow_dispatch:
 
 concurrency:
