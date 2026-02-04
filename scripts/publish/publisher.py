@@ -4,6 +4,7 @@ import datetime as dt
 import os
 import subprocess
 from pathlib import Path
+from typing import Iterable, Tuple
 
 
 DOC_ONLY_PREFIXES = [
@@ -32,10 +33,24 @@ def repo_root() -> Path:
     return Path(out)
 
 
-def run(cmd, cwd=None, env=None) -> None:
-    result = subprocess.run(cmd, cwd=cwd, env=env)
+def run(cmd, cwd=None, env=None, check: bool = True) -> subprocess.CompletedProcess:
+    result = subprocess.run(cmd, cwd=cwd, env=env, capture_output=False)
     if result.returncode != 0:
-        raise RuntimeError(f"Command failed ({result.returncode}): {' '.join(cmd)}")
+        if check:
+            raise RuntimeError(f"Command failed ({result.returncode}): {' '.join(cmd)}")
+    return result
+
+
+def run_capture(cmd, cwd=None, env=None) -> Tuple[int, str]:
+    result = subprocess.run(
+        cmd,
+        cwd=cwd,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return result.returncode, (result.stdout or "").strip()
 
 
 def is_code_change(path_str: str) -> bool:
@@ -67,6 +82,51 @@ def resolve_base_ref(root: Path, base: str) -> str:
     ):
         return base
     return base
+
+
+def normalize_labels(labels: str) -> list[str]:
+    return [label.strip() for label in labels.split(",") if label.strip()]
+
+
+def ensure_labels(root: Path, labels: Iterable[str], env: dict) -> None:
+    if not labels:
+        return
+    code, repo = run_capture(
+        ["gh", "repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"],
+        cwd=root,
+        env=env,
+    )
+    if code != 0 or not repo:
+        return
+    for label in labels:
+        if not label:
+            continue
+        exists = run(
+            ["gh", "api", f"repos/{repo}/labels/{label}"],
+            cwd=root,
+            env=env,
+            check=False,
+        ).returncode
+        if exists == 0:
+            continue
+        run(
+            [
+                "gh",
+                "api",
+                "-X",
+                "POST",
+                f"repos/{repo}/labels",
+                "-f",
+                f"name={label}",
+                "-f",
+                "color=0E8A16",
+                "-f",
+                "description=autogen label",
+            ],
+            cwd=root,
+            env=env,
+            check=False,
+        )
 
 
 def ensure_infra_experiment_log(root: Path, base_ref: str) -> None:
@@ -187,6 +247,8 @@ def main() -> int:
     token = env.get("AUTO_FIX_PUSH_TOKEN") or env.get("GH_TOKEN")
     if token:
         env["GH_TOKEN"] = token
+    base_ref = resolve_base_ref(root, args.base)
+    ensure_infra_experiment_log(root, base_ref)
     run(["git", "push", "origin", f"HEAD:{branch}"], cwd=root, env=env)
     run(
         [
@@ -206,11 +268,15 @@ def main() -> int:
         env=env,
     )
     if args.labels:
-        run(
-            ["gh", "pr", "edit", branch, "--add-label", args.labels],
-            cwd=root,
-            env=env,
-        )
+        labels = normalize_labels(args.labels)
+        ensure_labels(root, labels, env)
+        for label in labels:
+            run(
+                ["gh", "pr", "edit", branch, "--add-label", label],
+                cwd=root,
+                env=env,
+                check=False,
+            )
     return 0
 
 
