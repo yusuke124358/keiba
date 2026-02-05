@@ -1,0 +1,24 @@
+{
+  "run_id": "exp_20260205_081041",
+  "seed_id": "EXP-001",
+  "title": "Odds cap tightening for win bets",
+  "status": "inconclusive",
+  "metrics": {
+    "roi": 0.3877742946708464,
+    "total_stake": 31900.0,
+    "n_bets": 65,
+    "max_drawdown": 0.039624541232258274,
+    "test_period": "2024-01-01 to 2024-12-31",
+    "rolling": "no",
+    "design_window": "N/A",
+    "eval_window": "N/A",
+    "paired_delta": "N/A",
+    "pooled_vs_step14_mismatch": "no",
+    "preferred_roi": "pooled"
+  },
+  "artifacts": {
+    "metrics_json": "data/holdout_runs/exp_20260205_081041/metrics.json",
+    "comparison_json": "N/A",
+    "report": "data/holdout_runs/exp_20260205_081041/report/backtest.md"
+  }
+}
