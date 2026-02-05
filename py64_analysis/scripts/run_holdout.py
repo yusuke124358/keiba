@@ -46,6 +46,7 @@ def main() -> None:
     from keiba.config import get_config
     from keiba.db.loader import get_session
     from keiba.features.build_features import build_features, FeatureBuilder
+    from keiba.features.feature_audit import audit_feature_coverage
     from keiba.modeling.train import train_model, WinProbabilityModel, _surface_segments_from_race_ids
     from keiba.backtest.engine import run_backtest
     from keiba.backtest.report import generate_report
@@ -572,6 +573,25 @@ def main() -> None:
     n_feat_train = build_features(session, race_ids_train, skip_existing=True)
     n_feat_valid = build_features(session, race_ids_valid, skip_existing=True) if race_ids_valid else 0
     n_feat_test = build_features(session, race_ids_test, skip_existing=True)
+    feature_audit = None
+    try:
+        feature_audit = audit_feature_coverage(
+            session,
+            race_ids_test,
+            "horse_speed_z_last",
+            buy_t_minus_minutes=cfg.backtest.buy_t_minus_minutes,
+        )
+        feature_audit["scope"] = "test"
+        feature_audit["n_races"] = len(race_ids_test)
+        (run_dir / "feature_audit.json").write_text(
+            json.dumps(feature_audit, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        cov = feature_audit.get("coverage")
+        std = feature_audit.get("stddev")
+        print(f"[feature_audit] speed=horse_speed_z_last coverage={cov} stddev={std}")
+    except Exception as e:
+        print(f"[feature_audit] failed: {e}")
 
     # TicketB: slippage table 推定（train〜validまで。testは参照しない）
     if use_slip_table:
@@ -1872,8 +1892,23 @@ def main() -> None:
     try:
         from keiba.eval.extract_metrics import write_metrics_json
 
-        write_metrics_json(run_dir, run_kind="holdout")
-        print("metrics:", run_dir / "metrics.json")
+        metrics_path = write_metrics_json(run_dir, run_kind="holdout")
+        if feature_audit:
+            metrics_payload = json.loads(metrics_path.read_text(encoding="utf-8"))
+            metrics_payload["feature"] = {
+                "name": feature_audit.get("feature"),
+                "scope": feature_audit.get("scope"),
+                "coverage": feature_audit.get("coverage"),
+                "stddev": feature_audit.get("stddev"),
+                "nonnull": feature_audit.get("nonnull"),
+                "total": feature_audit.get("total"),
+                "n_races": feature_audit.get("n_races"),
+            }
+            metrics_path.write_text(
+                json.dumps(metrics_payload, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        print("metrics:", metrics_path)
     except Exception as e:
         print(f"[metrics] failed: {e}")
 
