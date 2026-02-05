@@ -15,8 +15,9 @@ items:
   - backtest.max_drawdown
   risk_level: medium
   max_diff_size: 200
-  status: todo
-  branch: agent/EXP-001-odds-cap-tightening-for-win-bets
+  status: in_progress
+  branch: agent/exp_20260205_081041-odds-cap-tightening-for-win-bets
+  picked_at: '2026-02-05T08:10:41Z'
 - id: EXP-002
   title: Feature coverage audit for new speed signal
   hypothesis: Adding a coverage/dispersion audit prevents no-op feature releases.
