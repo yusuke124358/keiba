@@ -465,6 +465,25 @@ class BettingPolicy:
         # レース情報取得
         race_info = self._get_race_info(race_id)
         race_name = race_info.get("race_name", race_id) if race_info else race_id
+        min_field_size = getattr(self.config.betting, "min_field_size", None)
+        try:
+            min_field_size = int(min_field_size) if min_field_size is not None else None
+        except Exception:
+            min_field_size = None
+        field_size = race_info.get("field_size") if race_info else None
+        try:
+            field_size = int(field_size) if field_size is not None else None
+        except Exception:
+            field_size = None
+        if min_field_size is not None and min_field_size > 0 and field_size is not None:
+            if field_size < min_field_size:
+                logger.debug(
+                    "skip race_id=%s field_size=%s < min_field_size=%s",
+                    race_id,
+                    field_size,
+                    min_field_size,
+                )
+                return []
         
         ev_cap_q = getattr(self.config.betting, "ev_cap_quantile", None)
         ov_cap_q = getattr(self.config.betting, "overlay_abs_cap_quantile", None)
@@ -1166,7 +1185,7 @@ class BettingPolicy:
     def _get_race_info(self, race_id: str) -> Optional[dict]:
         """レース情報取得"""
         query = text("""
-            SELECT race_id, date, track_code, race_no
+            SELECT race_id, date, track_code, race_no, field_size
             FROM fact_race
             WHERE race_id = :race_id
         """)
@@ -1174,6 +1193,7 @@ class BettingPolicy:
         if result:
             return {
                 "race_name": f"{result[2]}場{result[3]}R",
+                "field_size": result[4],
             }
         return None
     

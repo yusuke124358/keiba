@@ -369,6 +369,7 @@ class BettingConfig(BaseModel):
     # ???????E????????odds_at_buy?
     min_buy_odds: Optional[float] = Field(default=None, gt=0)
     max_buy_odds: Optional[float] = Field(default=None, gt=0)
+    min_field_size: Optional[int] = Field(default=None, ge=0)
     odds_floor_min_odds: float = Field(default=0.0, ge=0.0)
     stake_odds_damp: StakeOddsDampConfig = Field(default_factory=StakeOddsDampConfig)
     # EV/overlay tail cap (post-hoc quantile filter)

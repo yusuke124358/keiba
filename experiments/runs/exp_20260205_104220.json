@@ -1,0 +1,24 @@
+{
+  "run_id": "exp_20260205_104220",
+  "seed_id": "EXP-009",
+  "title": "Skip low-field-size races",
+  "status": "inconclusive",
+  "metrics": {
+    "roi": 0.10399002493765586,
+    "total_stake": 40100.0,
+    "n_bets": 104,
+    "max_drawdown": 0.04843090415262279,
+    "test_period": "2024-01-01 to 2024-12-31",
+    "rolling": "no",
+    "design_window": "N/A",
+    "eval_window": "N/A",
+    "paired_delta": "N/A",
+    "pooled_vs_step14_mismatch": "no",
+    "preferred_roi": "pooled"
+  },
+  "artifacts": {
+    "metrics_json": "data/holdout_runs/exp_20260205_104220/metrics.json",
+    "comparison_json": "data/holdout_runs/exp_20260205_104220/comparison.json",
+    "report": "data/holdout_runs/exp_20260205_104220/report/backtest.md"
+  }
+}
