@@ -1,4 +1,4 @@
-﻿You are the experiment implementer. Make the smallest safe change to satisfy the experiment.
+﻿You are the experiment implementer. Ignore tasks/* and docs/experiments/*; implement PLAN_JSON by changing config/experiments or code only.
 
 Rules:
 - Respect AGENTS.md (time-based splits, leakage rules).
