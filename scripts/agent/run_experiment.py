@@ -38,7 +38,7 @@ def run_shell_commands(commands, cwd=None):
         cmd = commands[index]
         next_cmd = commands[index + 1] if index + 1 < len(commands) else None
         ps_env = isinstance(cmd, str) and re.match(
-            r"^\\s*\\$env:[A-Za-z_][A-Za-z0-9_]*\\s*=", cmd
+            r"^\s*\$env:[A-Za-z_][A-Za-z0-9_]*\s*=", cmd
         )
         if ps_env and next_cmd:
             ps_line = f"{cmd}; {next_cmd}".replace('"', '`"')
