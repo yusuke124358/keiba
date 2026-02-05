@@ -379,6 +379,8 @@ class BettingConfig(BaseModel):
     odds_dynamics_filter: "OddsDynamicsFilterConfig" = Field(default_factory=lambda: OddsDynamicsFilterConfig())
     # Odds dynamics EV margin (post-cap soft filter)
     odds_dyn_ev_margin: "OddsDynamicsEvMarginConfig" = Field(default_factory=lambda: OddsDynamicsEvMarginConfig())
+    # Odds drift robustness filter (conservative odds drop)
+    odds_drift_filter: "OddsDriftFilterConfig" = Field(default_factory=lambda: OddsDriftFilterConfig())
     max_bets_per_race: int = 1
     bankroll_yen: int = 300000
     sizing: SizingConfig = Field(default_factory=SizingConfig)
@@ -434,6 +436,13 @@ class OddsDynamicsEvMarginConfig(BaseModel):
     slope: float = 0.0
     fit_scope: str = "train_valid"
     fit_population: str = "candidates_with_bets_under_baseline_gating"
+
+
+class OddsDriftFilterConfig(BaseModel):
+    """Odds drift robustness filter config."""
+    enabled: bool = False
+    odds_multiplier: float = Field(default=0.97, gt=0)
+    min_ev: float = 0.0
 
 
 

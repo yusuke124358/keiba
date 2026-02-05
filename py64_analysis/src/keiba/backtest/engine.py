@@ -1421,6 +1421,22 @@ class BacktestEngine:
         odds_cap = getattr(self.config.betting, "odds_cap", None)
         exclude_bands = parse_exclude_odds_band(getattr(self.config.betting, "exclude_odds_band", None))
         blend_w = float(getattr(self.config.betting, "market_blend_w", 1.0))
+        odds_drift_cfg = getattr(self.config.betting, "odds_drift_filter", None)
+        odds_drift_enabled = bool(odds_drift_cfg and getattr(odds_drift_cfg, "enabled", False))
+        odds_drift_mult = None
+        odds_drift_min_ev = 0.0
+        if odds_drift_cfg is not None:
+            try:
+                odds_drift_mult = float(getattr(odds_drift_cfg, "odds_multiplier", None))
+            except Exception:
+                odds_drift_mult = None
+            try:
+                odds_drift_min_ev = float(getattr(odds_drift_cfg, "min_ev", 0.0))
+            except Exception:
+                odds_drift_min_ev = 0.0
+        if odds_drift_mult is None or not math.isfinite(odds_drift_mult) or odds_drift_mult <= 0:
+            odds_drift_mult = None
+            odds_drift_enabled = False
         try:
             odds_cap_val = float(odds_cap) if odds_cap is not None else None
         except Exception:
@@ -2014,6 +2030,22 @@ class BacktestEngine:
         odds_cap = getattr(self.config.betting, "odds_cap", None)
         exclude_bands = parse_exclude_odds_band(getattr(self.config.betting, "exclude_odds_band", None))
         blend_w = float(getattr(self.config.betting, "market_blend_w", 1.0))
+        odds_drift_cfg = getattr(self.config.betting, "odds_drift_filter", None)
+        odds_drift_enabled = bool(odds_drift_cfg and getattr(odds_drift_cfg, "enabled", False))
+        odds_drift_mult = None
+        odds_drift_min_ev = 0.0
+        if odds_drift_cfg is not None:
+            try:
+                odds_drift_mult = float(getattr(odds_drift_cfg, "odds_multiplier", None))
+            except Exception:
+                odds_drift_mult = None
+            try:
+                odds_drift_min_ev = float(getattr(odds_drift_cfg, "min_ev", 0.0))
+            except Exception:
+                odds_drift_min_ev = 0.0
+        if odds_drift_mult is None or not math.isfinite(odds_drift_mult) or odds_drift_mult <= 0:
+            odds_drift_mult = None
+            odds_drift_enabled = False
         try:
             odds_cap_val = float(odds_cap) if odds_cap is not None else None
         except Exception:
@@ -2303,6 +2335,15 @@ class BacktestEngine:
             if ev < min_ev_eff:
                 continue
 
+            ev_drift = None
+            passed_odds_drift = None
+            if odds_drift_mult is not None:
+                ev_drift = p_hat * odds_effective * odds_drift_mult - 1.0
+                if odds_drift_enabled:
+                    passed_odds_drift = ev_drift >= odds_drift_min_ev
+                    if not passed_odds_drift:
+                        continue
+
             # Ticket G2: EV?????????EV????
             if self.ev_upper_cap is not None and ev > self.ev_upper_cap:
                 continue
@@ -2353,6 +2394,11 @@ class BacktestEngine:
                     "takeout_slope": float(takeout_slope),
                     "min_ev_eff": float(min_ev_eff),
                     "passed_takeout_ev_margin": bool(passed_takeout_ev_margin),
+                    "odds_drift_mult": float(odds_drift_mult) if odds_drift_mult is not None else None,
+                    "odds_drift_min_ev": float(odds_drift_min_ev) if odds_drift_mult is not None else None,
+                    "ev_drift": float(ev_drift) if ev_drift is not None else None,
+                    "passed_odds_drift": bool(passed_odds_drift) if passed_odds_drift is not None else None,
+                    "odds_drift_filter_enabled": bool(odds_drift_enabled),
                     "odds_dyn_ev_metric": odds_dyn_ev_metric,
                     "odds_dyn_ev_lookback_min": odds_dyn_ev_lookback,
                     "odds_dyn_ev_score": odds_dyn_ev_score,

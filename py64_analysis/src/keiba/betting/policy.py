@@ -128,6 +128,11 @@ class BetCandidate:
     odds_cap: Optional[float] = None
     exclude_odds_band: Optional[str] = None
     p_hat_pre_blend: Optional[float] = None
+    odds_drift_mult: Optional[float] = None
+    odds_drift_min_ev: Optional[float] = None
+    ev_drift: Optional[float] = None
+    passed_odds_drift: Optional[bool] = None
+    odds_drift_filter_enabled: Optional[bool] = None
 
 
 class BettingPolicy:
@@ -431,6 +436,22 @@ class BettingPolicy:
         odds_cap = getattr(self.config.betting, "odds_cap", None)
         exclude_bands = parse_exclude_odds_band(getattr(self.config.betting, "exclude_odds_band", None))
         blend_w = float(getattr(self.config.betting, "market_blend_w", 1.0))
+        odds_drift_cfg = getattr(self.config.betting, "odds_drift_filter", None)
+        odds_drift_enabled = bool(odds_drift_cfg and getattr(odds_drift_cfg, "enabled", False))
+        odds_drift_mult = None
+        odds_drift_min_ev = 0.0
+        if odds_drift_cfg is not None:
+            try:
+                odds_drift_mult = float(getattr(odds_drift_cfg, "odds_multiplier", None))
+            except Exception:
+                odds_drift_mult = None
+            try:
+                odds_drift_min_ev = float(getattr(odds_drift_cfg, "min_ev", 0.0))
+            except Exception:
+                odds_drift_min_ev = 0.0
+        if odds_drift_mult is None or not np.isfinite(odds_drift_mult) or odds_drift_mult <= 0:
+            odds_drift_mult = None
+            odds_drift_enabled = False
         try:
             odds_cap_val = float(odds_cap) if odds_cap is not None else None
         except Exception:
@@ -804,6 +825,15 @@ class BettingPolicy:
             if sel_mode == "ev_threshold" and ev < min_ev_eff:
                 continue
 
+            ev_drift = None
+            passed_odds_drift = None
+            if odds_drift_mult is not None:
+                ev_drift = p_hat * odds_effective * odds_drift_mult - 1.0
+                if odds_drift_enabled:
+                    passed_odds_drift = ev_drift >= odds_drift_min_ev
+                    if not passed_odds_drift:
+                        continue
+
             if self.ev_upper_cap is not None and ev > self.ev_upper_cap:
                 continue
 
@@ -891,6 +921,11 @@ class BettingPolicy:
                     odds_cap=cand.get("odds_cap"),
                     exclude_odds_band=cand.get("exclude_odds_band"),
                     p_hat_pre_blend=cand.get("p_hat_pre_blend"),
+                    odds_drift_mult=float(odds_drift_mult) if odds_drift_mult is not None else None,
+                    odds_drift_min_ev=float(odds_drift_min_ev) if odds_drift_mult is not None else None,
+                    ev_drift=float(ev_drift) if ev_drift is not None else None,
+                    passed_odds_drift=bool(passed_odds_drift) if passed_odds_drift is not None else None,
+                    odds_drift_filter_enabled=bool(odds_drift_enabled),
                 )
             )
         candidates = sorted(candidates, key=lambda c: c.ev, reverse=True)
@@ -1250,6 +1285,11 @@ class BettingPolicy:
                     "takeout_slope": cand.takeout_slope,
                     "min_ev_eff": cand.min_ev_eff,
                     "passed_takeout_ev_margin": cand.passed_takeout_ev_margin,
+                    "odds_drift_mult": cand.odds_drift_mult,
+                    "odds_drift_min_ev": cand.odds_drift_min_ev,
+                    "ev_drift": cand.ev_drift,
+                    "passed_odds_drift": cand.passed_odds_drift,
+                    "odds_drift_filter_enabled": cand.odds_drift_filter_enabled,
                     "market_blend_enabled": cand.market_blend_enabled,
                     "market_prob_method": cand.market_prob_method,
                     "market_blend_w": cand.market_blend_w,
