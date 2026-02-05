@@ -147,7 +147,7 @@ items:
   - backtest.daily_loss_p95
   risk_level: medium
   max_diff_size: 200
-  status: in_progress
+  status: done
   branch: agent/exp_20260205_100429-daily-stop-loss-stop-win-guardrails
   picked_at: '2026-02-05T10:04:29Z'
 - id: EXP-009
