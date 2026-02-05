@@ -32,7 +32,7 @@ items:
   - feature.stddev
   risk_level: low
   max_diff_size: 150
-  status: in_progress
+  status: failed
   branch: agent/exp_20260205_083122-feature-coverage-audit-for-new-speed-signal
   picked_at: '2026-02-05T08:31:22Z'
 - id: EXP-003
