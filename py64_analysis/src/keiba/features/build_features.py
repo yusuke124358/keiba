@@ -312,10 +312,12 @@ class FeatureBuilder:
         if "lap_times_200m" in df.columns:
             mask = df["pace_first3f_calc"].isna()
             if mask.any():
-                df.loc[mask, "pace_first3f_calc"] = df.loc[mask, "lap_times_200m"].apply(lambda x: sum_first_n(x, 3))
+                vals = df.loc[mask, "lap_times_200m"].apply(lambda x: sum_first_n(x, 3))
+                df.loc[mask, "pace_first3f_calc"] = pd.to_numeric(vals, errors="coerce")
             mask = df["pace_last3f_calc"].isna()
             if mask.any():
-                df.loc[mask, "pace_last3f_calc"] = df.loc[mask, "lap_times_200m"].apply(lambda x: sum_last_n(x, 3))
+                vals = df.loc[mask, "lap_times_200m"].apply(lambda x: sum_last_n(x, 3))
+                df.loc[mask, "pace_last3f_calc"] = pd.to_numeric(vals, errors="coerce")
 
         df["pace_diff_calc"] = df.get("pace_diff_sec")
         mask = df["pace_diff_calc"].isna() & df["pace_first3f_calc"].notna() & df["pace_last3f_calc"].notna()
@@ -326,7 +328,8 @@ class FeatureBuilder:
         if "lap_times_200m" in df.columns:
             mask = df["lap_slope_calc"].isna()
             if mask.any():
-                df.loc[mask, "lap_slope_calc"] = df.loc[mask, "lap_times_200m"].apply(lambda x: lap_stats(x)[2])
+                vals = df.loc[mask, "lap_times_200m"].apply(lambda x: lap_stats(x)[2])
+                df.loc[mask, "lap_slope_calc"] = pd.to_numeric(vals, errors="coerce")
 
         def _q(series: pd.Series, q: float) -> Optional[float]:
             s = pd.to_numeric(series, errors="coerce").replace([np.inf, -np.inf], np.nan).dropna()
