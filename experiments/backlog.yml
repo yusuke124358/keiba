@@ -147,8 +147,9 @@ items:
   - backtest.daily_loss_p95
   risk_level: medium
   max_diff_size: 200
-  status: todo
+  status: in_progress
   branch: agent/EXP-008-daily-stop-loss-stop-win-guardrails
+  picked_at: '2026-02-05T08:51:11Z'
 - id: EXP-009
   title: Skip low-field-size races
   hypothesis: Avoiding small fields reduces slippage/selection noise and improves
