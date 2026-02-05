@@ -385,7 +385,7 @@ def run_codex(
     root: Path, prompt_path: Path, plan: dict, profile: str, log_path: Path
 ) -> None:
     codex_bin = find_codex_bin()
-    prompt_text = prompt_path.read_text(encoding="utf-8")
+    prompt_text = prompt_path.read_text(encoding="utf-8-sig")
     payload = json.dumps(plan, ensure_ascii=True)
     cmd = [
         codex_bin,
@@ -398,7 +398,13 @@ def run_codex(
     prompt_payload = prompt_text + "\n\nPLAN_JSON:\n" + payload
     with open(log_path, "w", encoding="utf-8") as log:
         result = subprocess.run(
-            cmd, cwd=root, stdout=log, stderr=log, text=True, input=prompt_payload
+            cmd,
+            cwd=root,
+            stdout=log,
+            stderr=log,
+            text=True,
+            encoding="utf-8",
+            input=prompt_payload,
         )
     if result.returncode != 0:
         raise RuntimeError(
