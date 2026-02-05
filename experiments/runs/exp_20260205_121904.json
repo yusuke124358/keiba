@@ -1,0 +1,24 @@
+{
+  "run_id": "exp_20260205_121904",
+  "seed_id": "EXP-012",
+  "title": "Tune closing_odds_multiplier quantile",
+  "status": "inconclusive",
+  "metrics": {
+    "roi": 0.4174496644295302,
+    "total_stake": 29800.0,
+    "n_bets": 85,
+    "max_drawdown": 0.033527837776846446,
+    "test_period": "2024-01-01 to 2024-12-31",
+    "rolling": "no",
+    "design_window": "N/A",
+    "eval_window": "N/A",
+    "paired_delta": "N/A",
+    "pooled_vs_step14_mismatch": "no",
+    "preferred_roi": "pooled"
+  },
+  "artifacts": {
+    "metrics_json": "data/holdout_runs/exp_20260205_121904/metrics.json",
+    "comparison_json": "N/A",
+    "report": "data/holdout_runs/exp_20260205_121904/report/backtest.md"
+  }
+}
