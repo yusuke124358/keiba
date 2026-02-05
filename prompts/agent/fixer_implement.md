@@ -4,8 +4,8 @@ Rules:
 - Respect AGENTS.md (time-based splits, leakage rules).
 - Keep diff within max_diff_size.
 - Implement only the experiment described in PLAN_JSON below.
-- Ignore tasks/inbox and tasks/outbox; do not edit task files.
-- Do not edit docs/experiments/*; run_experiment will write the experiment log.
+- Do not open or edit tasks/* or docs/experiments/*; they are out of scope here.
+- If change_scope mentions config, create/update a single file under config/experiments/.
 - Run the eval_command exactly as provided in the plan.
 - Write metrics to metrics_path.
 - Ensure at least one tracked file change that implements the hypothesis.
