@@ -16,7 +16,15 @@ except Exception as exc:
     ) from exc
 
 
-def run(cmd, cwd=None, check=True, capture_output=False, text=True, env=None):
+def run(
+    cmd,
+    cwd=None,
+    check=True,
+    capture_output=False,
+    text=True,
+    env=None,
+    timeout=None,
+):
     result = subprocess.run(
         cmd,
         cwd=cwd,
@@ -24,6 +32,7 @@ def run(cmd, cwd=None, check=True, capture_output=False, text=True, env=None):
         capture_output=capture_output,
         text=text,
         env=env,
+        timeout=timeout,
     )
     if check and result.returncode != 0:
         stderr = result.stderr.strip() if result.stderr else ""
@@ -38,12 +47,23 @@ def repo_root() -> Path:
     return Path(out)
 
 
-def ensure_clean(root: Path) -> None:
+def ensure_clean(root: Path, auto_stash: bool = False) -> None:
     status = run(
         ["git", "status", "--porcelain"], cwd=root, capture_output=True
     ).stdout.strip()
     if status:
-        raise RuntimeError("Working tree not clean. Commit or stash changes first.")
+        if not auto_stash:
+            raise RuntimeError("Working tree not clean. Commit or stash changes first.")
+        stash_msg = (
+            "auto-stash run_backlog_batch "
+            f"{dt.datetime.utcnow().strftime('%Y%m%d_%H%M%S')}Z"
+        )
+        run(["git", "stash", "push", "-u", "-m", stash_msg], cwd=root)
+        status = run(
+            ["git", "status", "--porcelain"], cwd=root, capture_output=True
+        ).stdout.strip()
+        if status:
+            raise RuntimeError("Working tree still not clean after auto-stash.")
 
 
 def git_config_get(root: Path, key: str) -> str:
@@ -106,6 +126,41 @@ def normalize_change_scope(value) -> str:
     if value is None:
         return ""
     return str(value)
+
+
+def parse_utc_timestamp(value: str | None) -> dt.datetime | None:
+    if not value:
+        return None
+    try:
+        return dt.datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ")
+    except ValueError:
+        return None
+
+
+def reset_item_to_todo(item: dict) -> None:
+    item["status"] = "todo"
+    item.pop("picked_at", None)
+
+
+def requeue_stale_in_progress(items: list[dict], stale_hours: float) -> list[dict]:
+    now = dt.datetime.utcnow()
+    requeued = []
+    for item in items:
+        status = str(item.get("status", "")).lower()
+        if status != "in_progress":
+            continue
+        picked_at = parse_utc_timestamp(item.get("picked_at"))
+        if stale_hours <= 0:
+            is_stale = True
+        elif picked_at is None:
+            is_stale = True
+        else:
+            age = now - picked_at
+            is_stale = age >= dt.timedelta(hours=stale_hours)
+        if is_stale:
+            reset_item_to_todo(item)
+            requeued.append(item)
+    return requeued
 
 
 def to_seed(item: dict) -> dict:
@@ -201,12 +256,34 @@ def main() -> int:
     parser.add_argument("--publish", action="store_true")
     parser.add_argument("--push-base", action="store_true")
     parser.add_argument("--continue-on-failure", action="store_true")
+    parser.add_argument(
+        "--stale-in-progress-hours",
+        type=float,
+        default=None,
+        help="Requeue in-progress items older than this many hours (0 = all).",
+    )
+    parser.add_argument(
+        "--item-timeout-minutes",
+        type=float,
+        default=None,
+        help="Timeout per experiment run in minutes (0 disables).",
+    )
+    parser.add_argument(
+        "--requeue-on-timeout",
+        action="store_true",
+        help="Put items back to todo when an experiment times out.",
+    )
+    parser.add_argument(
+        "--auto-stash",
+        action="store_true",
+        help="Auto-stash local changes if the working tree is dirty.",
+    )
     args = parser.parse_args()
 
     root = repo_root()
     os.chdir(root)
 
-    ensure_clean(root)
+    ensure_clean(root, auto_stash=args.auto_stash)
     ensure_git_identity(root)
     base_branch = args.base_branch or current_branch(root)
     if not base_branch:
@@ -214,17 +291,38 @@ def main() -> int:
     git_checkout(root, base_branch)
     git_pull_ff(root, args.remote, base_branch)
 
+    token = os.environ.get("AUTO_FIX_PUSH_TOKEN") or os.environ.get("GH_TOKEN")
+    if args.push_base and not token:
+        raise RuntimeError("AUTO_FIX_PUSH_TOKEN or GH_TOKEN required for --push-base.")
+
     backlog_path = root / args.backlog
     data = load_backlog(backlog_path)
     items = data.get("items", [])
+    if args.stale_in_progress_hours is not None:
+        requeued = requeue_stale_in_progress(items, args.stale_in_progress_hours)
+        if requeued:
+            print(f"Requeued {len(requeued)} stale in-progress items.")
+            save_backlog(backlog_path, data)
+            run(["git", "add", str(backlog_path)], cwd=root)
+            run(
+                [
+                    "git",
+                    "commit",
+                    "-m",
+                    f"chore: requeue {len(requeued)} stale backlog items",
+                ],
+                cwd=root,
+            )
+            if args.push_base:
+                push_branch(root, base_branch, token)
     picked = pick_items(items, args.count)
     if not picked:
         print("No todo backlog items found.")
         return 0
 
-    token = os.environ.get("AUTO_FIX_PUSH_TOKEN") or os.environ.get("GH_TOKEN")
-    if args.push_base and not token:
-        raise RuntimeError("AUTO_FIX_PUSH_TOKEN or GH_TOKEN required for --push-base.")
+    timeout_seconds = None
+    if args.item_timeout_minutes is not None and args.item_timeout_minutes > 0:
+        timeout_seconds = int(args.item_timeout_minutes * 60)
 
     for item in picked:
         exp_id = item.get("id")
@@ -234,7 +332,7 @@ def main() -> int:
 
         print(f"=== Running {exp_id} ===")
         try:
-            ensure_clean(root)
+            ensure_clean(root, auto_stash=args.auto_stash)
             git_checkout(root, base_branch)
             git_pull_ff(root, args.remote, base_branch)
 
@@ -282,6 +380,7 @@ def main() -> int:
                     str(plan_path),
                 ],
                 cwd=root,
+                timeout=timeout_seconds,
             )
             exp_branch = current_branch(root)
 
@@ -323,6 +422,34 @@ def main() -> int:
                         pr_body_path,
                     )
                 git_checkout(root, base_branch)
+        except subprocess.TimeoutExpired as exc:
+            ensure_clean(root, auto_stash=args.auto_stash)
+            git_checkout(root, base_branch)
+            if args.requeue_on_timeout:
+                reset_item_to_todo(item)
+                status_label = "requeued"
+            else:
+                update_item_status(item, "failed")
+                status_label = "failed"
+            save_backlog(backlog_path, data)
+            run(["git", "add", str(backlog_path)], cwd=root)
+            run(
+                [
+                    "git",
+                    "commit",
+                    "-m",
+                    f"chore: mark {exp_id} {status_label} after timeout",
+                ],
+                cwd=root,
+            )
+            if args.push_base:
+                push_branch(root, base_branch, token)
+            print(
+                f"Timed out on {exp_id} after {timeout_seconds}s.",
+                file=sys.stderr,
+            )
+            if not args.continue_on_failure:
+                raise RuntimeError(f"Timeout on {exp_id}") from exc
         except Exception as exc:
             git_checkout(root, base_branch)
             update_item_status(item, "failed")

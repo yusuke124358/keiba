@@ -18,6 +18,26 @@ on:
         required: false
         default: "true"
         type: string
+      stale_in_progress_hours:
+        description: "Requeue in-progress items older than this many hours (0 = all)."
+        required: false
+        default: "0"
+        type: string
+      item_timeout_minutes:
+        description: "Timeout per experiment run in minutes (0 disables)."
+        required: false
+        default: "0"
+        type: string
+      requeue_on_timeout:
+        description: "Requeue backlog items when an experiment times out."
+        required: false
+        default: "true"
+        type: string
+      auto_stash:
+        description: "Auto-stash local changes if the working tree is dirty."
+        required: false
+        default: "false"
+        type: string
       base_branch:
         description: "Base branch to update backlog on (blank uses workflow ref)."
         required: false
@@ -72,6 +92,10 @@ jobs:
           COUNT: ${{ inputs.count || '5' }}
           PUBLISH: ${{ inputs.publish || 'true' }}
           PUSH_BASE: ${{ inputs.push_base || 'true' }}
+          STALE_HOURS: ${{ inputs.stale_in_progress_hours || '0' }}
+          ITEM_TIMEOUT_MINUTES: ${{ inputs.item_timeout_minutes || '0' }}
+          REQUEUE_ON_TIMEOUT: ${{ inputs.requeue_on_timeout || 'true' }}
+          AUTO_STASH: ${{ inputs.auto_stash || 'false' }}
           BASE_BRANCH: ${{ inputs.base_branch || github.ref_name }}
         shell: bash
         run: |
@@ -81,6 +105,18 @@ jobs:
           fi
           if [[ "$PUSH_BASE" == "true" ]]; then
             args+=(--push-base)
+          fi
+          if [[ -n "$STALE_HOURS" ]]; then
+            args+=(--stale-in-progress-hours "$STALE_HOURS")
+          fi
+          if [[ -n "$ITEM_TIMEOUT_MINUTES" && "$ITEM_TIMEOUT_MINUTES" != "0" ]]; then
+            args+=(--item-timeout-minutes "$ITEM_TIMEOUT_MINUTES")
+          fi
+          if [[ "$REQUEUE_ON_TIMEOUT" == "true" ]]; then
+            args+=(--requeue-on-timeout)
+          fi
+          if [[ "$AUTO_STASH" == "true" ]]; then
+            args+=(--auto-stash)
           fi
           if [[ -n "$BASE_BRANCH" ]]; then
             args+=(--base-branch "$BASE_BRANCH")
@@ -94,11 +130,19 @@ jobs:
           COUNT: ${{ inputs.count || '5' }}
           PUBLISH: ${{ inputs.publish || 'true' }}
           PUSH_BASE: ${{ inputs.push_base || 'true' }}
+          STALE_HOURS: ${{ inputs.stale_in_progress_hours || '0' }}
+          ITEM_TIMEOUT_MINUTES: ${{ inputs.item_timeout_minutes || '0' }}
+          REQUEUE_ON_TIMEOUT: ${{ inputs.requeue_on_timeout || 'true' }}
+          AUTO_STASH: ${{ inputs.auto_stash || 'false' }}
           BASE_BRANCH: ${{ inputs.base_branch || github.ref_name }}
         shell: cmd
         run: |
           set "ARGS=--count %COUNT%"
           if /I "%PUBLISH%"=="true" set "ARGS=%ARGS% --publish"
           if /I "%PUSH_BASE%"=="true" set "ARGS=%ARGS% --push-base"
+          if not "%STALE_HOURS%"=="" set "ARGS=%ARGS% --stale-in-progress-hours %STALE_HOURS%"
+          if not "%ITEM_TIMEOUT_MINUTES%"=="" if not "%ITEM_TIMEOUT_MINUTES%"=="0" set "ARGS=%ARGS% --item-timeout-minutes %ITEM_TIMEOUT_MINUTES%"
+          if /I "%REQUEUE_ON_TIMEOUT%"=="true" set "ARGS=%ARGS% --requeue-on-timeout"
+          if /I "%AUTO_STASH%"=="true" set "ARGS=%ARGS% --auto-stash"
           if not "%BASE_BRANCH%"=="" set "ARGS=%ARGS% --base-branch %BASE_BRANCH%"
           python scripts\\agent\\run_backlog_batch.py %ARGS%
