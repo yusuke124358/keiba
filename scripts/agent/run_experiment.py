@@ -393,10 +393,13 @@ def run_codex(
         "--profile",
         profile,
         "--dangerously-bypass-approvals-and-sandbox",
-        prompt_text + "\n\nPLAN_JSON:\n" + payload,
+        "-",
     ]
+    prompt_payload = prompt_text + "\n\nPLAN_JSON:\n" + payload
     with open(log_path, "w", encoding="utf-8") as log:
-        result = subprocess.run(cmd, cwd=root, stdout=log, stderr=log, text=True)
+        result = subprocess.run(
+            cmd, cwd=root, stdout=log, stderr=log, text=True, input=prompt_payload
+        )
     if result.returncode != 0:
         raise RuntimeError(
             f"codex exec failed with code {result.returncode}. See {log_path}"
