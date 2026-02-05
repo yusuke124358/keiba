@@ -206,7 +206,7 @@ items:
   - backtest.roi_slippage_stress
   risk_level: medium
   max_diff_size: 200
-  status: in_progress
+  status: done
   picked_at: '2026-02-05T11:43:12Z'
   branch: agent/exp_20260205_114312-odds-drift-robustness-filter
 - id: EXP-012
