@@ -15,8 +15,7 @@ items:
   - backtest.max_drawdown
   risk_level: medium
   max_diff_size: 200
-  status: in_progress
-  picked_at: '2026-02-03T07:49:05Z'
+  status: todo
   branch: agent/EXP-001-odds-cap-tightening-for-win-bets
 - id: EXP-002
   title: Feature coverage audit for new speed signal
@@ -32,8 +31,7 @@ items:
   - feature.stddev
   risk_level: low
   max_diff_size: 150
-  status: in_progress
-  picked_at: '2026-02-03T08:39:32Z'
+  status: todo
   branch: agent/EXP-002-feature-coverage-audit-for-new-speed-signal
 - id: EXP-003
   title: Selector threshold change for high takeout races
@@ -147,8 +145,7 @@ items:
   - backtest.daily_loss_p95
   risk_level: medium
   max_diff_size: 200
-  status: in_progress
-  picked_at: '2026-02-04T22:53:10Z'
+  status: todo
   branch: agent/EXP-008-daily-stop-loss-stop-win-guardrails
 - id: EXP-009
   title: Skip low-field-size races
