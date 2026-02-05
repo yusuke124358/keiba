@@ -269,6 +269,11 @@ def contains_eval_metrics(eval_command) -> bool:
     return False
 
 
+def command_missing_required_flags(cmd: str, required_flags: list[str]) -> bool:
+    lowered = cmd.lower()
+    return any(flag not in lowered for flag in required_flags)
+
+
 def has_eval_placeholders(value: str) -> bool:
     lowered = value.lower()
     if "<" in value and ">" in value:
@@ -296,6 +301,19 @@ def eval_plan_needs_override(plan: dict) -> bool:
     tokens = eval_command if isinstance(eval_command, list) else [eval_command]
     if any(has_eval_placeholders(str(cmd)) for cmd in tokens):
         return True
+    for cmd in tokens:
+        lowered = str(cmd).lower()
+        if "run_rolling_holdout.py" in lowered:
+            if command_missing_required_flags(
+                lowered, ["--test-range-start", "--test-range-end"]
+            ):
+                return True
+        if "run_holdout.py" in lowered:
+            if command_missing_required_flags(
+                lowered,
+                ["--train-start", "--train-end", "--test-start", "--test-end"],
+            ):
+                return True
     if not metrics_path or has_eval_placeholders(metrics_path):
         return True
     return not contains_eval_metrics(eval_command)
