@@ -187,7 +187,7 @@ items:
   - backtest.n_bets
   risk_level: low
   max_diff_size: 120
-  status: in_progress
+  status: done
   picked_at: '2026-02-05T11:16:48Z'
   branch: agent/exp_20260205_111648-minimum-odds-floor-for-win-bets
 - id: EXP-011
