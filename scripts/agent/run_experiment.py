@@ -262,7 +262,7 @@ def ensure_impl_changes(root: Path) -> None:
         )
 
 
-def ensure_no_disallowed_changes(root: Path) -> None:
+def list_changed_paths(root: Path) -> list[str]:
     status = subprocess.run(
         ["git", "status", "--porcelain"],
         cwd=root,
@@ -271,19 +271,63 @@ def ensure_no_disallowed_changes(root: Path) -> None:
         check=False,
     ).stdout.strip()
     if not status:
-        return
-    disallowed = []
+        return []
+    paths = []
     for line in status.splitlines():
         path = line[3:].strip()
         if "->" in path:
             path = path.split("->")[-1].strip()
-        if path.startswith(("docs/experiments/", "tasks/")):
-            disallowed.append(path)
+        paths.append(path.replace("\\", "/"))
+    return paths
+
+
+def ensure_no_disallowed_changes(root: Path) -> None:
+    disallowed = [
+        path
+        for path in list_changed_paths(root)
+        if path.startswith(("docs/experiments/", "tasks/"))
+    ]
     if disallowed:
         raise RuntimeError(
             "Disallowed changes detected from codex implementation: "
             + ", ".join(disallowed)
         )
+
+
+def ensure_substantive_changes(root: Path) -> None:
+    substantive_prefixes = (
+        "config/",
+        "py64_analysis/",
+        "py32_fetcher/",
+        "scripts/",
+        "tools/",
+    )
+    substantive = [
+        path
+        for path in list_changed_paths(root)
+        if path.startswith(substantive_prefixes)
+    ]
+    if not substantive:
+        raise RuntimeError(
+            "No substantive code/config changes detected. "
+            "Ensure the implementation updates config or source files, "
+            "not only docs or task artifacts."
+        )
+
+
+def detect_experiment_config(root: Path) -> str | None:
+    configs = [
+        path
+        for path in list_changed_paths(root)
+        if path.startswith("config/experiments/") and path.endswith(".yaml")
+    ]
+    if not configs:
+        return None
+    if len(configs) > 1:
+        raise RuntimeError(
+            "Multiple experiment configs modified: " + ", ".join(configs)
+        )
+    return configs[0]
 
 
 def render_experiment_log(
@@ -396,6 +440,7 @@ def main() -> int:
     ensure_codex_writable(codex_log)
     ensure_impl_changes(root)
     ensure_no_disallowed_changes(root)
+    ensure_substantive_changes(root)
 
     eval_cmd = coerce_eval_command(plan.get("eval_command"))
     if not eval_cmd:
@@ -404,6 +449,9 @@ def main() -> int:
     normalized_cmds = [cmd for cmd in normalized_cmds if cmd]
     if not normalized_cmds:
         normalized_cmds = [default_holdout_command(run_id)]
+    config_path = detect_experiment_config(root)
+    if config_path:
+        normalized_cmds = [f"$env:KEIBA_CONFIG_PATH='{config_path}'"] + normalized_cmds
     run_shell_commands(normalized_cmds, cwd=root)
 
     metrics_path = root / substitute_metrics_path(plan["metrics_path"], run_id)
