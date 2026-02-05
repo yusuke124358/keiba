@@ -262,6 +262,30 @@ def ensure_impl_changes(root: Path) -> None:
         )
 
 
+def ensure_no_disallowed_changes(root: Path) -> None:
+    status = subprocess.run(
+        ["git", "status", "--porcelain"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout.strip()
+    if not status:
+        return
+    disallowed = []
+    for line in status.splitlines():
+        path = line[3:].strip()
+        if "->" in path:
+            path = path.split("->")[-1].strip()
+        if path.startswith(("docs/experiments/", "tasks/")):
+            disallowed.append(path)
+    if disallowed:
+        raise RuntimeError(
+            "Disallowed changes detected from codex implementation: "
+            + ", ".join(disallowed)
+        )
+
+
 def render_experiment_log(
     template: Path, out_path: Path, plan: dict, result: dict
 ) -> None:
@@ -371,6 +395,7 @@ def main() -> int:
     run_codex(root, root / args.prompt, plan, args.profile, codex_log)
     ensure_codex_writable(codex_log)
     ensure_impl_changes(root)
+    ensure_no_disallowed_changes(root)
 
     eval_cmd = coerce_eval_command(plan.get("eval_command"))
     if not eval_cmd:
