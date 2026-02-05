@@ -225,7 +225,9 @@ items:
   - odds.ev_overestimation_rate
   risk_level: medium
   max_diff_size: 200
-  status: todo
+  status: in_progress
+  picked_at: '2026-02-05T12:19:04Z'
+  branch: agent/exp_20260205_121904-tune-closing-odds-multiplier-quantile
 - id: EXP-013
   title: Closing multiplier by odds bucket
   hypothesis: Estimating closing-mult per odds bucket reduces EV error and improves
