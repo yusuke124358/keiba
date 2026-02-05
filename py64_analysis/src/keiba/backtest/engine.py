@@ -186,7 +186,15 @@ class BacktestEngine:
                 return float(bankroll_value) * float(frac)
             return float(initial_bankroll) * float(self.config.betting.caps.per_day_pct)
 
-        max_daily_loss = initial_bankroll * self.config.betting.stop.max_daily_loss_pct
+        stop_cfg = getattr(self.config.betting, "stop", None)
+        max_daily_loss = initial_bankroll * float(getattr(stop_cfg, "max_daily_loss_pct", 0.0) or 0.0)
+        max_daily_profit = None
+        try:
+            max_daily_profit_pct = float(getattr(stop_cfg, "max_daily_profit_pct", None))
+        except Exception:
+            max_daily_profit_pct = None
+        if max_daily_profit_pct is not None and max_daily_profit_pct > 0:
+            max_daily_profit = initial_bankroll * max_daily_profit_pct
 
         def _profit_before_damp(bet: Bet, profit_actual: float) -> float:
             extra = bet.extra or {}
@@ -210,6 +218,7 @@ class BacktestEngine:
         if sel_mode == "daily_top_n":
             for race_date, day_races in groupby(races, key=lambda r: r[:8]):
                 daily_loss = 0.0
+                daily_profit = 0.0
                 per_day_cap = _per_day_cap_for(bankroll_decision)
                 bankroll_for_day = bankroll_decision
                 daily_candidates: list[dict] = []
@@ -255,6 +264,8 @@ class BacktestEngine:
                 for bet in daily_bets:
                     if daily_loss >= max_daily_loss:
                         break
+                    if max_daily_profit is not None and daily_profit >= max_daily_profit:
+                        break
 
                     bet_result = self._settle_bet(bet)
                     result.bets.append(bet_result)
@@ -270,12 +281,15 @@ class BacktestEngine:
                     bankroll_decision += profit_before
                     if profit_before < 0:
                         daily_loss += abs(profit_before)
+                    elif profit_before > 0:
+                        daily_profit += profit_before
 
                     dd = (peak_bankroll - bankroll) / peak_bankroll if peak_bankroll > 0 else 0
                     result.max_drawdown = max(result.max_drawdown, dd)
         elif use_new_stake:
             for race_date, day_races in groupby(races, key=lambda r: r[:8]):
                 daily_loss = 0.0
+                daily_profit = 0.0
                 per_day_cap = _per_day_cap_for(bankroll_decision)
                 bankroll_for_day = bankroll_decision
                 daily_bets: list[Bet] = []
@@ -312,6 +326,8 @@ class BacktestEngine:
                     # ?E??????????E??
                     if daily_loss >= max_daily_loss:
                         break
+                    if max_daily_profit is not None and daily_profit >= max_daily_profit:
+                        break
 
                     bet_result = self._settle_bet(bet)
                     result.bets.append(bet_result)
@@ -327,6 +343,8 @@ class BacktestEngine:
                     bankroll_decision += profit_before
                     if profit_before < 0:
                         daily_loss += abs(profit_before)
+                    elif profit_before > 0:
+                        daily_profit += profit_before
 
                     # ????????E
                     dd = (peak_bankroll - bankroll) / peak_bankroll if peak_bankroll > 0 else 0
@@ -335,6 +353,7 @@ class BacktestEngine:
             current_date = None
             daily_stake = 0
             daily_loss = 0.0
+            daily_profit = 0.0
             per_day_cap = _per_day_cap_for(bankroll_decision)
 
             for race_id in races:
@@ -344,10 +363,13 @@ class BacktestEngine:
                     current_date = race_date
                     daily_stake = 0
                     daily_loss = 0.0
+                    daily_profit = 0.0
                     per_day_cap = _per_day_cap_for(bankroll_decision)
                 
                 # ?E??????????E??
                 if daily_loss >= max_daily_loss:
+                    continue
+                if max_daily_profit is not None and daily_profit >= max_daily_profit:
                     continue
                 
                 # ???????E?????E
@@ -396,6 +418,8 @@ class BacktestEngine:
                     bankroll_decision += profit_before
                     if profit_before < 0:
                         daily_loss += abs(profit_before)
+                    elif profit_before > 0:
+                        daily_profit += profit_before
                     
                     # ????????E
                     dd = (peak_bankroll - bankroll) / peak_bankroll if peak_bankroll > 0 else 0

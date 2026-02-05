@@ -160,6 +160,7 @@ class UncertaintyConfig(BaseModel):
 class StopConfig(BaseModel):
     """停止条件"""
     max_daily_loss_pct: float = 0.03
+    max_daily_profit_pct: Optional[float] = Field(default=None, gt=0)
 
 
 class SlippageTableConfig(BaseModel):

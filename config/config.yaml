@@ -275,4 +275,5 @@ betting:
     per_day_pct: 0.03
   stop:
     max_daily_loss_pct: 0.03
+    max_daily_profit_pct: 0.02
 

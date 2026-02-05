@@ -1,0 +1,6 @@
+- Experiment type: experiment
+- ROI: N/A
+- Total stake: N/A
+- n_bets: N/A
+- Test period: 2020-01-01 to 2024-12-31
+- Max drawdown: N/A
