@@ -15,7 +15,7 @@ items:
   - backtest.max_drawdown
   risk_level: medium
   max_diff_size: 200
-  status: in_progress
+  status: done
   branch: agent/exp_20260205_081041-odds-cap-tightening-for-win-bets
   picked_at: '2026-02-05T08:10:41Z'
 - id: EXP-002
