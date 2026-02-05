@@ -324,7 +324,10 @@ def run_codex(
         "exec",
         "--profile",
         profile,
-        "--full-auto",
+        "--sandbox",
+        "workspace-write",
+        "--ask-for-approval",
+        "never",
         prompt_text + "\n\nPLAN_JSON:\n" + payload,
     ]
     with open(log_path, "w", encoding="utf-8") as log:
