@@ -230,6 +230,38 @@ def ensure_clean(root: Path) -> None:
         raise RuntimeError("Working tree not clean. Commit or stash changes first.")
 
 
+def ensure_codex_writable(log_path: Path) -> None:
+    if not log_path.exists():
+        return
+    text = log_path.read_text(encoding="utf-8", errors="ignore")
+    match = re.search(r"^sandbox:\\s*(.+)$", text, flags=re.MULTILINE)
+    if not match:
+        return
+    sandbox = match.group(1).strip().lower()
+    if sandbox == "read-only":
+        raise RuntimeError(
+            "codex exec ran in read-only sandbox; cannot implement changes. "
+            "Check codex config/profile and ensure agent_loop uses workspace-write "
+            "or danger-full-access."
+        )
+
+
+def ensure_impl_changes(root: Path) -> None:
+    status = subprocess.run(
+        ["git", "status", "--porcelain"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout.strip()
+    if not status:
+        raise RuntimeError(
+            "No working tree changes after codex implementation. "
+            "Ensure the prompt triggers real code/config edits and codex "
+            "can write to the repo."
+        )
+
+
 def render_experiment_log(
     template: Path, out_path: Path, plan: dict, result: dict
 ) -> None:
@@ -337,6 +369,8 @@ def main() -> int:
     log_dir.mkdir(parents=True, exist_ok=True)
     codex_log = log_dir / f"{plan['run_id']}_implement.log"
     run_codex(root, root / args.prompt, plan, args.profile, codex_log)
+    ensure_codex_writable(codex_log)
+    ensure_impl_changes(root)
 
     eval_cmd = coerce_eval_command(plan.get("eval_command"))
     if not eval_cmd:
