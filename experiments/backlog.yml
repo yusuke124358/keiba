@@ -167,7 +167,7 @@ items:
   - backtest.n_bets
   risk_level: low
   max_diff_size: 120
-  status: in_progress
+  status: done
   picked_at: '2026-02-05T10:42:20Z'
   branch: agent/exp_20260205_104220-skip-low-field-size-races
 - id: EXP-010
