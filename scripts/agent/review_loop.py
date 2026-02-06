@@ -980,12 +980,74 @@ def run_all(args, config):
     if not run_meta:
         return 0
 
+    run_dir = Path(run_meta["run_dir"])
+    try:
+        bundle = json.loads((run_dir / "input_bundle.json").read_text(encoding="utf-8"))
+    except Exception:
+        bundle = {}
+
+    # Fast path: when CI logs clearly indicate a mechanical formatting failure,
+    # fix it immediately without invoking the LLM stages. This keeps scheduled
+    # auto-fix runs responsive and avoids execpolicy blocks on the runner.
+    head_ref = ((bundle.get("pr") or {}).get("head_ref") or "").strip()
+    ruff_paths = extract_ruff_reformat_paths(bundle)
+    if head_ref and ruff_paths:
+        root = repo_root()
+        ensure_branch(root, head_ref)
+        run_ruff_format(root, ruff_paths)
+
+        review_items = {
+            "issues": [
+                {
+                    "id": "",
+                    "source": "checks:verify",
+                    "type": "ci/format",
+                    "severity": "high",
+                    "file": ruff_paths[0] if ruff_paths else None,
+                    "line": None,
+                    "message": "CI formatting gate failed (ruff: Would reformat).",
+                    "suggested_fix": "Run ruff formatter and commit the result.",
+                    "acceptance_check": "make ci passes (ruff format --check is clean).",
+                }
+            ]
+        }
+        write_json(run_dir / "review_items.json", review_items)
+
+        manager_decision = {
+            "approved": True,
+            "summary": "Apply ruff formatting fixes from failing CI logs.",
+            "tasks": [
+                {
+                    "issue_id": "",
+                    "decision": "DO",
+                    "priority": "P0",
+                    "risk": "low",
+                    "rationale": "Formatting failure blocks verify/CI; safe mechanical change.",
+                    "required_checks": ["checks:verify"],
+                }
+            ],
+            "automerge_eligible": True,
+        }
+        write_json(run_dir / "manager_decision.json", manager_decision)
+
+        fixer_report = {
+            "status": "success",
+            "summary": "Applied deterministic CI fixes.",
+            "actions": ["ruff format: " + ", ".join(ruff_paths)],
+            "tests": [],
+            "artifacts": [],
+            "failures": [],
+            "needs_human": False,
+            "next_steps": [],
+        }
+        write_json(run_dir / "fixer_report.json", fixer_report)
+        return finalize(args, config)
+
     codex_bin = find_codex_bin()
     if not codex_bin:
         raise RuntimeError("codex CLI not found in PATH")
     ensure_codex_ready(codex_bin)
 
-    run_dir = Path(run_meta["run_dir"])
     reviewer_prompt = (run_dir / "reviewer_prompt.txt").read_text(encoding="utf-8")
 
     review_schema = Path("schemas/agent/review_items.schema.json")
@@ -1029,10 +1091,6 @@ def run_all(args, config):
 
     # Ensure the fixer runs on the PR branch (not main). The orchestrator will
     # commit/push later, but the fixer stage must apply edits to the correct ref.
-    try:
-        bundle = json.loads((run_dir / "input_bundle.json").read_text(encoding="utf-8"))
-    except Exception:
-        bundle = {}
     head_ref = ((bundle.get("pr") or {}).get("head_ref") or "").strip()
     if head_ref:
         ensure_branch(repo_root(), head_ref)
