@@ -7,6 +7,7 @@
 
 import json
 import logging
+import os
 import pickle
 from pathlib import Path
 from typing import Any, Optional, Sequence
@@ -27,6 +28,51 @@ from ..features.odds_movement import (
 from .race_softmax import fit_race_softmax
 
 logger = logging.getLogger(__name__)
+
+
+class SurfaceDispatchBooster:
+    """
+    Booster-like wrapper that dispatches predictions to turf/dirt models.
+
+    Downstream code sometimes calls `model.lgb_model.predict(X)` directly; this wrapper
+    keeps that working while enabling per-surface models.
+    """
+
+    def __init__(self, turf: lgb.Booster, dirt: lgb.Booster):
+        self._turf = turf
+        self._dirt = dirt
+        # Used only for logging/summary; choose a stable representative.
+        self.best_iteration = max(
+            int(getattr(turf, "best_iteration", 0) or 0),
+            int(getattr(dirt, "best_iteration", 0) or 0),
+        )
+
+    def predict(self, X, **kwargs):
+        n = len(X)
+        if n <= 0:
+            return np.asarray([], dtype=float)
+
+        is_turf = None
+        try:
+            if isinstance(X, pd.DataFrame) and "is_turf" in X.columns:
+                is_turf = pd.to_numeric(X["is_turf"], errors="coerce").fillna(0).astype(int).values
+        except Exception:
+            is_turf = None
+
+        if is_turf is None:
+            return np.asarray(self._dirt.predict(X, **kwargs), dtype=float)
+
+        mask_turf = is_turf == 1
+        out = np.empty(n, dtype=float)
+        if mask_turf.any():
+            out[mask_turf] = np.asarray(
+                self._turf.predict(X.iloc[mask_turf], **kwargs), dtype=float
+            )
+        if (~mask_turf).any():
+            out[~mask_turf] = np.asarray(
+                self._dirt.predict(X.iloc[~mask_turf], **kwargs), dtype=float
+            )
+        return out
 
 
 def _clip_prob_series(p: pd.Series, lo: float, hi: float) -> pd.Series:
@@ -136,7 +182,7 @@ class WinProbabilityModel:
     def __init__(self, version: str = "1.0.0"):
         self.version = version
         self.config = get_config()
-        self.lgb_model: Optional[lgb.Booster] = None
+        self.lgb_model: lgb.Booster | SurfaceDispatchBooster | None = None
         self.blend_weight = self.config.model.blend_weight_w
         self.blend_segmented: Optional[dict] = None
         self.race_softmax_params: Optional[dict] = None
@@ -396,10 +442,34 @@ class WinProbabilityModel:
 
         residual_meta = {}
 
+        # If surface segments are provided, use them to drive turf/dirt dispatch (even if the
+        # feature payload has stale/missing `is_turf`). This is a no-op for non-surface models.
+        X_dispatch = X
+        if (
+            isinstance(self.lgb_model, SurfaceDispatchBooster)
+            and segments is not None
+            and isinstance(X, pd.DataFrame)
+        ):
+            try:
+                if isinstance(segments, pd.Series):
+                    seg_list = segments.tolist()
+                elif isinstance(segments, str):
+                    seg_list = [segments] * len(X)
+                else:
+                    seg_list = list(segments)
+                if len(seg_list) == len(X) and len(seg_list) > 0:
+                    X_dispatch = X.copy()
+                    X_dispatch["is_turf"] = [
+                        1 if (s is not None and str(s).strip().lower() == "turf") else 0
+                        for s in seg_list
+                    ]
+            except Exception:
+                X_dispatch = X
+
         if self.use_market_offset:
             lo, hi = float(self.p_mkt_clip[0]), float(self.p_mkt_clip[1])
             init = _logit_series(_clip_prob_series(p_mkt.astype(float), lo, hi))
-            resid = self.lgb_model.predict(X, raw_score=True)
+            resid = self.lgb_model.predict(X_dispatch, raw_score=True)
 
             # Ticket G1: Residual Cap適用
             if self.residual_cap_enabled and self.residual_cap_value is not None:
@@ -428,7 +498,7 @@ class WinProbabilityModel:
                         "cap_value": None,
                     }
         else:
-            p_model = self.lgb_model.predict(X)
+            p_model = self.lgb_model.predict(X_dispatch)
             p_mkt_arr = np.asarray(p_mkt, dtype=float)
             w_arr = self._resolve_blend_weights(segments, len(p_mkt_arr))
             p_blend_raw = w_arr * p_mkt_arr + (1 - w_arr) * p_model
@@ -484,7 +554,6 @@ class WinProbabilityModel:
                         residual_meta["market_shrink_alpha"] = float(a)
                         residual_meta["p_hat_pre_market_shrink"] = p_hat_arr
                         residual_meta["p_hat_final"] = p_blend
-
         if return_residual_meta:
             return p_blend, residual_meta
         return p_blend
@@ -830,6 +899,13 @@ def prepare_training_data(
 
     df = pd.DataFrame(rows)
 
+    # Normalize `is_turf` using fact_race.surface (robust to DB type: int/str).
+    # This column is used for surface-dispatching models.
+    try:
+        seg = _surface_segments_from_race_ids(session, df["race_id"], df.get("is_turf"))
+        df["is_turf"] = (seg == "turf").astype(int)
+    except Exception as e:
+        logger.warning(f"Failed to normalize is_turf from fact_race.surface: {e}")
     # 0B42 (quinella) odds movement features at buy_time (leak-free, snapshot-based).
     q_df = fetch_quinella_odds_movement_features(
         session,
@@ -844,7 +920,6 @@ def prepare_training_data(
         for c in QUINELLA_ODDS_MOVEMENT_COLS:
             if c not in df.columns:
                 df[c] = None
-
     # 特徴量カラム
     feature_cols = [
         "odds",
@@ -1009,9 +1084,128 @@ def train_model(
             logger.warning("No validation data found, falling back to train split")
             X_valid, y_valid, p_mkt_valid = None, None, None
 
-    # モデル学習
-    model = WinProbabilityModel()
-    metrics = model.fit(X_train, y_train, p_mkt_train, X_valid, y_valid, p_mkt_valid)
+    # Surface split (turf vs dirt): train 2 models and dispatch by race surface
+    # at inference/backtest.
+    # Enabled via env `KEIBA_SURFACE_SPLIT_MODEL=1` or auto-enabled for this run_id.
+    surface_split_enabled = False
+    env_flag = os.environ.get("KEIBA_SURFACE_SPLIT_MODEL")
+    if env_flag is not None:
+        surface_split_enabled = str(env_flag).strip().lower() in ("1", "true", "yes", "y", "on")
+    else:
+        run_name = None
+        if model_path is not None:
+            try:
+                run_name = model_path.parent.parent.name
+            except Exception:
+                run_name = None
+        surface_split_enabled = run_name == "exp_20260206_080929"
+
+    model: Optional[WinProbabilityModel] = None
+    metrics: dict = {}
+    if surface_split_enabled and race_ids_train is not None:
+        seg_train = _surface_segments_from_race_ids(session, race_ids_train, X_train.get("is_turf"))
+        mask_turf_tr = seg_train.astype(str) == "turf"
+        mask_dirt_tr = ~mask_turf_tr  # treat non-turf as dirt (incl. jump/unknown)
+        n_turf_tr = int(mask_turf_tr.sum())
+        n_dirt_tr = int(mask_dirt_tr.sum())
+
+        # Avoid degenerate splits; fall back to the single-model path.
+        if n_turf_tr >= 500 and n_dirt_tr >= 500:
+            seg_valid = None
+            mask_turf_va = None
+            if (
+                X_valid is not None
+                and y_valid is not None
+                and p_mkt_valid is not None
+                and race_ids_valid is not None
+            ):
+                seg_valid = _surface_segments_from_race_ids(
+                    session, race_ids_valid, X_valid.get("is_turf")
+                )
+                mask_turf_va = seg_valid.astype(str) == "turf"
+
+            model_turf = WinProbabilityModel()
+            turf_fit = model_turf.fit(
+                X_train[mask_turf_tr],
+                y_train[mask_turf_tr],
+                p_mkt_train[mask_turf_tr],
+                X_valid[mask_turf_va]
+                if (
+                    X_valid is not None and mask_turf_va is not None and int(mask_turf_va.sum()) > 0
+                )
+                else None,
+                y_valid[mask_turf_va]
+                if (
+                    y_valid is not None and mask_turf_va is not None and int(mask_turf_va.sum()) > 0
+                )
+                else None,
+                p_mkt_valid[mask_turf_va]
+                if (
+                    p_mkt_valid is not None
+                    and mask_turf_va is not None
+                    and int(mask_turf_va.sum()) > 0
+                )
+                else None,
+            )
+
+            model_dirt = WinProbabilityModel()
+            mask_dirt_va = None if mask_turf_va is None else ~mask_turf_va
+            dirt_fit = model_dirt.fit(
+                X_train[mask_dirt_tr],
+                y_train[mask_dirt_tr],
+                p_mkt_train[mask_dirt_tr],
+                X_valid[mask_dirt_va]
+                if (
+                    X_valid is not None and mask_dirt_va is not None and int(mask_dirt_va.sum()) > 0
+                )
+                else None,
+                y_valid[mask_dirt_va]
+                if (
+                    y_valid is not None and mask_dirt_va is not None and int(mask_dirt_va.sum()) > 0
+                )
+                else None,
+                p_mkt_valid[mask_dirt_va]
+                if (
+                    p_mkt_valid is not None
+                    and mask_dirt_va is not None
+                    and int(mask_dirt_va.sum()) > 0
+                )
+                else None,
+            )
+
+            if model_turf.feature_names != model_dirt.feature_names:
+                raise ValueError("Surface-split models produced different feature_names")
+
+            model = WinProbabilityModel()
+            model.feature_names = list(model_turf.feature_names)
+            turf_booster = model_turf.lgb_model
+            dirt_booster = model_dirt.lgb_model
+            if turf_booster is None or dirt_booster is None:
+                raise ValueError("Surface-split models failed to train")
+            if not isinstance(turf_booster, lgb.Booster) or not isinstance(
+                dirt_booster, lgb.Booster
+            ):
+                raise ValueError("Surface-split models did not produce raw Boosters")
+            model.lgb_model = SurfaceDispatchBooster(turf_booster, dirt_booster)
+            metrics = {
+                "surface_split_enabled": True,
+                "n_train": int(len(y_train)),
+                "n_train_turf": n_turf_tr,
+                "n_train_dirt": n_dirt_tr,
+                "turf_fit": turf_fit,
+                "dirt_fit": dirt_fit,
+            }
+        else:
+            surface_split_enabled = False
+            metrics["surface_split_fallback_reason"] = (
+                f"insufficient_rows(n_turf={n_turf_tr}, n_dirt={n_dirt_tr})"
+            )
+
+    if model is None:
+        # Default single-model path.
+        model = WinProbabilityModel()
+        metrics = model.fit(X_train, y_train, p_mkt_train, X_valid, y_valid, p_mkt_valid)
+        metrics["surface_split_enabled"] = False
 
     # Ticket: segment別 blend weight（validのみで推定）
     blend_seg_cfg = None
