@@ -244,7 +244,9 @@ items:
   - odds.closing_mult_mae
   risk_level: medium
   max_diff_size: 200
-  status: todo
+  status: in_progress
+  picked_at: '2026-02-06T02:03:58Z'
+  branch: agent/exp_20260206_020358-closing-multiplier-by-odds-bucket
 - id: EXP-014
   title: Odds time-series movement features (0B41/0B42)
   hypothesis: Incorporating odds movement features improves calibration and ROI versus
