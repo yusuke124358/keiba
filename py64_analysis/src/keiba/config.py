@@ -396,6 +396,9 @@ class ModelConfig(BaseModel):
     race_softmax: RaceSoftmaxConfig = Field(default_factory=RaceSoftmaxConfig)
     calibration: str = "isotonic"
     market_prob_mode: str = "raw"
+    # Post-processing: shrink final p_hat toward p_mkt in logit space.
+    # alpha=1.0 keeps p_hat, alpha=0.0 uses p_mkt.
+    market_shrink_alpha: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     # rolling比較の再現性向上（LightGBMの乱数seed）
     seed: int = 42
     # Option C0: 市場確率 p_mkt を prior として固定し、残差（logit）だけを学習する

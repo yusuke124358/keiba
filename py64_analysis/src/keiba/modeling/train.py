@@ -418,6 +418,40 @@ class WinProbabilityModel:
         elif return_residual_meta:
             residual_meta["p_hat_capped"] = p_blend_raw
             residual_meta["p_hat_final"] = p_blend
+
+        # Optional post-process: shrink final probability toward market-implied p_mkt.
+        # This is applied only for the "final" path (calibrate=True) so p_blend_raw
+        # / calibrate=False outputs keep their original semantics.
+        if calibrate:
+            shrink_alpha = getattr(self.config.model, "market_shrink_alpha", None)
+            if shrink_alpha is not None:
+                try:
+                    a = float(shrink_alpha)
+                except Exception:
+                    a = None
+                if a is not None and np.isfinite(a):
+                    lo, hi = float(self.p_mkt_clip[0]), float(self.p_mkt_clip[1])
+                    p_hat_arr = np.asarray(p_blend, dtype=float)
+                    p_mkt_arr = np.asarray(p_mkt, dtype=float)
+                    mask = np.isfinite(p_hat_arr) & np.isfinite(p_mkt_arr)
+                    p_shrunk = p_hat_arr.copy()
+                    if mask.any():
+                        if a <= 0.0:
+                            p_shrunk[mask] = np.clip(p_mkt_arr[mask], lo, hi)
+                        elif a >= 1.0:
+                            p_shrunk[mask] = np.clip(p_hat_arr[mask], lo, hi)
+                        else:
+                            hat_c = np.clip(p_hat_arr[mask], lo, hi)
+                            mkt_c = np.clip(p_mkt_arr[mask], lo, hi)
+                            logit_hat = np.log(hat_c / (1.0 - hat_c))
+                            logit_mkt = np.log(mkt_c / (1.0 - mkt_c))
+                            logit_shrunk = logit_mkt + a * (logit_hat - logit_mkt)
+                            p_shrunk[mask] = 1.0 / (1.0 + np.exp(-logit_shrunk))
+                    p_blend = p_shrunk
+                    if return_residual_meta:
+                        residual_meta["market_shrink_alpha"] = float(a)
+                        residual_meta["p_hat_pre_market_shrink"] = p_hat_arr
+                        residual_meta["p_hat_final"] = p_blend
         
         if return_residual_meta:
             return p_blend, residual_meta
