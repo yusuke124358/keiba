@@ -93,7 +93,8 @@ def load_state(path: Path):
             "consecutive_failures": 0,
             "issue_occurrences": {},
         }
-    return json.loads(path.read_text(encoding="utf-8"))
+    # Be tolerant of UTF-8 BOM that can be introduced by some Windows tooling.
+    return json.loads(path.read_text(encoding="utf-8-sig"))
 
 
 def save_state(path: Path, state):
