@@ -24,6 +24,17 @@ CONFIG_PATH = Path("config/auto_fix.yml")
 PROMPTS_DIR = Path("prompts")
 STATE_DIR = Path("artifacts/agent")
 CURRENT_RUN = STATE_DIR / "current_run.json"
+AUTO_FIX_COMMENT_MARKER = "<!-- auto-fix: review_loop -->"
+
+
+def state_root() -> Path:
+    configured = os.environ.get("AUTO_FIX_STATE_DIR", "").strip()
+    if configured:
+        return Path(configured)
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        # Keep state outside the git workspace; actions/checkout may wipe untracked files.
+        return Path.home() / ".clawdbot" / "auto_fix_state"
+    return STATE_DIR
 
 
 def run(cmd, cwd=None, check=True, capture_output=True, text=True, env=None):
@@ -177,12 +188,17 @@ def select_pr(prs):
 def extract_comments(raw_comments):
     comments = []
     for c in raw_comments or []:
+        body = c.get("body", "") or ""
+        # Avoid self-trigger loops: the workflow listens to issue_comment events,
+        # and we also comment on the PR from this loop.
+        if AUTO_FIX_COMMENT_MARKER in body:
+            continue
         comments.append(
             {
                 "id": c.get("databaseId") or 0,
                 "author": (c.get("author") or {}).get("login", ""),
                 "created_at": c.get("createdAt", ""),
-                "body": c.get("body", ""),
+                "body": body,
                 "url": c.get("url", ""),
                 "source": "issue_comment",
             }
@@ -229,14 +245,17 @@ def extract_thread_comments(raw_threads):
 def extract_checks(raw_checks):
     checks = []
     for c in raw_checks or []:
+        name = c.get("name") or c.get("context") or ""
+        if not name:
+            continue
         checks.append(
             {
-                "name": c.get("name", ""),
-                "status": c.get("status", ""),
-                "conclusion": c.get("conclusion", ""),
-                "completed_at": c.get("completedAt", ""),
-                "details_url": c.get("detailsUrl", ""),
-                "summary": c.get("summary", ""),
+                "name": name,
+                "status": c.get("status") or c.get("state") or "",
+                "conclusion": c.get("conclusion") or c.get("state") or "",
+                "completed_at": c.get("completedAt") or c.get("startedAt") or "",
+                "details_url": c.get("detailsUrl") or c.get("targetUrl") or "",
+                "summary": c.get("summary") or c.get("description") or "",
             }
         )
     return checks
@@ -269,11 +288,16 @@ def build_prompts(run_dir, bundle_path):
     manager_base = load_prompt(PROMPTS_DIR / "manager.md")
     fixer_base = load_prompt(PROMPTS_DIR / "fixer.md")
 
+    bundle_text = ""
+    if bundle_path.exists():
+        bundle_text = bundle_path.read_text(encoding="utf-8").strip()
     reviewer_prompt = "\n".join(
         [
             reviewer_base,
             "",
             f"Input bundle JSON: {bundle_path}",
+            "Input bundle JSON content:",
+            bundle_text or "{}",
         ]
     )
     manager_prompt = "\n".join(
@@ -506,6 +530,8 @@ def build_comment(manager_decision, fixer_report):
         f"NEEDS_HUMAN={counts.get('NEEDS_HUMAN', 0)}"
     )
     lines = [
+        AUTO_FIX_COMMENT_MARKER,
+        "",
         "### MANAGER_DECISION",
         f"Summary: {manager_summary}",
         counts_line,
@@ -538,6 +564,7 @@ def collect(args, config):
     root = repo_root()
     os.chdir(root)
     STATE_DIR.mkdir(parents=True, exist_ok=True)
+    state_root().mkdir(parents=True, exist_ok=True)
 
     auto_label = config["labels"]["auto_fix"]
     needs_label = config["labels"]["needs_human"]
@@ -576,7 +603,7 @@ def collect(args, config):
     head_ref = pr_data.get("headRefName")
     base_ref = pr_data.get("baseRefName")
 
-    state_path = STATE_DIR / f"state_pr_{pr_number}.json"
+    state_path = state_root() / f"state_pr_{pr_number}.json"
     state = load_state(state_path)
 
     comments = extract_comments(pr_data.get("comments"))
@@ -658,6 +685,7 @@ def normalize_review_items(run_dir):
 def finalize(args, config):
     root = repo_root()
     os.chdir(root)
+    state_root().mkdir(parents=True, exist_ok=True)
 
     run_dir = Path(args.run_dir) if args.run_dir else None
     if not run_dir:
@@ -693,7 +721,7 @@ def finalize(args, config):
     head_ref = pr_data.get("headRefName")
     base_ref = pr_data.get("baseRefName")
 
-    state_path = STATE_DIR / f"state_pr_{pr_number}.json"
+    state_path = state_root() / f"state_pr_{pr_number}.json"
     state = load_state(state_path)
 
     signals = bundle.get("signals", {})
@@ -888,8 +916,6 @@ def run_all(args, config):
 
     run_dir = Path(run_meta["run_dir"])
     reviewer_prompt = (run_dir / "reviewer_prompt.txt").read_text(encoding="utf-8")
-    manager_prompt = (run_dir / "manager_prompt.txt").read_text(encoding="utf-8")
-    fixer_prompt = (run_dir / "fixer_prompt.txt").read_text(encoding="utf-8")
 
     review_schema = Path("schemas/agent/review_items.schema.json")
     manager_schema = Path("schemas/agent/manager_decision.schema.json")
@@ -903,6 +929,25 @@ def run_all(args, config):
         codex_bin,
     )
     normalize_review_items(run_dir)
+
+    review_items_path = run_dir / "review_items.json"
+    review_items_text = (
+        review_items_path.read_text(encoding="utf-8").strip()
+        if review_items_path.exists()
+        else "{}"
+    )
+    manager_base = load_prompt(PROMPTS_DIR / "manager.md")
+    manager_prompt = "\n".join(
+        [
+            manager_base,
+            "",
+            f"Review items JSON path: {review_items_path}",
+            "Review items JSON content:",
+            review_items_text or "{}",
+            "Apply business rules from AGENTS.md.",
+        ]
+    )
+    (run_dir / "manager_prompt.txt").write_text(manager_prompt, encoding="utf-8")
     run_codex(
         manager_prompt,
         manager_schema,
@@ -910,6 +955,29 @@ def run_all(args, config):
         run_dir / "manager_codex.log",
         codex_bin,
     )
+
+    manager_decision_path = run_dir / "manager_decision.json"
+    manager_text = (
+        manager_decision_path.read_text(encoding="utf-8").strip()
+        if manager_decision_path.exists()
+        else "{}"
+    )
+    fixer_base = load_prompt(PROMPTS_DIR / "fixer.md")
+    fixer_prompt = "\n".join(
+        [
+            fixer_base,
+            "",
+            f"Manager decisions JSON path: {manager_decision_path}",
+            "Manager decisions JSON content:",
+            manager_text or "{}",
+            "",
+            f"Review items JSON path: {review_items_path}",
+            "Review items JSON content:",
+            review_items_text or "{}",
+            "Do not commit or push; orchestrator handles that.",
+        ]
+    )
+    (run_dir / "fixer_prompt.txt").write_text(fixer_prompt, encoding="utf-8")
     run_codex(
         fixer_prompt,
         fixer_schema,
