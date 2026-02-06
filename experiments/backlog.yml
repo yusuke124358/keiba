@@ -391,23 +391,6 @@ items:
   status: failed
   picked_at: '2026-02-06T16:53:49Z'
   branch: agent/exp_20260206_130000-exp-022-lightweight-hyperparameter-tuning-via-rolling-cv
-- id: EXP-025
-  title: Speed figure normalized by course/distance/going
-  hypothesis: A normalized speed figure adds predictive signal beyond raw times/positions.
-  change_scope:
-  - py64_analysis/src/keiba/features/
-  - py64_analysis/src/keiba/modeling/
-  acceptance_criteria:
-  - Logloss improves by >= 0.3%
-  - ROI >= baseline
-  metrics:
-  - model.logloss
-  - backtest.roi
-  risk_level: medium
-  max_diff_size: 200
-  status: in_progress
-  picked_at: '2026-02-06T20:46:25Z'
-  branch: agent/exp_20260206_120000-speed-figure-normalized-by-course-distance-going
 - id: EXP-026
   title: Pace pressure features
   hypothesis: Pace scenario features (early speed vs closers) improve win probability
@@ -860,3 +843,19 @@ items:
   max_diff_size: 150
   status: todo
   branch: agent/exp_20260206_120000-exp-024-odds-feature-transforms-clipped-log
+- id: EXP-025
+  title: Speed figure normalized by course/distance/going
+  hypothesis: A normalized speed figure adds predictive signal beyond raw times/positions.
+  change_scope:
+  - py64_analysis/src/keiba/features/
+  - py64_analysis/src/keiba/modeling/
+  acceptance_criteria:
+  - Logloss improves by >= 0.3%
+  - ROI >= baseline
+  metrics:
+  - model.logloss
+  - backtest.roi
+  risk_level: medium
+  max_diff_size: 200
+  status: todo
+  branch: agent/exp_20260206_120000-speed-figure-normalized-by-course-distance-going
