@@ -349,11 +349,25 @@ def run_codex(prompt_text, schema_path, output_path, log_path, codex_bin):
 
     if supports_output_last:
         with open(log_path, "w", encoding="utf-8") as log:
+            # Pass the prompt via stdin to avoid Windows argument parsing/encoding issues.
             result = subprocess.run(
-                cmd + [prompt_text], stdout=log, stderr=log, text=True
+                cmd + ["-"],
+                input=prompt_text,
+                stdout=log,
+                stderr=log,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
             )
     else:
-        result = subprocess.run(cmd + [prompt_text], capture_output=True, text=True)
+        result = subprocess.run(
+            cmd + ["-"],
+            input=prompt_text,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
         with open(log_path, "w", encoding="utf-8") as log:
             log.write(result.stdout or "")
             if result.stderr:
