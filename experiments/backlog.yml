@@ -263,7 +263,9 @@ items:
   - model.logloss
   risk_level: high
   max_diff_size: 200
-  status: todo
+  status: in_progress
+  picked_at: '2026-02-06T04:31:16Z'
+  branch: agent/exp_20260206_043116-odds-time-series-movement-features-0b41-0b42
 - id: EXP-015
   title: Calibration method sweep (isotonic vs temperature)
   hypothesis: Better probability calibration improves EV-based selection and realized
