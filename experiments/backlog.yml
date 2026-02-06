@@ -319,7 +319,7 @@ items:
   - backtest.roi
   risk_level: high
   max_diff_size: 200
-  status: in_progress
+  status: done
   branch: agent/exp_20260206_080929-separate-models-by-surface-turf-vs-dirt
   picked_at: '2026-02-06T08:09:29Z'
 - id: EXP-018
