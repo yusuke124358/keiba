@@ -261,6 +261,32 @@ def extract_checks(raw_checks):
     return checks
 
 
+RUN_ID_RE = re.compile(r"/actions/runs/(\d+)")
+
+
+def attach_failed_check_logs(checks, max_checks=3, max_chars=12000):
+    attached = 0
+    for c in checks:
+        if attached >= max_checks:
+            return
+        conclusion = str(c.get("conclusion") or "").upper()
+        if conclusion != "FAILURE":
+            continue
+        url = str(c.get("details_url") or "")
+        match = RUN_ID_RE.search(url)
+        if not match:
+            continue
+        run_id = match.group(1)
+        result = run(["gh", "run", "view", run_id, "--log-failed"], check=False)
+        text = (result.stdout or "") + (("\n" + result.stderr) if result.stderr else "")
+        text = text.strip()
+        if max_chars and len(text) > max_chars:
+            text = text[-max_chars:]
+        c["run_id"] = run_id
+        c["log_failed_excerpt"] = text
+        attached += 1
+
+
 def filter_new_by_id(items, last_id):
     return [i for i in items if int(i.get("id") or 0) > int(last_id or 0)]
 
@@ -617,6 +643,7 @@ def collect(args, config):
         thread_comments, state.get("last_thread_comment_id")
     )
     new_checks = filter_new_checks(checks, state.get("last_check_completed_at"))
+    attach_failed_check_logs(new_checks)
 
     if (
         not (new_comments or new_reviews or new_thread_comments or new_checks)
