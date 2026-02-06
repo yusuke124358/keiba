@@ -768,14 +768,23 @@ def collect(args, config):
     )
     new_checks = filter_new_checks(checks, state.get("last_check_completed_at"))
 
-    # When CI is still failing but no new signals exist, scheduled runs should
-    # continue attempting fixes. Bundle failing checks (with log excerpts) so
-    # we can apply deterministic fixes (e.g., ruff formatting) without requiring
-    # new comments/reviews/check reruns.
+    # Even if new checks arrived (e.g., CodeRabbit), we must still carry forward
+    # any currently failing checks so the loop can keep making progress.
     failing_checks = [
         c for c in checks if str(c.get("conclusion") or "").upper() == "FAILURE"
     ]
-    checks_for_bundle = new_checks or failing_checks
+    checks_for_bundle = []
+    seen_checks = set()
+    for c in (new_checks or []) + (failing_checks or []):
+        key = (
+            c.get("name") or "",
+            c.get("completed_at") or "",
+            c.get("details_url") or "",
+        )
+        if key in seen_checks:
+            continue
+        seen_checks.add(key)
+        checks_for_bundle.append(c)
     attach_failed_check_logs(checks_for_bundle)
 
     if (
