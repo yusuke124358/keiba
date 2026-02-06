@@ -299,14 +299,14 @@ class WinProbabilityModel:
         # Ticket G1: Residual Cap計算（train期間の全候補から）
         if self.residual_cap_enabled and self.use_market_offset:
             # train期間の全候補のresidを計算
-            lo, hi = float(self.p_mkt_clip[0]), float(self.p_mkt_clip[1])
-            init_train_all = _logit_series(_clip_prob_series(p_mkt_train.astype(float), lo, hi))
             resid_train_all = self.lgb_model.predict(X_train, raw_score=True)
             # |resid|のquantileからcapを算出
             abs_resid = np.abs(resid_train_all)
             self.residual_cap_value = float(np.quantile(abs_resid, self.residual_cap_quantile))
             logger.info(
-                f"Residual cap computed: quantile={self.residual_cap_quantile}, cap={self.residual_cap_value:.4f}"
+                "Residual cap computed: "
+                f"quantile={self.residual_cap_quantile}, "
+                f"cap={self.residual_cap_value:.4f}"
             )
 
         logger.info(
@@ -568,10 +568,13 @@ def prepare_training_data(
         WITH buy_times AS (
             -- 各レースの購入時点を計算
             -- date + start_time を timestamp に変換し、買い付け時刻を算出
-            SELECT 
+            SELECT
                 r.race_id,
                 r.date,
-                ((r.date::timestamp + r.start_time) - make_interval(mins => :buy_minutes)) AS buy_time
+                (
+                    (r.date::timestamp + r.start_time)
+                    - make_interval(mins => :buy_minutes)
+                ) AS buy_time
             FROM fact_race r
             WHERE r.date BETWEEN :min_date AND :max_date
               AND r.start_time IS NOT NULL
@@ -585,7 +588,10 @@ def prepare_training_data(
                     SELECT 1 FROM odds_ts_win o
                     WHERE o.race_id = r.race_id
                       AND o.odds > 0
-                      AND o.asof_time <= ((r.date::timestamp + r.start_time) - make_interval(mins => :buy_minutes))
+                      AND o.asof_time <= (
+                            (r.date::timestamp + r.start_time)
+                            - make_interval(mins => :buy_minutes)
+                      )
               ))
               AND (:exclude_len = 0 OR NOT (r.race_id = ANY(:exclude_race_ids)))
         ),
@@ -603,15 +609,16 @@ def prepare_training_data(
               AND f.asof_time <= bt.buy_time
             ORDER BY f.race_id, f.horse_id, f.asof_time DESC
         )
-        SELECT 
+        SELECT
             lf.race_id,
             lf.horse_id,
             lf.payload,
             lf.date,
             CASE WHEN res.finish_pos = 1 THEN 1 ELSE 0 END as is_winner
         FROM latest_features lf
-        -- ★重要: 結果未投入レースが混ざると is_winner=0 扱いで静かに汚れるため、結果がある行だけに限定
-        JOIN fact_result res ON lf.race_id = res.race_id 
+        -- ★重要: 結果未投入レースが混ざると is_winner=0 扱いで静かに汚れるため、
+        --         結果がある行だけに限定
+        JOIN fact_result res ON lf.race_id = res.race_id
             AND lf.horse_id = res.horse_id
             AND res.finish_pos IS NOT NULL
         ORDER BY lf.date, lf.race_id, lf.horse_id

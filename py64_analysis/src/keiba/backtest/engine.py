@@ -59,7 +59,8 @@ class Bet:
     odds_at_buy: float
     # Ticket1: EV/賭け金計算に使った「有効オッズ」
     # - 時系列オッズがある場合: odds_at_buy * closing_odds_multiplier
-    # - 時系列オッズがない場合: odds_at_buy はslippage後の値（推定）、さらに closing_odds_multiplier を適用
+    # - 時系列オッズがない場合: odds_at_buy はslippage後の値（推定）として扱い、
+    #   さらに closing_odds_multiplier を適用
     odds_effective: float
     p_hat: float
     ev: float
@@ -457,7 +458,7 @@ class BacktestEngine:
         exclude_race_ids = list(u.exclude_race_ids or [])
         buy_minutes = int(self.config.backtest.buy_t_minus_minutes)
         query = text("""
-            SELECT r.race_id 
+            SELECT r.race_id
             FROM fact_race r
             WHERE r.date BETWEEN :start_date AND :end_date
               AND r.start_time IS NOT NULL
@@ -471,7 +472,10 @@ class BacktestEngine:
                     SELECT 1 FROM odds_ts_win o
                     WHERE o.race_id = r.race_id
                       AND o.odds > 0
-                      AND o.asof_time <= ((r.date::timestamp + r.start_time) - make_interval(mins => :buy_minutes))
+                      AND o.asof_time <= (
+                            (r.date::timestamp + r.start_time)
+                            - make_interval(mins => :buy_minutes)
+                      )
               ))
               AND (:exclude_len = 0 OR NOT (r.race_id = ANY(:exclude_race_ids)))
             ORDER BY r.date, r.race_id
@@ -496,8 +500,8 @@ class BacktestEngine:
         """購入時点を決定"""
         # 発走時刻からN分前
         query = text("""
-            SELECT date, start_time 
-            FROM fact_race 
+            SELECT date, start_time
+            FROM fact_race
             WHERE race_id = :race_id
         """)
         result = self.session.execute(query, {"race_id": race_id}).fetchone()
@@ -1833,7 +1837,6 @@ class BacktestEngine:
             race_cost_reason = cand.get("race_cost_filter_reason")
             race_softmax_w = cand.get("race_softmax_w")
             race_softmax_T = cand.get("race_softmax_T")
-            race_softmax_enabled = cand.get("race_softmax_enabled")
             race_softmax_enabled_pred = cand.get("race_softmax_enabled_pred")
             closing_mult = cand["closing_mult"]
             odds_dyn_ev_score = cand.get("odds_dyn_ev_score")

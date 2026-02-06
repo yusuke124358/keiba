@@ -36,9 +36,15 @@ def fetch_quinella_odds_movement_features(
         WITH targets AS (
             SELECT
                 r.race_id,
-                ((r.date::timestamp + r.start_time) - make_interval(mins => :buy_minutes)) AS buy_time,
-                ((r.date::timestamp + r.start_time) - make_interval(mins => :buy_minutes)
-                  - make_interval(mins => :lookback_minutes)) AS buy_time_lb
+                (
+                    (r.date::timestamp + r.start_time)
+                    - make_interval(mins => :buy_minutes)
+                ) AS buy_time,
+                (
+                    (r.date::timestamp + r.start_time)
+                    - make_interval(mins => :buy_minutes)
+                    - make_interval(mins => :lookback_minutes)
+                ) AS buy_time_lb
             FROM fact_race r
             WHERE r.race_id = ANY(:race_ids)
               AND r.start_time IS NOT NULL
@@ -108,12 +114,16 @@ def fetch_quinella_odds_movement_features(
             h.q_mean_odds,
             (EXTRACT(EPOCH FROM (t.buy_time - s.t0_q)) / 60.0)::float AS q_snap_age_min,
             CASE
-                WHEN hl.q_min_odds_lb IS NOT NULL AND hl.q_min_odds_lb > 0 AND h.q_min_odds IS NOT NULL
+                WHEN hl.q_min_odds_lb IS NOT NULL
+                 AND hl.q_min_odds_lb > 0
+                 AND h.q_min_odds IS NOT NULL
                 THEN (h.q_min_odds / hl.q_min_odds_lb) - 1.0
                 ELSE NULL
             END AS q_min_odds_chg_60m,
             CASE
-                WHEN hl.q_mean_odds_lb IS NOT NULL AND hl.q_mean_odds_lb > 0 AND h.q_mean_odds IS NOT NULL
+                WHEN hl.q_mean_odds_lb IS NOT NULL
+                 AND hl.q_mean_odds_lb > 0
+                 AND h.q_mean_odds IS NOT NULL
                 THEN (h.q_mean_odds / hl.q_mean_odds_lb) - 1.0
                 ELSE NULL
             END AS q_mean_odds_chg_60m
