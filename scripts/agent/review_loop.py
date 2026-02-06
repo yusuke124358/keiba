@@ -436,7 +436,17 @@ def run_codex(prompt_text, schema_path, output_path, log_path, codex_bin):
 
 
 def ensure_branch(root, head_ref):
-    run(["git", "fetch", "origin", head_ref], cwd=root)
+    # Use an explicit refspec so this works even if the checkout action configures
+    # a narrow fetch spec (e.g., only default branch).
+    run(
+        [
+            "git",
+            "fetch",
+            "origin",
+            f"+refs/heads/{head_ref}:refs/remotes/origin/{head_ref}",
+        ],
+        cwd=root,
+    )
     run(["git", "checkout", "-B", head_ref, f"origin/{head_ref}"], cwd=root)
 
 
@@ -455,6 +465,7 @@ def python_exe(root: Path) -> str:
 
 
 RUFF_WOULD_REFORMAT_RE = re.compile(r"Would reformat:\s+([^\s]+)")
+RUFF_CHECK_PATH_RE = re.compile(r"^([^\s:]+\.py):\d+:\d+:", re.MULTILINE)
 
 
 def extract_ruff_reformat_paths(bundle: dict) -> list[str]:
@@ -470,11 +481,42 @@ def extract_ruff_reformat_paths(bundle: dict) -> list[str]:
     return sorted(paths)
 
 
+def extract_ruff_check_paths(bundle: dict) -> list[str]:
+    signals = bundle.get("signals") or {}
+    checks = signals.get("checks") or []
+    paths: set[str] = set()
+    for check in checks:
+        excerpt = str(check.get("log_failed_excerpt") or "")
+        for match in RUFF_CHECK_PATH_RE.finditer(excerpt):
+            path = match.group(1).strip()
+            if path:
+                paths.add(path)
+    return sorted(paths)
+
+
 def run_ruff_format(root: Path, paths: list[str]) -> None:
     if not paths:
         return
     py = python_exe(root)
     subprocess.run([py, "-m", "ruff", "format", *paths], cwd=root, check=True)
+
+
+def run_ruff_check_fix(root: Path, paths: list[str]) -> int:
+    """
+    Apply safe auto-fixes for ruff check failures.
+
+    ruff may still exit non-zero if remaining (non-fixable) issues exist; callers
+    should treat this as best-effort and let CI determine final pass/fail.
+    """
+    if not paths:
+        return 0
+    py = python_exe(root)
+    result = subprocess.run(
+        [py, "-m", "ruff", "check", "--fix", *paths],
+        cwd=root,
+        check=False,
+    )
+    return int(result.returncode or 0)
 
 
 def run_make_ci(root, base_ref):
@@ -530,7 +572,16 @@ def push_head_ref(root, head_ref, max_attempts=3):
                 f"git push failed ({result.returncode}): HEAD:{head_ref}\n{stderr}"
             )
 
-        run(["git", "fetch", "origin", head_ref], cwd=root, check=False)
+        run(
+            [
+                "git",
+                "fetch",
+                "origin",
+                f"+refs/heads/{head_ref}:refs/remotes/origin/{head_ref}",
+            ],
+            cwd=root,
+            check=False,
+        )
         rebase = run(
             ["git", "rebase", f"origin/{head_ref}"],
             cwd=root,
@@ -914,11 +965,14 @@ def finalize(args, config):
     exit_code = run_make_ci(root, f"origin/{base_ref}")
     if exit_code != 0:
         state["consecutive_failures"] = int(state.get("consecutive_failures", 0)) + 1
-        fixer_report.setdefault("status", "failed")
+        fixer_report["status"] = "failed"
+        fixer_report.setdefault("needs_human", False)
         if "failures" not in fixer_report:
             fixer_report["failures"] = []
         fixer_report["failures"].append("make ci failed")
         fixer_report["summary"] = "make ci failed"
+        if state["consecutive_failures"] >= config["thresholds"]["consecutive_fail"]:
+            fixer_report["needs_human"] = True
         write_json(fixer_report_path, fixer_report)
         comment_body = build_comment(manager_decision, fixer_report)
         comment_path = run_dir / "comment.md"
@@ -990,10 +1044,13 @@ def run_all(args, config):
     # fix it immediately without invoking the LLM stages. This keeps scheduled
     # auto-fix runs responsive and avoids execpolicy blocks on the runner.
     head_ref = ((bundle.get("pr") or {}).get("head_ref") or "").strip()
-    ruff_paths = extract_ruff_reformat_paths(bundle)
+    ruff_paths = sorted(
+        set(extract_ruff_reformat_paths(bundle)) | set(extract_ruff_check_paths(bundle))
+    )
     if head_ref and ruff_paths:
         root = repo_root()
         ensure_branch(root, head_ref)
+        run_ruff_check_fix(root, ruff_paths)
         run_ruff_format(root, ruff_paths)
 
         review_items = {
@@ -1001,13 +1058,13 @@ def run_all(args, config):
                 {
                     "id": "",
                     "source": "checks:verify",
-                    "type": "ci/format",
+                    "type": "ci/ruff",
                     "severity": "high",
                     "file": ruff_paths[0] if ruff_paths else None,
                     "line": None,
-                    "message": "CI formatting gate failed (ruff: Would reformat).",
-                    "suggested_fix": "Run ruff formatter and commit the result.",
-                    "acceptance_check": "make ci passes (ruff format --check is clean).",
+                    "message": "CI ruff gate failed (ruff format/check).",
+                    "suggested_fix": "Run ruff check --fix and ruff format, then commit.",
+                    "acceptance_check": "make ci passes (ruff format/check are clean).",
                 }
             ]
         }
@@ -1015,14 +1072,14 @@ def run_all(args, config):
 
         manager_decision = {
             "approved": True,
-            "summary": "Apply ruff formatting fixes from failing CI logs.",
+            "summary": "Apply ruff fixes from failing CI logs.",
             "tasks": [
                 {
                     "issue_id": "",
                     "decision": "DO",
                     "priority": "P0",
                     "risk": "low",
-                    "rationale": "Formatting failure blocks verify/CI; safe mechanical change.",
+                    "rationale": "Ruff failure blocks verify/CI; safe mechanical change.",
                     "required_checks": ["checks:verify"],
                 }
             ],
@@ -1033,7 +1090,10 @@ def run_all(args, config):
         fixer_report = {
             "status": "success",
             "summary": "Applied deterministic CI fixes.",
-            "actions": ["ruff format: " + ", ".join(ruff_paths)],
+            "actions": [
+                "ruff check --fix: " + ", ".join(ruff_paths),
+                "ruff format: " + ", ".join(ruff_paths),
+            ],
             "tests": [],
             "artifacts": [],
             "failures": [],
@@ -1099,8 +1159,12 @@ def run_all(args, config):
     # This avoids Codex execpolicy blocks and reduces latency.
     root = repo_root()
     fast_actions = []
-    ruff_paths = extract_ruff_reformat_paths(bundle)
+    ruff_paths = sorted(
+        set(extract_ruff_reformat_paths(bundle)) | set(extract_ruff_check_paths(bundle))
+    )
     if ruff_paths:
+        run_ruff_check_fix(root, ruff_paths)
+        fast_actions.append("ruff check --fix: " + ", ".join(ruff_paths))
         run_ruff_format(root, ruff_paths)
         fast_actions.append("ruff format: " + ", ".join(ruff_paths))
 
