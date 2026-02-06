@@ -512,11 +512,42 @@ def run_ruff_check_fix(root: Path, paths: list[str]) -> int:
         return 0
     py = python_exe(root)
     result = subprocess.run(
-        [py, "-m", "ruff", "check", "--fix", *paths],
+        [py, "-m", "ruff", "check", "--fix", "--quiet", *paths],
         cwd=root,
         check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
     )
     return int(result.returncode or 0)
+
+
+def ruff_is_clean(root: Path, paths: list[str]) -> bool:
+    if not paths:
+        return True
+    py = python_exe(root)
+    fmt = subprocess.run(
+        [py, "-m", "ruff", "format", "--check", *paths],
+        cwd=root,
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if fmt.returncode != 0:
+        return False
+    chk = subprocess.run(
+        [py, "-m", "ruff", "check", "--quiet", *paths],
+        cwd=root,
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    return chk.returncode == 0
 
 
 def run_make_ci(root, base_ref):
@@ -891,13 +922,24 @@ def finalize(args, config):
         return 0
 
     occurrences = state.get("issue_occurrences", {})
+    countable_issue_ids = []
     for issue in issues:
+        source = str(issue.get("source") or "")
+        issue_type = str(issue.get("type") or "")
+        # Do not treat mechanical CI gates (ruff formatting/lint) as "recurring
+        # issues" that require human intervention. Those should be handled by
+        # repeated auto-fix attempts, bounded by consecutive_fail/max_total.
+        if source.startswith("checks:") and issue_type.startswith("ci/"):
+            continue
         issue_id = issue.get("id")
         occurrences[issue_id] = int(occurrences.get(issue_id, 0)) + 1
+        countable_issue_ids.append(issue_id)
     state["issue_occurrences"] = occurrences
 
     recurrence_limit = config["thresholds"]["recurrence"]
-    if any(count >= recurrence_limit for count in occurrences.values()):
+    if countable_issue_ids and any(
+        occurrences.get(i, 0) >= recurrence_limit for i in countable_issue_ids
+    ):
         add_label(pr_number, config["labels"]["needs_human"])
         state["consecutive_failures"] = int(state.get("consecutive_failures", 0)) + 1
         fixer_report = {
@@ -1052,56 +1094,60 @@ def run_all(args, config):
         ensure_branch(root, head_ref)
         run_ruff_check_fix(root, ruff_paths)
         run_ruff_format(root, ruff_paths)
+        if not ruff_is_clean(root, ruff_paths):
+            # Ruff still reports errors after safe auto-fixes/formatting. Continue
+            # with the full LLM pipeline instead of returning early.
+            pass
+        else:
+            review_items = {
+                "issues": [
+                    {
+                        "id": "",
+                        "source": "checks:verify",
+                        "type": "ci/ruff",
+                        "severity": "high",
+                        "file": ruff_paths[0] if ruff_paths else None,
+                        "line": None,
+                        "message": "CI ruff gate failed (ruff format/check).",
+                        "suggested_fix": "Run ruff check --fix and ruff format, then commit.",
+                        "acceptance_check": "make ci passes (ruff format/check are clean).",
+                    }
+                ]
+            }
+            write_json(run_dir / "review_items.json", review_items)
 
-        review_items = {
-            "issues": [
-                {
-                    "id": "",
-                    "source": "checks:verify",
-                    "type": "ci/ruff",
-                    "severity": "high",
-                    "file": ruff_paths[0] if ruff_paths else None,
-                    "line": None,
-                    "message": "CI ruff gate failed (ruff format/check).",
-                    "suggested_fix": "Run ruff check --fix and ruff format, then commit.",
-                    "acceptance_check": "make ci passes (ruff format/check are clean).",
-                }
-            ]
-        }
-        write_json(run_dir / "review_items.json", review_items)
+            manager_decision = {
+                "approved": True,
+                "summary": "Apply ruff fixes from failing CI logs.",
+                "tasks": [
+                    {
+                        "issue_id": "",
+                        "decision": "DO",
+                        "priority": "P0",
+                        "risk": "low",
+                        "rationale": "Ruff failure blocks verify/CI; safe mechanical change.",
+                        "required_checks": ["checks:verify"],
+                    }
+                ],
+                "automerge_eligible": True,
+            }
+            write_json(run_dir / "manager_decision.json", manager_decision)
 
-        manager_decision = {
-            "approved": True,
-            "summary": "Apply ruff fixes from failing CI logs.",
-            "tasks": [
-                {
-                    "issue_id": "",
-                    "decision": "DO",
-                    "priority": "P0",
-                    "risk": "low",
-                    "rationale": "Ruff failure blocks verify/CI; safe mechanical change.",
-                    "required_checks": ["checks:verify"],
-                }
-            ],
-            "automerge_eligible": True,
-        }
-        write_json(run_dir / "manager_decision.json", manager_decision)
-
-        fixer_report = {
-            "status": "success",
-            "summary": "Applied deterministic CI fixes.",
-            "actions": [
-                "ruff check --fix: " + ", ".join(ruff_paths),
-                "ruff format: " + ", ".join(ruff_paths),
-            ],
-            "tests": [],
-            "artifacts": [],
-            "failures": [],
-            "needs_human": False,
-            "next_steps": [],
-        }
-        write_json(run_dir / "fixer_report.json", fixer_report)
-        return finalize(args, config)
+            fixer_report = {
+                "status": "success",
+                "summary": "Applied deterministic CI fixes.",
+                "actions": [
+                    "ruff check --fix: " + ", ".join(ruff_paths),
+                    "ruff format: " + ", ".join(ruff_paths),
+                ],
+                "tests": [],
+                "artifacts": [],
+                "failures": [],
+                "needs_human": False,
+                "next_steps": [],
+            }
+            write_json(run_dir / "fixer_report.json", fixer_report)
+            return finalize(args, config)
 
     codex_bin = find_codex_bin()
     if not codex_bin:
@@ -1164,9 +1210,10 @@ def run_all(args, config):
     )
     if ruff_paths:
         run_ruff_check_fix(root, ruff_paths)
-        fast_actions.append("ruff check --fix: " + ", ".join(ruff_paths))
         run_ruff_format(root, ruff_paths)
-        fast_actions.append("ruff format: " + ", ".join(ruff_paths))
+        if ruff_is_clean(root, ruff_paths):
+            fast_actions.append("ruff check --fix: " + ", ".join(ruff_paths))
+            fast_actions.append("ruff format: " + ", ".join(ruff_paths))
 
     if fast_actions:
         fixer_report = {
