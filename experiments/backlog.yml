@@ -353,7 +353,7 @@ items:
   - backtest.roi
   risk_level: medium
   max_diff_size: 160
-  status: in_progress
+  status: done
   branch: agent/exp_20260206_131759-recency-weighted-training-exponential-time-decay-sample-weights
   picked_at: '2026-02-06T13:17:59Z'
 - id: EXP-020
