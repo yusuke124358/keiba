@@ -9,11 +9,11 @@ import json
 import logging
 import pickle
 from pathlib import Path
-from typing import Optional, Sequence
+from typing import Any, Optional, Sequence
 
 import lightgbm as lgb
 import numpy as np
-import pandas as pd
+import pandas as pd  # type: ignore[import-untyped]
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -89,7 +89,7 @@ def _grid_search_blend_weight(
     grid_step: float,
     default_w: float,
 ) -> tuple[float, float]:
-    from sklearn.metrics import log_loss
+    from sklearn.metrics import log_loss  # type: ignore[import-untyped]
 
     if grid_step <= 0:
         return float(default_w), float("nan")
@@ -164,6 +164,8 @@ class WinProbabilityModel:
             else "pre_calibration"
         )
         self.residual_cap_value: Optional[float] = None  # fit()で計算して保存
+        # Dynamically attached (see calibrate_model); keep attribute for mypy.
+        self.calibrator: Any | None = None
         self.feature_names: list[str] = []
 
     def fit(
@@ -261,11 +263,11 @@ class WinProbabilityModel:
             p_blend_val = p_model_val
             p_blend_train = p_model_train
         else:
-            p_model_val = self.lgb_model.predict(X_val)
+            p_model_val = np.asarray(self.lgb_model.predict(X_val), dtype=float)
             p_blend_val = self.blend_weight * p_mkt_val + (1 - self.blend_weight) * p_model_val
 
             # 訓練データ上のメトリクスも参考に（過学習チェック用）
-            p_model_train = self.lgb_model.predict(X_train)
+            p_model_train = np.asarray(self.lgb_model.predict(X_train), dtype=float)
             p_blend_train = (
                 self.blend_weight * p_mkt_train + (1 - self.blend_weight) * p_model_train
             )
@@ -1010,6 +1012,8 @@ def train_model(
         p_blend_valid = model.predict(
             X_valid2, p_mkt_valid, calibrate=False, segments=segments_valid
         )
+        if y_valid is None:
+            raise ValueError("y_valid is required when X_valid is provided.")
         y_valid_arr = y_valid.values
     elif hasattr(model, "_last_val_predictions") and model._last_val_predictions:
         # ★内部splitした検証データを使用（これがP6の修正ポイント）
@@ -1025,10 +1029,11 @@ def train_model(
 
     # 校正器をfit
     calibrator = ProbabilityCalibrator(method=config.model.calibration)
-    calibrator.fit(p_blend_valid, y_valid_arr)
+    p_blend_valid_arr = p_blend_valid[0] if isinstance(p_blend_valid, tuple) else p_blend_valid
+    calibrator.fit(p_blend_valid_arr, y_valid_arr)
 
     # 校正後の評価
-    p_calibrated = calibrator.transform(p_blend_valid)
+    p_calibrated = calibrator.transform(p_blend_valid_arr)
     metrics["valid_brier_calibrated"] = brier_score_loss(y_valid_arr, p_calibrated)
     metrics["valid_logloss_calibrated"] = log_loss(y_valid_arr, p_calibrated)
     metrics["calibration_method"] = config.model.calibration

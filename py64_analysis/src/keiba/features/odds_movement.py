@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Iterable
 
-import pandas as pd
+import pandas as pd  # type: ignore[import-untyped]
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 

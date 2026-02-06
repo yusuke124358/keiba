@@ -9,10 +9,10 @@ import math
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from itertools import groupby
-from typing import Optional
+from typing import Literal, Optional, cast
 
 import numpy as np
-import pandas as pd
+import pandas as pd  # type: ignore[import-untyped]
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -87,6 +87,7 @@ class BacktestResult:
     """バックテスト結果"""
 
     bets: list[BetResult] = field(default_factory=list)
+    daily_topn_stats: list[dict[str, object]] = field(default_factory=list)
     initial_bankroll: float = 0
     final_bankroll: float = 0
     min_bankroll: float = 0
@@ -253,7 +254,7 @@ class BacktestEngine:
                 if not use_new_stake and per_day_cap is not None:
                     daily_bets = sorted(daily_bets, key=lambda b: b.ev, reverse=True)
                     kept = []
-                    used = 0
+                    used = 0.0
                     for bet in daily_bets:
                         if used + bet.stake <= per_day_cap:
                             kept.append(bet)
@@ -293,7 +294,7 @@ class BacktestEngine:
                 daily_loss = 0.0
                 per_day_cap = _per_day_cap_for(bankroll_decision)
                 bankroll_for_day = bankroll_decision
-                daily_bets: list[Bet] = []
+                daily_bets = []
 
                 for race_id in day_races:
                     # ???????E?????E
@@ -348,7 +349,7 @@ class BacktestEngine:
                     result.max_drawdown = max(result.max_drawdown, dd)
         else:
             current_date = None
-            daily_stake = 0
+            daily_stake = 0.0
             daily_loss = 0.0
             per_day_cap = _per_day_cap_for(bankroll_decision)
 
@@ -357,7 +358,7 @@ class BacktestEngine:
                 race_date = race_id[:8]  # YYYYMMDD
                 if race_date != current_date:
                     current_date = race_date
-                    daily_stake = 0
+                    daily_stake = 0.0
                     daily_loss = 0.0
                     per_day_cap = _per_day_cap_for(bankroll_decision)
 
@@ -378,7 +379,7 @@ class BacktestEngine:
                 # ?E????????E?E???????E
                 remaining_daily_budget = None
                 if per_day_cap is not None:
-                    remaining_daily_budget = max(0, per_day_cap - daily_stake)
+                    remaining_daily_budget = max(0.0, per_day_cap - daily_stake)
                 bets = self._generate_bets(
                     race_id,
                     predictions,
@@ -580,11 +581,12 @@ class BacktestEngine:
             horse_no = payload.get("horse_no", 1)
 
             # 0B42 (quinella) snapshot + movement features at buy_time (if available).
+            horse_no_int: int | None
             try:
-                hn = int(horse_no)
+                horse_no_int = int(horse_no)
             except Exception:
-                hn = None
-            q_feat = q_by_horse.get(hn) if hn is not None else None
+                horse_no_int = None
+            q_feat = q_by_horse.get(horse_no_int) if horse_no_int is not None else None
             if q_feat:
                 payload.update(q_feat)
             else:
@@ -1120,8 +1122,9 @@ class BacktestEngine:
         )
         direction = str(getattr(cfg, "direction", "high") or "high") if cfg else "high"
         lookback = getattr(cfg, "lookback_minutes", None) if cfg else None
+        raw_ref = getattr(cfg, "ref", None) if cfg else None
         try:
-            ref = float(getattr(cfg, "ref", None))
+            ref = float(raw_ref) if raw_ref is not None else None
         except Exception:
             ref = None
         try:
@@ -1472,7 +1475,8 @@ class BacktestEngine:
         if str(scope) != "date":
             scope = "date"
         for cand in candidates:
-            day_key = cand.get("asof_time").date() if cand.get("asof_time") else None
+            asof_time = cand.get("asof_time")
+            day_key = asof_time.date() if asof_time else None
             groups.setdefault(day_key, []).append(cand)
 
         selected: list[dict] = []
@@ -1573,9 +1577,10 @@ class BacktestEngine:
             race_softmax_enabled_pred = bool(pred.get("race_softmax_enabled", race_softmax_enabled))
             p_hat_raw = pred["p_hat"]
             p_hat_pre_softmax = None
-            if race_softmax_enabled_pred and pred.get("p_used") is not None:
+            p_used = pred.get("p_used")
+            if race_softmax_enabled_pred and p_used is not None:
                 p_hat_pre_softmax = p_hat_raw
-                p_hat_raw = float(pred.get("p_used"))
+                p_hat_raw = float(p_used)
             p_mkt = pred.get("p_mkt")
             p_mkt_raw = pred.get("p_mkt_raw")
             p_mkt_race = pred.get("p_mkt_race")
@@ -1865,8 +1870,9 @@ class BacktestEngine:
                 int(getattr(odds_dyn_ev_cfg, "lookback_minutes", 5) or 5) if odds_dyn_ev_cfg else 5
             )
             odds_dyn_ev_direction = str(getattr(odds_dyn_ev_cfg, "direction", "high") or "high")
+            raw_ref = getattr(odds_dyn_ev_cfg, "ref", None) if odds_dyn_ev_cfg else None
             try:
-                odds_dyn_ev_ref = float(getattr(odds_dyn_ev_cfg, "ref", None))
+                odds_dyn_ev_ref = float(raw_ref) if raw_ref is not None else None
             except Exception:
                 odds_dyn_ev_ref = None
             try:
@@ -1904,7 +1910,7 @@ class BacktestEngine:
             if not ev_cap_passed:
                 continue
 
-            ov_cap_passed = True
+            ov_cap_passed: bool | None = True
             if ov_cap_q is not None and ov_cap_thr is not None:
                 if overlay_logit is None:
                     ov_cap_passed = False if reject_overlay_missing else None
@@ -1921,11 +1927,15 @@ class BacktestEngine:
                 continue
 
             max_pct_raw = self.config.betting.caps.per_race_pct
+            method_raw = str(self.config.betting.sizing.method)
+            if method_raw not in ("fractional_kelly", "fixed_pct"):
+                method_raw = "fractional_kelly"
+            sizing_method = cast(Literal["fractional_kelly", "fixed_pct"], method_raw)
             stake_raw = calculate_stake(
                 p_hat=p_hat,
                 odds=odds_effective,
                 bankroll=bankroll,
-                method=self.config.betting.sizing.method,
+                method=sizing_method,
                 fraction=self.config.betting.sizing.fraction,
                 max_pct=1.0 if stake_enabled else max_pct_raw,
                 min_stake=min_yen,
@@ -1934,8 +1944,15 @@ class BacktestEngine:
             if stake_raw < min_yen:
                 continue
 
+            race_id_val = cand.get("race_id")
+            asof_time_val = cand.get("asof_time")
+            if race_id_val is None or asof_time_val is None:
+                continue
+            if not isinstance(asof_time_val, datetime):
+                continue
+
             bet = Bet(
-                race_id=cand.get("race_id"),
+                race_id=str(race_id_val),
                 horse_no=pred["horse_no"],
                 ticket_type="win",
                 stake=stake_raw,
@@ -1943,7 +1960,7 @@ class BacktestEngine:
                 odds_effective=odds_effective,
                 p_hat=p_hat,
                 ev=ev,
-                asof_time=cand.get("asof_time"),
+                asof_time=asof_time_val,
                 extra={
                     "p_mkt": p_mkt,
                     "p_mkt_raw": p_mkt_raw,
@@ -2076,7 +2093,7 @@ class BacktestEngine:
         if not use_new_stake:
             if remaining_daily_budget is not None and remaining_daily_budget > 0:
                 selected = []
-                used = 0
+                used = 0.0
                 for bet in bets:
                     if used + bet.stake <= remaining_daily_budget:
                         selected.append(bet)
@@ -2233,9 +2250,10 @@ class BacktestEngine:
             race_softmax_enabled_pred = bool(pred.get("race_softmax_enabled", race_softmax_enabled))
             p_hat_raw = pred["p_hat"]
             p_hat_pre_softmax = None
-            if race_softmax_enabled_pred and pred.get("p_used") is not None:
+            p_used = pred.get("p_used")
+            if race_softmax_enabled_pred and p_used is not None:
                 p_hat_pre_softmax = p_hat_raw
-                p_hat_raw = float(pred.get("p_used"))
+                p_hat_raw = float(p_used)
             p_mkt = pred.get("p_mkt")
             p_mkt_raw = pred.get("p_mkt_raw")
             p_mkt_race = pred.get("p_mkt_race")
@@ -2448,11 +2466,11 @@ class BacktestEngine:
             p_mkt_race = cand.get("p_mkt_race")
             overround_sum_inv = cand.get("overround_sum_inv")
             takeout_implied = cand.get("takeout_implied")
-            race_cost_passed = cand.get("race_cost_filter_passed")
+            race_cost_passed = bool(cand.get("race_cost_filter_passed"))
             race_cost_reason = cand.get("race_cost_filter_reason")
             race_softmax_w = cand.get("race_softmax_w")
             race_softmax_T = cand.get("race_softmax_T")
-            race_softmax_enabled = cand.get("race_softmax_enabled")
+            race_softmax_enabled = bool(cand.get("race_softmax_enabled"))
             closing_mult = cand["closing_mult"]
             odds_dyn_ev_score = cand.get("odds_dyn_ev_score")
 
@@ -2478,8 +2496,9 @@ class BacktestEngine:
                 int(getattr(odds_dyn_ev_cfg, "lookback_minutes", 5) or 5) if odds_dyn_ev_cfg else 5
             )
             odds_dyn_ev_direction = str(getattr(odds_dyn_ev_cfg, "direction", "high") or "high")
+            raw_ref = getattr(odds_dyn_ev_cfg, "ref", None) if odds_dyn_ev_cfg else None
             try:
-                odds_dyn_ev_ref = float(getattr(odds_dyn_ev_cfg, "ref", None))
+                odds_dyn_ev_ref = float(raw_ref) if raw_ref is not None else None
             except Exception:
                 odds_dyn_ev_ref = None
             try:
@@ -2517,7 +2536,7 @@ class BacktestEngine:
             if not ev_cap_passed:
                 continue
 
-            ov_cap_passed = True
+            ov_cap_passed: bool | None = True
             if ov_cap_q is not None and ov_cap_thr is not None:
                 if overlay_logit is None:
                     ov_cap_passed = False if reject_overlay_missing else None
@@ -2535,11 +2554,15 @@ class BacktestEngine:
 
             # calculate_stake?????
             max_pct_raw = self.config.betting.caps.per_race_pct
+            method_raw = str(self.config.betting.sizing.method)
+            if method_raw not in ("fractional_kelly", "fixed_pct"):
+                method_raw = "fractional_kelly"
+            sizing_method = cast(Literal["fractional_kelly", "fixed_pct"], method_raw)
             stake_raw = calculate_stake(
                 p_hat=p_hat,
                 odds=odds_effective,
                 bankroll=bankroll,
-                method=self.config.betting.sizing.method,
+                method=sizing_method,
                 fraction=self.config.betting.sizing.fraction,
                 max_pct=1.0 if stake_enabled else max_pct_raw,
                 min_stake=min_yen,
@@ -2669,7 +2692,7 @@ class BacktestEngine:
         if not use_new_stake:
             if remaining_daily_budget is not None and remaining_daily_budget > 0:
                 selected = []
-                used = 0
+                used = 0.0
                 for bet in bets:
                     if used + bet.stake <= remaining_daily_budget:
                         selected.append(bet)
