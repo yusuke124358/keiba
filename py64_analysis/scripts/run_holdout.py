@@ -15,13 +15,11 @@ import argparse
 import csv
 import json
 import os
-import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
-import yaml
 
 
 def _ensure_import_path() -> None:
@@ -43,29 +41,32 @@ def _align_features(X: pd.DataFrame, feature_names: list[str]) -> pd.DataFrame:
 def main() -> None:
     _ensure_import_path()
 
-    from keiba.config import get_config
-    from keiba.db.loader import get_session
-    from keiba.features.build_features import build_features, FeatureBuilder
-    from keiba.modeling.train import train_model, WinProbabilityModel, _surface_segments_from_race_ids
-    from keiba.backtest.engine import run_backtest
-    from keiba.backtest.report import generate_report
-    from keiba.backtest.pred_quality import compute_prediction_quality, plot_reliability
+    import numpy as np
+    from sqlalchemy import text
+
     from keiba.analysis.odds_slippage import (
         fetch_odds_final_to_buy,
         recommend_closing_odds_multiplier,
         summarize_ratio_final_to_buy,
     )
     from keiba.analysis.slippage_table import (
-        fit_slippage_table,
         fetch_slippage_feature_snapshot,
+        fit_slippage_table,
     )
-    from keiba.modeling.train import prepare_training_data
-    from keiba.modeling.race_softmax import apply_race_softmax
+    from keiba.backtest.engine import BacktestEngine, run_backtest
+    from keiba.backtest.pred_quality import compute_prediction_quality, plot_reliability
+    from keiba.backtest.report import generate_report
     from keiba.betting.odds_band_bias import OddsBandBias
     from keiba.betting.uncertainty_shrink import UncertaintyShrink
-    from keiba.backtest.engine import BacktestEngine
-    from sqlalchemy import text
-    import numpy as np
+    from keiba.config import get_config
+    from keiba.db.loader import get_session
+    from keiba.features.build_features import FeatureBuilder, build_features
+    from keiba.modeling.race_softmax import apply_race_softmax
+    from keiba.modeling.train import (
+        _surface_segments_from_race_ids,
+        prepare_training_data,
+        train_model,
+    )
 
     p = argparse.ArgumentParser(description="Run single holdout (train/valid/test) end-to-end")
     p.add_argument("--train-start", required=True)
@@ -76,10 +77,19 @@ def main() -> None:
     p.add_argument("--test-end", required=True)
     p.add_argument("--name", default="holdout")
     p.add_argument("--config", default=None, help="config path (optional)")
-    p.add_argument("--estimate-closing-mult", action="store_true", help="train(またはvalidまで)でclosing_odds_multiplierを推定して上書き")
+    p.add_argument(
+        "--estimate-closing-mult",
+        action="store_true",
+        help="train(またはvalidまで)でclosing_odds_multiplierを推定して上書き",
+    )
     p.add_argument("--closing-mult-quantile", type=float, default=0.30)
     p.add_argument("--initial-bankroll", type=float, default=None)
-    p.add_argument("--out-dir", type=Path, default=None, help="出力先（未指定なら data/holdout_runs/<name>_<ts>）")
+    p.add_argument(
+        "--out-dir",
+        type=Path,
+        default=None,
+        help="出力先（未指定なら data/holdout_runs/<name>_<ts>）",
+    )
     args = p.parse_args()
 
     from keiba.utils.config_resolver import (
@@ -161,7 +171,10 @@ def main() -> None:
                         SELECT 1 FROM odds_ts_win o
                         WHERE o.race_id = r.race_id
                           AND o.odds > 0
-                          AND o.asof_time <= ((r.date::timestamp + r.start_time) - make_interval(mins => :buy_minutes))
+                          AND o.asof_time <= (
+                                (r.date::timestamp + r.start_time)
+                                - make_interval(mins => :buy_minutes)
+                          )
                   ))
                   AND (:exclude_len = 0 OR NOT (r.race_id = ANY(:exclude_race_ids)))
                 ORDER BY r.date, r.race_id
@@ -223,7 +236,10 @@ def main() -> None:
                 json.dumps(meta, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
-            print(f"[capfit] window={args.name} metric={metric} q={q} cap_value=None n_train_races=0 status=invalid_quantile")
+            print(
+                f"[capfit] window={args.name} metric={metric} q={q} cap_value=None "
+                "n_train_races=0 status=invalid_quantile"
+            )
             return meta
 
         fit_scope = str(getattr(rcfg, "cap_fit_scope", "train") or "train").lower()
@@ -231,7 +247,9 @@ def main() -> None:
             fit_scope = "train"
         meta["fit_scope"] = fit_scope
 
-        fit_population = str(getattr(rcfg, "cap_fit_population", "all_races") or "all_races").lower()
+        fit_population = str(
+            getattr(rcfg, "cap_fit_population", "all_races") or "all_races"
+        ).lower()
         if fit_population not in ("all_races", "precap_candidate_races"):
             fit_population = "all_races"
         meta["fit_population"] = fit_population
@@ -245,7 +263,10 @@ def main() -> None:
             WITH buy_times AS (
                 SELECT
                     r.race_id,
-                    ((r.date::timestamp + r.start_time) - make_interval(mins => :buy_minutes)) AS buy_time
+                    (
+                        (r.date::timestamp + r.start_time)
+                        - make_interval(mins => :buy_minutes)
+                    ) AS buy_time
                 FROM fact_race r
                 WHERE r.date BETWEEN :min_date AND :max_date
                   AND r.start_time IS NOT NULL
@@ -260,7 +281,10 @@ def main() -> None:
                         SELECT 1 FROM odds_ts_win o
                         WHERE o.race_id = r.race_id
                           AND o.odds > 0
-                          AND o.asof_time <= ((r.date::timestamp + r.start_time) - make_interval(mins => :buy_minutes))
+                          AND o.asof_time <= (
+                                (r.date::timestamp + r.start_time)
+                                - make_interval(mins => :buy_minutes)
+                          )
                   ))
                   AND (:exclude_len = 0 OR NOT (r.race_id = ANY(:exclude_race_ids)))
             ),
@@ -280,7 +304,9 @@ def main() -> None:
             FROM latest_features lf
         """)
 
-        def _fetch_metric_values(min_date: str, max_date: str, race_ids: list[str] | None = None) -> list[float]:
+        def _fetch_metric_values(
+            min_date: str, max_date: str, race_ids: list[str] | None = None
+        ) -> list[float]:
             race_ids_list = list(race_ids or [])
             rows = session.execute(
                 query,
@@ -356,7 +382,10 @@ def main() -> None:
                     json.dumps(meta, ensure_ascii=False, indent=2),
                     encoding="utf-8",
                 )
-                print(f"[capfit] window={args.name} metric={metric} q={q} cap_value=None n_train_races=0 status=model_missing")
+                print(
+                    f"[capfit] window={args.name} metric={metric} q={q} cap_value=None "
+                    "n_train_races=0 status=model_missing"
+                )
                 return meta
 
             orig_state = {
@@ -411,7 +440,10 @@ def main() -> None:
                     json.dumps(meta, ensure_ascii=False, indent=2),
                     encoding="utf-8",
                 )
-                print(f"[capfit] window={args.name} metric={metric} q={q} cap_value=None n_train_races=0 status=no_candidates")
+                print(
+                    f"[capfit] window={args.name} metric={metric} q={q} cap_value=None "
+                    "n_train_races=0 status=no_candidates"
+                )
                 return meta
 
         fit_values = _fetch_metric_values(fit_start, fit_end, race_ids=fit_race_ids)
@@ -461,7 +493,11 @@ def main() -> None:
         frac_excluded = None
         cap_value = meta.get("cap_value")
         if cap_value is not None and test_values:
-            n_ex = sum(1 for v in test_values if v is not None and np.isfinite(v) and float(v) > float(cap_value))
+            n_ex = sum(
+                1
+                for v in test_values
+                if v is not None and np.isfinite(v) and float(v) > float(cap_value)
+            )
             frac_excluded = float(n_ex) / float(len(test_values)) if test_values else None
         meta["frac_test_races_excluded"] = frac_excluded
         meta["frac_test_bets_excluded"] = None
@@ -471,7 +507,10 @@ def main() -> None:
             encoding="utf-8",
         )
         cap_str = f"{meta['cap_value']:.6f}" if meta.get("cap_value") is not None else "None"
-        print(f"[capfit] window={args.name} metric={metric} q={q:.3f} cap_value={cap_str} n_train_races={n_races}")
+        print(
+            f"[capfit] window={args.name} metric={metric} q={q:.3f} cap_value={cap_str} "
+            f"n_train_races={n_races}"
+        )
         return meta
 
     def _race_logloss_from_probs(
@@ -507,7 +546,9 @@ def main() -> None:
         rs_cfg = getattr(cfg.model, "race_softmax", None)
         selector_cfg = getattr(rs_cfg, "selector", None) if rs_cfg else None
         orig_enabled = bool(getattr(rs_cfg, "enabled", False)) if rs_cfg else False
-        orig_selector_enabled = bool(getattr(selector_cfg, "enabled", False)) if selector_cfg else False
+        orig_selector_enabled = (
+            bool(getattr(selector_cfg, "enabled", False)) if selector_cfg else False
+        )
         if rs_cfg is not None:
             rs_cfg.enabled = bool(use_softmax)
             if selector_cfg is not None:
@@ -532,7 +573,9 @@ def main() -> None:
             if selector_cfg is not None:
                 selector_cfg.enabled = orig_selector_enabled
 
-        valid_roi = (bt_valid.total_profit / bt_valid.total_stake) if bt_valid.total_stake > 0 else None
+        valid_roi = (
+            (bt_valid.total_profit / bt_valid.total_stake) if bt_valid.total_stake > 0 else None
+        )
         return {
             "roi": valid_roi,
             "n_bets": int(bt_valid.n_bets),
@@ -543,7 +586,11 @@ def main() -> None:
         }
 
     race_ids_train = _race_ids_between(args.train_start, args.train_end)
-    race_ids_valid = _race_ids_between(args.valid_start, args.valid_end) if args.valid_start and args.valid_end else []
+    race_ids_valid = (
+        _race_ids_between(args.valid_start, args.valid_end)
+        if args.valid_start and args.valid_end
+        else []
+    )
     race_ids_test = _race_ids_between(args.test_start, args.test_end)
 
     # slippage推定（test期間を参照しない）
@@ -552,7 +599,9 @@ def main() -> None:
     slippage_table = None
     slippage_table_path = None
     slippage_table_meta = None
-    use_slip_table = bool(getattr(cfg.betting, "slippage_table", None) and cfg.betting.slippage_table.enabled)
+    use_slip_table = bool(
+        getattr(cfg.betting, "slippage_table", None) and cfg.betting.slippage_table.enabled
+    )
 
     # slippage推定の対象期間（testは参照しない）
     # - baseline（global multiplier推定）は train〜valid まで使う（従来どおり）
@@ -568,7 +617,9 @@ def main() -> None:
             buy_t_minus_minutes=cfg.backtest.buy_t_minus_minutes,
         )
         slippage_summary = summarize_ratio_final_to_buy(df_slip)
-        estimated_mult = recommend_closing_odds_multiplier(df_slip, quantile=args.closing_mult_quantile)
+        estimated_mult = recommend_closing_odds_multiplier(
+            df_slip, quantile=args.closing_mult_quantile
+        )
 
         # in-memoryで上書き（以降のEV/stake計算に反映）
         if args.estimate_closing_mult and not use_slip_table:
@@ -584,7 +635,9 @@ def main() -> None:
 
     # 特徴量生成（idempotent / 再利用で高速化）
     n_feat_train = build_features(session, race_ids_train, skip_existing=True)
-    n_feat_valid = build_features(session, race_ids_valid, skip_existing=True) if race_ids_valid else 0
+    n_feat_valid = (
+        build_features(session, race_ids_valid, skip_existing=True) if race_ids_valid else 0
+    )
     n_feat_test = build_features(session, race_ids_test, skip_existing=True)
 
     # TicketB: slippage table 推定（train〜validまで。testは参照しない）
@@ -616,7 +669,9 @@ def main() -> None:
         )
         slippage_table_meta = slippage_table.to_dict()
         slippage_table_path = run_dir / "slippage_table.json"
-        slippage_table_path.write_text(json.dumps(slippage_table_meta, ensure_ascii=False, indent=2), encoding="utf-8")
+        slippage_table_path.write_text(
+            json.dumps(slippage_table_meta, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
 
     # 学習（校正器含む）
     model_path = artifacts_dir / "model.pkl"
@@ -635,7 +690,9 @@ def main() -> None:
     odds_band_bias = None
     odds_band_bias_path = None
     odds_band_bias_meta = None
-    use_odds_bias = bool(getattr(cfg.betting, "odds_band_bias", None) and cfg.betting.odds_band_bias.enabled)
+    use_odds_bias = bool(
+        getattr(cfg.betting, "odds_band_bias", None) and cfg.betting.odds_band_bias.enabled
+    )
     if use_odds_bias:
         # train期間のみ（リーク防止）
         X_tr, y_tr, p_mkt_tr, race_ids_tr = prepare_training_data(
@@ -648,7 +705,9 @@ def main() -> None:
             X_tr2 = _align_features(X_tr, model.feature_names)
             segments_tr = None
             if getattr(model, "blend_segmented", None) and model.blend_segmented.get("enabled"):
-                segments_tr = _surface_segments_from_race_ids(session, race_ids_tr, X_tr.get("is_turf"))
+                segments_tr = _surface_segments_from_race_ids(
+                    session, race_ids_tr, X_tr.get("is_turf")
+                )
             p_cal_tr = model.predict(X_tr2, p_mkt_tr, calibrate=True, segments=segments_tr)
             bias_cfg = cfg.betting.odds_band_bias
             odds_band_bias = OddsBandBias.fit_from_training_data(
@@ -664,13 +723,17 @@ def main() -> None:
             )
             odds_band_bias_meta = odds_band_bias.to_dict()
             odds_band_bias_path = artifacts_dir / "odds_band_bias.json"
-            odds_band_bias_path.write_text(json.dumps(odds_band_bias_meta, ensure_ascii=False, indent=2), encoding="utf-8")
+            odds_band_bias_path.write_text(
+                json.dumps(odds_band_bias_meta, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
 
     # Ticket S2: uncertainty shrink from train p_cal
     uncertainty_shrink = None
     uncertainty_shrink_path = None
     uncertainty_shrink_meta = None
-    use_uncertainty = bool(getattr(cfg.betting, "uncertainty", None) and cfg.betting.uncertainty.enabled)
+    use_uncertainty = bool(
+        getattr(cfg.betting, "uncertainty", None) and cfg.betting.uncertainty.enabled
+    )
     if use_uncertainty:
         X_tr, _, p_mkt_tr, race_ids_tr = prepare_training_data(
             session,
@@ -682,7 +745,9 @@ def main() -> None:
             X_tr2 = _align_features(X_tr, model.feature_names)
             segments_tr = None
             if getattr(model, "blend_segmented", None) and model.blend_segmented.get("enabled"):
-                segments_tr = _surface_segments_from_race_ids(session, race_ids_tr, X_tr.get("is_turf"))
+                segments_tr = _surface_segments_from_race_ids(
+                    session, race_ids_tr, X_tr.get("is_turf")
+                )
             p_cal_tr = model.predict(X_tr2, p_mkt_tr, calibrate=True, segments=segments_tr)
             u_cfg = cfg.betting.uncertainty
             uncertainty_shrink = UncertaintyShrink.fit_from_p_cal(
@@ -703,7 +768,11 @@ def main() -> None:
     ev_upper_cap_path = None
     ev_upper_cap_meta = None
     ev_upper_cap_cfg = getattr(cfg.betting, "ev_upper_cap", None)
-    use_ev_upper_cap = bool(ev_upper_cap_cfg and ev_upper_cap_cfg.get("enabled", False)) if isinstance(ev_upper_cap_cfg, dict) else False
+    use_ev_upper_cap = (
+        bool(ev_upper_cap_cfg and ev_upper_cap_cfg.get("enabled", False))
+        if isinstance(ev_upper_cap_cfg, dict)
+        else False
+    )
     if use_ev_upper_cap:
         # train期間でbet候補を生成してEV分布を計算
         # 軽量な方法：train期間のデータに対してバックテストを実行してbet候補を取得
@@ -718,7 +787,7 @@ def main() -> None:
             model=model,
             initial_bankroll=initial_bankroll,
         )
-        
+
         # bet候補のEV分布からquantileを計算
         if bt_train.bets and len(bt_train.bets) > 0:
             ev_values = [b.bet.ev for b in bt_train.bets if b.bet.ev is not None]
@@ -735,8 +804,13 @@ def main() -> None:
                     "ev_median": float(np.median(ev_values)),
                 }
                 ev_upper_cap_path = artifacts_dir / "ev_upper_cap.json"
-                ev_upper_cap_path.write_text(json.dumps(ev_upper_cap_meta, ensure_ascii=False, indent=2), encoding="utf-8")
-                print(f"EV upper cap computed: quantile={q_hi}, cap={ev_upper_cap:.4f}, n_bets={len(ev_values)}")
+                ev_upper_cap_path.write_text(
+                    json.dumps(ev_upper_cap_meta, ensure_ascii=False, indent=2), encoding="utf-8"
+                )
+                print(
+                    "EV upper cap computed: "
+                    f"quantile={q_hi}, cap={ev_upper_cap:.4f}, n_bets={len(ev_values)}"
+                )
 
     def _fit_odds_dynamics_filter() -> dict | None:
         cfg_od = getattr(cfg.betting, "odds_dynamics_filter", None)
@@ -1015,11 +1089,9 @@ def main() -> None:
         )
         return meta
 
-    race_cost_cap_meta = _fit_race_cost_cap()
+    _fit_race_cost_cap()
     odds_dyn_filter_meta = _fit_odds_dynamics_filter()
     odds_dyn_ev_margin_meta = _fit_odds_dyn_ev_margin()
-
-
 
     # バックテスト（test）
     # Ticket: race_softmax selector (valid-only)
@@ -1042,7 +1114,9 @@ def main() -> None:
                 "min_valid_bets": int(getattr(selector_cfg, "min_valid_bets", 30)),
                 "min_valid_bets_ratio": float(getattr(selector_cfg, "min_valid_bets_ratio", 0.50)),
                 "min_delta_valid_roi": float(getattr(selector_cfg, "min_delta_valid_roi", 0.02)),
-                "min_delta_valid_logloss": float(getattr(selector_cfg, "min_delta_valid_logloss", 0.001)),
+                "min_delta_valid_logloss": float(
+                    getattr(selector_cfg, "min_delta_valid_logloss", 0.001)
+                ),
             },
         }
 
@@ -1064,7 +1138,9 @@ def main() -> None:
 
                 segments_valid = None
                 if getattr(model, "blend_segmented", None) and model.blend_segmented.get("enabled"):
-                    segments_valid = _surface_segments_from_race_ids(session, race_ids_valid, X_valid.get("is_turf"))
+                    segments_valid = _surface_segments_from_race_ids(
+                        session, race_ids_valid, X_valid.get("is_turf")
+                    )
 
                 p_base = model.predict(X_valid2, p_mkt_val, calibrate=True, segments=segments_valid)
                 base_logloss = _race_logloss_from_probs(
@@ -1080,10 +1156,14 @@ def main() -> None:
                 softmax_logloss = None
                 if w is not None and t is not None:
                     if model.use_market_offset:
-                        p_model_val = model.predict(X_valid2, p_mkt_val, calibrate=False, segments=segments_valid)
+                        p_model_val = model.predict(
+                            X_valid2, p_mkt_val, calibrate=False, segments=segments_valid
+                        )
                     else:
                         p_model_val = (
-                            model.lgb_model.predict(X_valid2) if model.lgb_model is not None else np.zeros(len(X_valid2))
+                            model.lgb_model.predict(X_valid2)
+                            if model.lgb_model is not None
+                            else np.zeros(len(X_valid2))
                         )
                     df_rs = pd.DataFrame(
                         {
@@ -1107,12 +1187,16 @@ def main() -> None:
                     )
 
                 base_bt = _run_valid_backtest(model, use_softmax=False)
-                soft_bt = _run_valid_backtest(model, use_softmax=True) if (w is not None and t is not None) else {
-                    "roi": None,
-                    "n_bets": 0,
-                    "total_stake": 0.0,
-                    "total_profit": 0.0,
-                }
+                soft_bt = (
+                    _run_valid_backtest(model, use_softmax=True)
+                    if (w is not None and t is not None)
+                    else {
+                        "roi": None,
+                        "n_bets": 0,
+                        "total_stake": 0.0,
+                        "total_profit": 0.0,
+                    }
+                )
 
                 selector_meta["base"] = {
                     "valid_roi": base_bt["roi"],
@@ -1163,8 +1247,9 @@ def main() -> None:
         model.race_softmax_selector = selector_meta
         if bool(getattr(selector_cfg, "save_decision", True)):
             sel_path = artifacts_dir / "race_softmax_selector.json"
-            sel_path.write_text(json.dumps(selector_meta, ensure_ascii=False, indent=2), encoding="utf-8")
-
+            sel_path.write_text(
+                json.dumps(selector_meta, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
 
     # Ticket: race_cost cap selector (valid-only)
     rcfg = getattr(cfg.betting, "race_cost_filter", None)
@@ -1216,10 +1301,10 @@ def main() -> None:
         n0 = float(getattr(rc_selector_cfg, "n0", 0.0))
         if not np.isfinite(n0) or n0 < 0:
             n0 = 0.0
-        tie_breaker = str(getattr(rc_selector_cfg, "tie_breaker", "prefer_baseline") or "prefer_baseline").lower()
-        cap_labels = [
-            ("none" if cap is None else f"{float(cap):.6f}") for cap in candidate_caps
-        ]
+        tie_breaker = str(
+            getattr(rc_selector_cfg, "tie_breaker", "prefer_baseline") or "prefer_baseline"
+        ).lower()
+        cap_labels = [("none" if cap is None else f"{float(cap):.6f}") for cap in candidate_caps]
         candidate_set_id = f"valid_selector:{metric}:caps=" + "|".join(cap_labels)
         rc_selector_meta = {
             "metric": metric,
@@ -1313,12 +1398,10 @@ def main() -> None:
                     cond_ratio = False
                 else:
                     cond_ratio = (
-                        valid_bets_ratio is not None
-                        and valid_bets_ratio >= min_valid_bets_ratio
+                        valid_bets_ratio is not None and valid_bets_ratio >= min_valid_bets_ratio
                     )
-                cond_delta = (
-                    delta_roi_shrunk is not None
-                    and delta_roi_shrunk >= float(min_delta_valid_roi_shrunk)
+                cond_delta = delta_roi_shrunk is not None and delta_roi_shrunk >= float(
+                    min_delta_valid_roi_shrunk
                 )
                 eligible = cond_bets and cond_ratio and cond_delta
                 reasons = []
@@ -1329,7 +1412,9 @@ def main() -> None:
                 elif valid_bets_ratio is None:
                     reasons.append("valid_bets_ratio_missing")
                 elif not cond_ratio:
-                    reasons.append(f"ratio_to_base_lt_min({valid_bets_ratio:.3f}<{min_valid_bets_ratio:.3f})")
+                    reasons.append(
+                        f"ratio_to_base_lt_min({valid_bets_ratio:.3f}<{min_valid_bets_ratio:.3f})"
+                    )
                 if delta_roi_shrunk is None:
                     reasons.append("delta_valid_roi_missing")
                 elif not cond_delta:
@@ -1343,6 +1428,7 @@ def main() -> None:
             eligible = [c for c in rc_selector_meta["candidates"] if c.get("eligible")]
             chosen = None
             if eligible:
+
                 def _score(c):
                     if c.get("delta_valid_roi_shrunk") is not None:
                         return c.get("delta_valid_roi_shrunk")
@@ -1360,9 +1446,7 @@ def main() -> None:
                     )
                 else:
                     eligible.sort(
-                        key=lambda c: (
-                            _score(c),
-                        ),
+                        key=lambda c: (_score(c),),
                         reverse=True,
                     )
                 chosen = eligible[0]
@@ -1387,8 +1471,9 @@ def main() -> None:
 
         if rc_selector_meta is not None:
             sel_path = artifacts_dir / "race_cost_cap_selector.json"
-            sel_path.write_text(json.dumps(rc_selector_meta, ensure_ascii=False, indent=2), encoding="utf-8")
-
+            sel_path.write_text(
+                json.dumps(rc_selector_meta, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
 
     bt = run_backtest(
         session,
@@ -1701,20 +1786,28 @@ def main() -> None:
     min_bankroll_frac = None
     if initial_bankroll > 0:
         min_bankroll_frac = float(min_bankroll) / float(initial_bankroll)
-    risk_of_ruin_0_3 = (min_bankroll_frac is not None and min_bankroll_frac <= 0.3)
-    risk_of_ruin_0_5 = (min_bankroll_frac is not None and min_bankroll_frac <= 0.5)
-    risk_of_ruin_0_7 = (min_bankroll_frac is not None and min_bankroll_frac <= 0.7)
+    risk_of_ruin_0_3 = min_bankroll_frac is not None and min_bankroll_frac <= 0.3
+    risk_of_ruin_0_5 = min_bankroll_frac is not None and min_bankroll_frac <= 0.5
+    risk_of_ruin_0_7 = min_bankroll_frac is not None and min_bankroll_frac <= 0.7
 
     def _race_cost_cap_summary():
         rcfg = getattr(cfg.betting, "race_cost_filter", None)
-        metric = str(getattr(rcfg, "metric", "takeout_implied") or "takeout_implied").lower() if rcfg else "takeout_implied"
+        metric = (
+            str(getattr(rcfg, "metric", "takeout_implied") or "takeout_implied").lower()
+            if rcfg
+            else "takeout_implied"
+        )
         if metric not in ("takeout_implied", "overround_sum_inv"):
             metric = "takeout_implied"
         cap_mode = str(getattr(rcfg, "cap_mode", "fixed") or "fixed").lower() if rcfg else "fixed"
         if cap_mode not in ("fixed", "train_quantile"):
             cap_mode = "fixed"
         fit_scope = str(getattr(rcfg, "cap_fit_scope", "train") or "train") if rcfg else "train"
-        fit_population = str(getattr(rcfg, "cap_fit_population", "all_races") or "all_races") if rcfg else "all_races"
+        fit_population = (
+            str(getattr(rcfg, "cap_fit_population", "all_races") or "all_races")
+            if rcfg
+            else "all_races"
+        )
         cap_value = None
         if rcfg:
             if cap_mode == "train_quantile":
@@ -1728,7 +1821,9 @@ def main() -> None:
                 if cap_value is None:
                     cap_value = getattr(rcfg, "max_overround_sum_inv", None)
         try:
-            cap_value = float(cap_value) if cap_value is not None and np.isfinite(cap_value) else None
+            cap_value = (
+                float(cap_value) if cap_value is not None and np.isfinite(cap_value) else None
+            )
         except Exception:
             cap_value = None
 
@@ -1737,7 +1832,11 @@ def main() -> None:
         if selector_cfg is not None and bool(getattr(selector_cfg, "enabled", False)):
             selected_from = getattr(selector_cfg, "selected_from", None)
         mode_label = "none"
-        if selector_cfg is not None and bool(getattr(selector_cfg, "enabled", False)) and selected_from is not None:
+        if (
+            selector_cfg is not None
+            and bool(getattr(selector_cfg, "enabled", False))
+            and selected_from is not None
+        ):
             mode_label = "selected"
         elif rcfg is not None and bool(getattr(rcfg, "enabled", False)) and cap_value is not None:
             mode_label = "fixed"
@@ -1748,7 +1847,9 @@ def main() -> None:
             "race_cost_cap_metric": metric,
             "race_cost_cap_fit_scope": fit_scope,
             "race_cost_cap_fit_population": fit_population,
-            "race_cost_cap_candidates": list(getattr(selector_cfg, "candidate_caps", []) or []) if selector_cfg else None,
+            "race_cost_cap_candidates": list(getattr(selector_cfg, "candidate_caps", []) or [])
+            if selector_cfg
+            else None,
         }
 
     race_cost_cap_summary = _race_cost_cap_summary()
@@ -1774,6 +1875,7 @@ def main() -> None:
             "ref_takeout": ref,
             "slope": slope,
         }
+
     takeout_ev_margin_summary = _takeout_ev_margin_summary()
 
     # valid backtest (selector uses valid-only; do not use test)
@@ -1790,13 +1892,32 @@ def main() -> None:
         "name": args.name,
         "generated_at": ts,
         "config_used_path": rel_path(config_used_path, project_root),
-        "train": {"start": args.train_start, "end": args.train_end, "n_races": len(race_ids_train), "features_saved": n_feat_train},
-        "valid": {"start": args.valid_start, "end": args.valid_end, "n_races": len(race_ids_valid), "features_saved": n_feat_valid},
-        "test": {"start": args.test_start, "end": args.test_end, "n_races": len(race_ids_test), "features_saved": n_feat_test},
+        "train": {
+            "start": args.train_start,
+            "end": args.train_end,
+            "n_races": len(race_ids_train),
+            "features_saved": n_feat_train,
+        },
+        "valid": {
+            "start": args.valid_start,
+            "end": args.valid_end,
+            "n_races": len(race_ids_valid),
+            "features_saved": n_feat_valid,
+        },
+        "test": {
+            "start": args.test_start,
+            "end": args.test_end,
+            "n_races": len(race_ids_test),
+            "features_saved": n_feat_test,
+        },
         "buy_t_minus_minutes": cfg.backtest.buy_t_minus_minutes,
         "closing_odds_multiplier": float(cfg.betting.closing_odds_multiplier),
-        "closing_odds_multiplier_estimated": float(estimated_mult) if estimated_mult is not None else None,
-        "closing_odds_multiplier_quantile": args.closing_mult_quantile if (args.estimate_closing_mult or use_slip_table) else None,
+        "closing_odds_multiplier_estimated": float(estimated_mult)
+        if estimated_mult is not None
+        else None,
+        "closing_odds_multiplier_quantile": args.closing_mult_quantile
+        if (args.estimate_closing_mult or use_slip_table)
+        else None,
         "slippage_summary": slippage_summary.__dict__ if slippage_summary is not None else None,
         "slippage_table": {
             "enabled": bool(use_slip_table),
@@ -1839,12 +1960,22 @@ def main() -> None:
             "filtered_stake": float(getattr(bt, "odds_floor_filtered_stake", 0.0)),
         },
         "stake_odds_damp": {
-            "enabled": bool(getattr(getattr(cfg.betting, "stake_odds_damp", None), "enabled", False)),
-            "ref_odds": float(getattr(getattr(cfg.betting, "stake_odds_damp", None), "ref_odds", 0.0) or 0.0),
-            "power": float(getattr(getattr(cfg.betting, "stake_odds_damp", None), "power", 1.0) or 1.0),
-            "min_mult": float(getattr(getattr(cfg.betting, "stake_odds_damp", None), "min_mult", 0.0) or 0.0),
+            "enabled": bool(
+                getattr(getattr(cfg.betting, "stake_odds_damp", None), "enabled", False)
+            ),
+            "ref_odds": float(
+                getattr(getattr(cfg.betting, "stake_odds_damp", None), "ref_odds", 0.0) or 0.0
+            ),
+            "power": float(
+                getattr(getattr(cfg.betting, "stake_odds_damp", None), "power", 1.0) or 1.0
+            ),
+            "min_mult": float(
+                getattr(getattr(cfg.betting, "stake_odds_damp", None), "min_mult", 0.0) or 0.0
+            ),
             "mean_mult": float(getattr(bt, "stake_odds_damp_mean_mult", 1.0)),
-            "low_odds_stake_before": float(getattr(bt, "stake_odds_damp_low_odds_stake_before", 0.0)),
+            "low_odds_stake_before": float(
+                getattr(bt, "stake_odds_damp_low_odds_stake_before", 0.0)
+            ),
             "low_odds_stake_after": float(getattr(bt, "stake_odds_damp_low_odds_stake_after", 0.0)),
         },
         "train_metrics": train_metrics,
@@ -1881,7 +2012,9 @@ def main() -> None:
         },
     }
 
-    (run_dir / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+    (run_dir / "summary.json").write_text(
+        json.dumps(summary, ensure_ascii=False, indent=2, default=str), encoding="utf-8"
+    )
     # metrics.json (non-fatal if extraction fails)
     try:
         from keiba.eval.extract_metrics import write_metrics_json
@@ -1900,5 +2033,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
-

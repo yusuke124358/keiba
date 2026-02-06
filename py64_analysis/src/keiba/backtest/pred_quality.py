@@ -12,13 +12,13 @@ from dataclasses import dataclass
 from typing import Optional
 
 import numpy as np
-import pandas as pd
+import pandas as pd  # type: ignore[import-untyped]
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..config import get_config
-from ..modeling.train import prepare_training_data, WinProbabilityModel
 from ..modeling.race_softmax import apply_race_softmax
+from ..modeling.train import WinProbabilityModel, prepare_training_data
 
 
 @dataclass(frozen=True)
@@ -122,7 +122,7 @@ def compute_prediction_quality(
       - df_pred（1行=1頭: y_true, p_mkt, p_model, p_blend, p_cal）
       - reliability_df（ビン集計）
     """
-    from sklearn.metrics import log_loss, brier_score_loss
+    from sklearn.metrics import brier_score_loss, log_loss  # type: ignore[import-untyped]
 
     cfg = get_config()
     if buy_t_minus_minutes is None:
@@ -142,13 +142,21 @@ def compute_prediction_quality(
 
     # 予測（校正前）
     if getattr(model, "use_market_offset", False):
-        p_model = model.predict(X2, p_mkt, calibrate=False)
+        model_out = model.predict(X2, p_mkt, calibrate=False)
+        if isinstance(model_out, tuple):
+            model_out = model_out[0]
+        p_model = np.asarray(model_out, dtype=float)
     else:
-        p_model = model.lgb_model.predict(X2) if model.lgb_model is not None else np.zeros(len(X2))
-    p_model = np.asarray(p_model, dtype=float)
+        lgb_out = (
+            model.lgb_model.predict(X2)
+            if model.lgb_model is not None
+            else np.zeros(len(X2), dtype=float)
+        )
+        p_model = np.asarray(lgb_out, dtype=float)
 
     segments = None
-    if getattr(model, "blend_segmented", None) and model.blend_segmented.get("enabled"):
+    blend_segmented = getattr(model, "blend_segmented", None)
+    if isinstance(blend_segmented, dict) and bool(blend_segmented.get("enabled")):
         segments = _surface_segments_from_race_ids(session, race_ids, X.get("is_turf"))
 
     rs_cfg = getattr(cfg.model, "race_softmax", None)
@@ -157,9 +165,10 @@ def compute_prediction_quality(
     if race_softmax_enabled and race_ids is not None:
         w = None
         t = None
-        if getattr(model, "race_softmax_params", None):
-            w = model.race_softmax_params.get("w")
-            t = model.race_softmax_params.get("T")
+        race_softmax_params = getattr(model, "race_softmax_params", None)
+        if isinstance(race_softmax_params, dict):
+            w = race_softmax_params.get("w")
+            t = race_softmax_params.get("T")
         if w is None:
             w = float(getattr(getattr(rs_cfg, "apply", None), "w_default", 0.2))
         if t is None:
@@ -182,11 +191,17 @@ def compute_prediction_quality(
         p_cal = p_blend
         calibration_method = None
     else:
-        p_blend = model.predict(X2, p_mkt, calibrate=False, segments=segments)
+        blend_out = model.predict(X2, p_mkt, calibrate=False, segments=segments)
+        if isinstance(blend_out, tuple):
+            blend_out = blend_out[0]
+        p_blend = np.asarray(blend_out, dtype=float)
 
         # 校正（あれば）
         if getattr(model, "calibrator", None) is not None:
-            p_cal = model.predict(X2, p_mkt, calibrate=True, segments=segments)
+            cal_out = model.predict(X2, p_mkt, calibrate=True, segments=segments)
+            if isinstance(cal_out, tuple):
+                cal_out = cal_out[0]
+            p_cal = np.asarray(cal_out, dtype=float)
             calibration_method = cfg.model.calibration
         else:
             p_cal = p_blend
