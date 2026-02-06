@@ -469,7 +469,6 @@ class WinProbabilityModel:
             lo, hi = float(self.p_mkt_clip[0]), float(self.p_mkt_clip[1])
             init = _logit_series(_clip_prob_series(p_mkt.astype(float), lo, hi))
             resid = self.lgb_model.predict(X_dispatch, raw_score=True)
- 
 
             # Ticket G1: Residual Cap適用
             if self.residual_cap_enabled and self.residual_cap_value is not None:
