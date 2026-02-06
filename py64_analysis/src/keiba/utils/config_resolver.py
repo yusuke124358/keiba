@@ -7,7 +7,7 @@ import subprocess
 from pathlib import Path
 from typing import Optional
 
-import yaml
+import yaml  # type: ignore[import-untyped]
 
 from ..config import PROJECT_ROOT, load_yaml_with_extends
 
