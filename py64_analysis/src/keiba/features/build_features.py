@@ -861,7 +861,7 @@ class FeatureBuilder:
         features = {
             "field_size": field_size,
             "distance": race_info.get("distance"),
-            "is_turf": 1 if race_info.get("surface") == "1" else 0,
+            "is_turf": 1 if str(race_info.get("surface")).strip() == "1" else 0,
             "frame_no": entry.get("frame_no"),
             "horse_no": horse_no,
             "horse_no_pct": horse_no / field_size,
