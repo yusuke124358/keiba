@@ -20,7 +20,14 @@ concurrency:
 
 jobs:
   auto-fix:
-    if: ${{ github.event_name != 'issue_comment' || github.event.issue.pull_request }}
+    if: >-
+      ${{
+        github.event_name != 'issue_comment' ||
+        (
+          github.event.issue.pull_request &&
+          !contains(github.event.comment.body, '<!-- auto-fix: review_loop -->')
+        )
+      }}
     runs-on: self-hosted
     permissions:
       contents: read

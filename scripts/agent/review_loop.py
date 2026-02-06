@@ -470,7 +470,7 @@ RUFF_WOULD_REFORMAT_RE = re.compile(r"Would reformat:\s+([^\s]+)")
 # - "path.py:line:col: ..." (e.g., --output-format concise)
 # - "--> path.py:line:col" (default formatter)
 RUFF_CHECK_PATH_RE = re.compile(
-    r"^\s*(?:-->\s+)?([^\s:]+\.py):\d+:\d+",
+    r"(?:-->\s+)?([^\s:]+\.py):\d+:\d+",
     re.MULTILINE,
 )
 

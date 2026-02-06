@@ -433,6 +433,9 @@ class ModelConfig(BaseModel):
     race_softmax: RaceSoftmaxConfig = Field(default_factory=RaceSoftmaxConfig)
     calibration: str = "isotonic"
     market_prob_mode: str = "raw"
+    # Post-processing: shrink final p_hat toward p_mkt in logit space.
+    # alpha=1.0 keeps p_hat, alpha=0.0 uses p_mkt.
+    market_shrink_alpha: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     # rolling比較の再現性向上（LightGBMの乱数seed）
     seed: int = 42
     # Option C0: 市場確率 p_mkt を prior として固定し、残差（logit）だけを学習する
@@ -541,6 +544,71 @@ class Config(BaseModel):
     betting: BettingConfig = Field(default_factory=BettingConfig)
 
 
+def _deep_merge_dict(base: dict, override: dict) -> dict:
+    out = dict(base or {})
+    for k, v in (override or {}).items():
+        if isinstance(v, dict) and isinstance(out.get(k), dict):
+            out[k] = _deep_merge_dict(out[k], v)
+        else:
+            out[k] = v
+    return out
+
+
+def load_yaml_with_extends(path: Path) -> dict:
+    """
+    Load YAML config with optional inheritance.
+
+    If the YAML root contains `extends: <path>|[paths...]`, we load the base(s)
+    first and deep-merge current keys on top. The `extends` key is removed from
+    the returned dict.
+    """
+    stack: list[Path] = []
+
+    def _resolve_base(child_path: Path, base: str) -> Path:
+        p = Path(str(base))
+        if p.is_absolute():
+            return p
+        cand = (child_path.parent / p).resolve()
+        if cand.exists():
+            return cand
+        if PROJECT_ROOT is not None:
+            cand2 = (PROJECT_ROOT / p).resolve()
+            if cand2.exists():
+                return cand2
+        return cand
+
+    def _load(cur_path: Path) -> dict:
+        cur_path = cur_path.resolve()
+        if cur_path in stack:
+            raise ValueError(f"config extends cycle detected: {cur_path}")
+        stack.append(cur_path)
+        data = yaml.safe_load(cur_path.read_text(encoding="utf-8")) or {}
+        if not isinstance(data, dict):
+            data = {}
+        extends = data.pop("extends", None)
+        merged: dict = {}
+        if extends:
+            bases = (
+                [extends]
+                if isinstance(extends, str)
+                else list(extends)
+                if isinstance(extends, list)
+                else []
+            )
+            for b in bases:
+                base_path = _resolve_base(cur_path, str(b))
+                if not base_path.exists():
+                    raise FileNotFoundError(
+                        f"config extends not found: {base_path} (from {cur_path})"
+                    )
+                merged = _deep_merge_dict(merged, _load(base_path))
+        merged = _deep_merge_dict(merged, data)
+        stack.pop()
+        return merged
+
+    return _load(path)
+
+
 def load_config(config_path: Optional[Path | str] = None) -> Config:
     """
     設定ファイルを読み込む
@@ -558,8 +626,7 @@ def load_config(config_path: Optional[Path | str] = None) -> Config:
     if config_path:
         path = Path(config_path)
         if path.exists():
-            with open(path, "r", encoding="utf-8") as f:
-                data = yaml.safe_load(f)
+            data = load_yaml_with_extends(path)
             return Config.model_validate(data)
 
     # 2. 環境変数
@@ -567,16 +634,14 @@ def load_config(config_path: Optional[Path | str] = None) -> Config:
     if env_config:
         path = Path(env_config)
         if path.exists():
-            with open(path, "r", encoding="utf-8") as f:
-                data = yaml.safe_load(f)
+            data = load_yaml_with_extends(path)
             return Config.model_validate(data)
 
     # 3. プロジェクトルートから
     if PROJECT_ROOT:
         path = PROJECT_ROOT / "config" / "config.yaml"
         if path.exists():
-            with open(path, "r", encoding="utf-8") as f:
-                data = yaml.safe_load(f)
+            data = load_yaml_with_extends(path)
             return Config.model_validate(data)
 
     # 4. デフォルト設定を返す
