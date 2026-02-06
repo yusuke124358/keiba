@@ -65,6 +65,28 @@ def git_fetch_checkout(root, remote, base_branch):
     run(["git", "pull", "--ff-only", remote, base_branch], cwd=root)
 
 
+def remote_branch_exists(root: Path, remote: str, branch: str) -> bool:
+    if not branch:
+        return False
+    # After `git fetch <remote>`, remotes are available under refs/remotes/<remote>/...
+    ref = f"refs/remotes/{remote}/{branch}"
+    result = run(["git", "show-ref", "--verify", "--quiet", ref], cwd=root, check=False)
+    return result.returncode == 0
+
+
+def checkout_branch(root: Path, remote: str, branch: str) -> None:
+    """
+    Create/reset a local branch, preferring the remote branch if it already exists.
+
+    This avoids non-fast-forward push failures when the same branch name already
+    exists on the remote (e.g., after a previous run or a closed PR).
+    """
+    if remote_branch_exists(root, remote, branch):
+        run(["git", "checkout", "-B", branch, f"{remote}/{branch}"], cwd=root)
+    else:
+        run(["git", "checkout", "-B", branch], cwd=root)
+
+
 def load_backlog(path):
     data = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
     if not isinstance(data, dict) or "items" not in data:
@@ -114,6 +136,12 @@ def ensure_experiment_log(root, exp_id, title, risk_level, max_diff_size):
     text = text.replace("experiment|infra", "experiment")
     log_path.write_text(text, encoding="utf-8")
     return log_path
+
+
+def build_unique_branch(exp_id: str, title: str, ts: str) -> str:
+    base = f"agent/{exp_id}-{slugify(title)}"
+    # Use a timestamp suffix to avoid collisions with existing remote branches/closed PRs.
+    return f"{base}-{ts}"
 
 
 def render_prompt(template_path, item):
@@ -420,15 +448,16 @@ def main():
     risk_level = item.get("risk_level", "medium")
     max_diff_size = int(item.get("max_diff_size", 200))
 
-    branch = f"agent/{exp_id}-{slugify(title)}"
-    run(["git", "checkout", "-B", branch], cwd=root)
+    ts = dt.datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    branch = str(item.get("branch") or "").strip()
+    if not branch:
+        branch = build_unique_branch(str(exp_id), str(title), ts)
+    checkout_branch(root, args.remote, branch)
 
     update_item(item, branch)
     save_backlog(backlog_path, data)
 
     ensure_experiment_log(root, exp_id, title, risk_level, max_diff_size)
-
-    ts = dt.datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     out_dir = Path(args.output_dir) / f"propose_{exp_id}_{ts}"
     out_dir.mkdir(parents=True, exist_ok=True)
 
