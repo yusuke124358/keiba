@@ -50,7 +50,37 @@ def repo_root() -> Path:
     return Path(out)
 
 
+def git_has_ref(root: Path, ref: str) -> bool:
+    result = run(
+        ["git", "rev-parse", "-q", "--verify", ref],
+        cwd=root,
+        check=False,
+        capture_output=True,
+    )
+    return result.returncode == 0
+
+
+def git_path(root: Path, rel: str) -> Path:
+    p = run(["git", "rev-parse", "--git-path", rel], cwd=root, capture_output=True).stdout.strip()
+    pp = Path(p)
+    return pp if pp.is_absolute() else root / pp
+
+
+def abort_in_progress_git_ops(root: Path) -> None:
+    # A previous run can die mid-git-operation and leave the repo un-checkoutable.
+    # We abort these states so we can reliably stash/checkout and update backlog status.
+    if git_path(root, "rebase-apply").exists() or git_path(root, "rebase-merge").exists():
+        run(["git", "rebase", "--abort"], cwd=root, check=False)
+    if git_has_ref(root, "MERGE_HEAD"):
+        run(["git", "merge", "--abort"], cwd=root, check=False)
+    if git_has_ref(root, "CHERRY_PICK_HEAD"):
+        run(["git", "cherry-pick", "--abort"], cwd=root, check=False)
+    if git_has_ref(root, "REVERT_HEAD"):
+        run(["git", "revert", "--abort"], cwd=root, check=False)
+
+
 def ensure_clean(root: Path, auto_stash: bool = False) -> None:
+    abort_in_progress_git_ops(root)
     status = run(
         ["git", "status", "--porcelain"], cwd=root, capture_output=True
     ).stdout.strip()
@@ -449,7 +479,6 @@ def main() -> int:
 
             if exp_branch:
                 git_checkout(root, exp_branch)
-                git_merge_no_edit(root, base_branch)
                 if args.publish:
                     pr_body_path = (
                         root / "artifacts" / "agent" / f"pr_body_{exp_id}_{ts}.md"
