@@ -319,7 +319,9 @@ items:
   - backtest.roi
   risk_level: high
   max_diff_size: 200
-  status: todo
+  status: in_progress
+  picked_at: '2026-02-06T06:36:58Z'
+  branch: agent/exp_20260206_063658-surface-specific-models-turf-vs-dirt
 - id: EXP-018
   title: Distance bucket models
   hypothesis: Training per-distance buckets improves fit vs a single global model.
