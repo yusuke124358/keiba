@@ -8,12 +8,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Optional
 
 import numpy as np
-import pandas as pd
+import pandas as pd  # type: ignore[import-untyped]
 
 
 def distance_bin(distance: Optional[float]) -> Optional[int]:
@@ -61,6 +60,7 @@ def compute_horse_history_features(
       - field_size (numeric, optional)
       - pace_first3f/pace_last3f (numeric, optional)
     """
+
     def _safe_z(series: pd.Series) -> pd.Series:
         s = pd.to_numeric(series, errors="coerce")
         s = s.replace([np.inf, -np.inf], np.nan)
@@ -194,8 +194,16 @@ def compute_horse_history_features(
     days_since_last = int((asof_time - last_dt).days) if pd.notna(last_dt) else None
 
     last_finish = int(df["finish_pos"].iloc[0]) if pd.notna(df["finish_pos"].iloc[0]) else None
-    last2_finish = int(df["finish_pos"].iloc[1]) if len(df) >= 2 and pd.notna(df["finish_pos"].iloc[1]) else None
-    last3_finish = int(df["finish_pos"].iloc[2]) if len(df) >= 3 and pd.notna(df["finish_pos"].iloc[2]) else None
+    last2_finish = (
+        int(df["finish_pos"].iloc[1])
+        if len(df) >= 2 and pd.notna(df["finish_pos"].iloc[1])
+        else None
+    )
+    last3_finish = (
+        int(df["finish_pos"].iloc[2])
+        if len(df) >= 3 and pd.notna(df["finish_pos"].iloc[2])
+        else None
+    )
 
     last5 = df.head(5)
     win_rate_last5 = float((last5["finish_pos"] == 1).mean()) if len(last5) > 0 else None
@@ -235,7 +243,7 @@ def compute_horse_history_features(
     if ("time_sec" in df.columns) and ("distance" in df.columns):
         sec_per_100m = df["time_sec"] / df["distance"] * 100.0
         z = _safe_z(sec_per_100m)
-        speed_z = (-z)  # 小さいほど速い -> zを反転して「大きいほど速い」
+        speed_z = -z  # 小さいほど速い -> zを反転して「大きいほど速い」
         if speed_z.notna().any():
             speed_z_last = float(speed_z.iloc[0]) if pd.notna(speed_z.iloc[0]) else None
             best3 = speed_z.head(3).dropna()
@@ -246,7 +254,7 @@ def compute_horse_history_features(
 
     if "last_3f" in df.columns:
         z3f = _safe_z(df["last_3f"])
-        last3f_z = (-z3f)  # 小さいほど速い上がり -> 反転
+        last3f_z = -z3f  # 小さいほど速い上がり -> 反転
         if last3f_z.notna().any():
             last3f_z_last = float(last3f_z.iloc[0]) if pd.notna(last3f_z.iloc[0]) else None
             best3f = last3f_z.head(3).dropna()
@@ -321,5 +329,3 @@ def compute_horse_history_features(
         "avg_last_3f": avg_last3f_recent,
         "days_since_last": days_since_last,
     }
-
-
