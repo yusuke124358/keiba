@@ -454,7 +454,7 @@ def python_exe(root: Path) -> str:
     return sys.executable or "python"
 
 
-RUFF_WOULD_REFORMAT_RE = re.compile(r"Would reformat:\\s+([^\\s]+)")
+RUFF_WOULD_REFORMAT_RE = re.compile(r"Would reformat:\s+([^\s]+)")
 
 
 def extract_ruff_reformat_paths(bundle: dict) -> list[str]:
