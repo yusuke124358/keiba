@@ -27,14 +27,18 @@ CURRENT_RUN = STATE_DIR / "current_run.json"
 
 
 def run(cmd, cwd=None, check=True, capture_output=True, text=True, env=None):
-    result = subprocess.run(
-        cmd,
-        cwd=cwd,
-        check=False,
-        capture_output=capture_output,
-        text=text,
-        env=env,
-    )
+    kwargs = {
+        "cwd": cwd,
+        "check": False,
+        "capture_output": capture_output,
+        "env": env,
+    }
+    if text:
+        # gh/codex/git commonly emit UTF-8 on Windows; avoid cp932 decode failures.
+        kwargs.update({"text": True, "encoding": "utf-8", "errors": "replace"})
+    else:
+        kwargs["text"] = False
+    result = subprocess.run(cmd, **kwargs)
     if check and result.returncode != 0:
         stderr = result.stderr.strip() if result.stderr else ""
         raise RuntimeError(
