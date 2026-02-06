@@ -409,24 +409,6 @@ items:
   status: failed
   picked_at: '2026-02-06T22:19:38Z'
   branch: agent/exp_20260206_131500-pace-pressure-features
-- id: EXP-027
-  title: Form-cycle features (improving/declining)
-  hypothesis: Detecting form cycles improves prediction for non-favorites and increases
-    ROI.
-  change_scope:
-  - py64_analysis/src/keiba/features/
-  - py64_analysis/src/keiba/modeling/
-  acceptance_criteria:
-  - ROI improves by >= 0.005
-  - n_bets >= baseline * 0.90
-  metrics:
-  - backtest.roi
-  - backtest.n_bets
-  risk_level: medium
-  max_diff_size: 180
-  status: in_progress
-  picked_at: '2026-02-06T22:28:03Z'
-  branch: agent/exp_20260206_130000-exp-027-add-minimal-form-cycle-improving-declining-features
 - id: EXP-028
   title: Layoff and freshness features
   hypothesis: Layoff-related features improve calibration and reduce bad bets after
@@ -863,3 +845,20 @@ items:
   max_diff_size: 200
   status: todo
   branch: agent/exp_20260206_120000-speed-figure-normalized-by-course-distance-going
+- id: EXP-027
+  title: Form-cycle features (improving/declining)
+  hypothesis: Detecting form cycles improves prediction for non-favorites and increases
+    ROI.
+  change_scope:
+  - py64_analysis/src/keiba/features/
+  - py64_analysis/src/keiba/modeling/
+  acceptance_criteria:
+  - ROI improves by >= 0.005
+  - n_bets >= baseline * 0.90
+  metrics:
+  - backtest.roi
+  - backtest.n_bets
+  risk_level: medium
+  max_diff_size: 180
+  status: todo
+  branch: agent/exp_20260206_130000-exp-027-add-minimal-form-cycle-improving-declining-features
