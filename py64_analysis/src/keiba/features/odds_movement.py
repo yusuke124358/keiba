@@ -1,10 +1,21 @@
 from __future__ import annotations
+
 import logging
 from typing import Iterable
+
 import pandas as pd
 from sqlalchemy import text
 from sqlalchemy.orm import Session
-QUINELLA_ODDS_MOVEMENT_COLS = ["q_min_odds", "q_mean_odds", "q_snap_age_min", "q_min_odds_chg_60m", "q_mean_odds_chg_60m"]
+
+QUINELLA_ODDS_MOVEMENT_COLS = [
+    "q_min_odds",
+    "q_mean_odds",
+    "q_snap_age_min",
+    "q_min_odds_chg_60m",
+    "q_mean_odds_chg_60m",
+]
+
+
 def fetch_quinella_odds_movement_features(
     session: Session,
     race_ids: Iterable[str],
@@ -123,7 +134,9 @@ def fetch_quinella_odds_movement_features(
         ).fetchall()
     except Exception as exc:
         # Keep the pipeline runnable even if 0B42 is not ingested yet.
-        logging.getLogger(__name__).warning("Failed to fetch quinella odds movement features (0B42): %s", exc)
+        logging.getLogger(__name__).warning(
+            "Failed to fetch quinella odds movement features (0B42): %s", exc
+        )
         return empty
     if not rows:
         return empty
