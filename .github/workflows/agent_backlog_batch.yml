@@ -8,6 +8,11 @@ on:
         required: false
         default: "5"
         type: string
+      continue_on_failure:
+        description: "Continue processing remaining items after a failure."
+        required: false
+        default: "false"
+        type: string
       publish:
         description: "Create PRs after experiments."
         required: false
@@ -46,7 +51,7 @@ on:
 
 concurrency:
   group: agent-backlog-batch
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   batch:
@@ -90,6 +95,7 @@ jobs:
           AUTO_FIX_PUSH_TOKEN: ${{ secrets.AUTO_FIX_PUSH_TOKEN }}
           GH_TOKEN: ${{ secrets.AUTO_FIX_PUSH_TOKEN }}
           COUNT: ${{ inputs.count || '5' }}
+          CONTINUE_ON_FAILURE: ${{ inputs.continue_on_failure || 'false' }}
           PUBLISH: ${{ inputs.publish || 'true' }}
           PUSH_BASE: ${{ inputs.push_base || 'true' }}
           STALE_HOURS: ${{ inputs.stale_in_progress_hours || '0' }}
@@ -115,6 +121,9 @@ jobs:
           if [[ "$REQUEUE_ON_TIMEOUT" == "true" ]]; then
             args+=(--requeue-on-timeout)
           fi
+          if [[ "$CONTINUE_ON_FAILURE" == "true" ]]; then
+            args+=(--continue-on-failure)
+          fi
           if [[ "$AUTO_STASH" == "true" ]]; then
             args+=(--auto-stash)
           fi
@@ -128,6 +137,7 @@ jobs:
           AUTO_FIX_PUSH_TOKEN: ${{ secrets.AUTO_FIX_PUSH_TOKEN }}
           GH_TOKEN: ${{ secrets.AUTO_FIX_PUSH_TOKEN }}
           COUNT: ${{ inputs.count || '5' }}
+          CONTINUE_ON_FAILURE: ${{ inputs.continue_on_failure || 'false' }}
           PUBLISH: ${{ inputs.publish || 'true' }}
           PUSH_BASE: ${{ inputs.push_base || 'true' }}
           STALE_HOURS: ${{ inputs.stale_in_progress_hours || '0' }}
@@ -143,6 +153,7 @@ jobs:
           if not "%STALE_HOURS%"=="" set "ARGS=%ARGS% --stale-in-progress-hours %STALE_HOURS%"
           if not "%ITEM_TIMEOUT_MINUTES%"=="" if not "%ITEM_TIMEOUT_MINUTES%"=="0" set "ARGS=%ARGS% --item-timeout-minutes %ITEM_TIMEOUT_MINUTES%"
           if /I "%REQUEUE_ON_TIMEOUT%"=="true" set "ARGS=%ARGS% --requeue-on-timeout"
+          if /I "%CONTINUE_ON_FAILURE%"=="true" set "ARGS=%ARGS% --continue-on-failure"
           if /I "%AUTO_STASH%"=="true" set "ARGS=%ARGS% --auto-stash"
           if not "%BASE_BRANCH%"=="" set "ARGS=%ARGS% --base-branch %BASE_BRANCH%"
           python scripts\\agent\\run_backlog_batch.py %ARGS%
