@@ -461,7 +461,9 @@ def main() -> int:
                     )
                 git_checkout(root, base_branch)
         except subprocess.TimeoutExpired as exc:
-            ensure_clean(root, auto_stash=args.auto_stash)
+            # A timeout can happen mid-implementation/eval and leave the working tree dirty.
+            # Stash to allow backlog status updates and safe retries on the next run.
+            ensure_clean(root, auto_stash=True)
             git_checkout(root, base_branch)
             if args.requeue_on_timeout:
                 reset_item_to_todo(item)
@@ -489,6 +491,9 @@ def main() -> int:
             if not args.continue_on_failure:
                 raise RuntimeError(f"Timeout on {exp_id}") from exc
         except Exception as exc:
+            # Failures can leave partial changes in the working tree (e.g., interrupted runs).
+            # Stash so we can reliably update backlog state on the base branch.
+            ensure_clean(root, auto_stash=True)
             git_checkout(root, base_branch)
             # If we fail before marking the item in progress (e.g., planning failures),
             # keep the item as todo so reruns don't require manual backlog edits.
