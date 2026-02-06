@@ -374,24 +374,6 @@ items:
   status: done
   picked_at: '2026-02-06T14:08:54Z'
   branch: agent/exp_20260206_070001-exp-020-multi-task-top1-top3-probabilities-aux-head
-- id: EXP-021
-  title: Plackett-Luce style finish-order model
-  hypothesis: Modeling the finish order distribution improves win-prob estimation
-    and downstream EV.
-  change_scope:
-  - py64_analysis/src/keiba/modeling/
-  - py64_analysis/src/keiba/backtest/
-  acceptance_criteria:
-  - Logloss improves by >= 0.5%
-  - ROI >= baseline
-  metrics:
-  - model.logloss
-  - backtest.roi
-  risk_level: high
-  max_diff_size: 200
-  status: in_progress
-  picked_at: '2026-02-06T15:20:57Z'
-  branch: agent/exp_20260206_130000-plackett-luce-style-finish-order-model-loss-swap
 - id: EXP-022
   title: Hyperparameter tuning via rolling CV
   hypothesis: Lightweight tuning over rolling CV improves robustness vs fixed params.
@@ -855,3 +837,20 @@ items:
   risk_level: low
   max_diff_size: 200
   status: todo
+- id: EXP-021
+  title: Plackett-Luce style finish-order model
+  hypothesis: Modeling the finish order distribution improves win-prob estimation
+    and downstream EV.
+  change_scope:
+  - py64_analysis/src/keiba/modeling/
+  - py64_analysis/src/keiba/backtest/
+  acceptance_criteria:
+  - Logloss improves by >= 0.5%
+  - ROI >= baseline
+  metrics:
+  - model.logloss
+  - backtest.roi
+  risk_level: high
+  max_diff_size: 200
+  status: todo
+  branch: agent/exp_20260206_130000-plackett-luce-style-finish-order-model-loss-swap
