@@ -139,6 +139,7 @@ class WinProbabilityModel:
         self.blend_weight = self.config.model.blend_weight_w
         self.blend_segmented: Optional[dict] = None
         self.race_softmax_params: Optional[dict] = None
+        self.calibrator: Any | None = None
         self.use_market_offset = bool(getattr(self.config.model, "use_market_offset", False))
         self.p_mkt_clip = tuple(getattr(self.config.model, "p_mkt_clip", (1e-4, 1.0 - 1e-4)))
         # Ticket G1: Residual Cap
@@ -164,8 +165,6 @@ class WinProbabilityModel:
             else "pre_calibration"
         )
         self.residual_cap_value: Optional[float] = None  # fit()で計算して保存
-        # Dynamically attached (see calibrate_model); keep attribute for mypy.
-        self.calibrator: Any | None = None
         self.feature_names: list[str] = []
 
     def fit(
@@ -191,7 +190,7 @@ class WinProbabilityModel:
         Returns:
             学習結果メトリクス（検証データ上で評価）
         """
-        from sklearn.metrics import brier_score_loss, log_loss
+        from sklearn.metrics import brier_score_loss, log_loss  # type: ignore[import-untyped]
 
         self.feature_names = X.columns.tolist()
 
@@ -306,8 +305,7 @@ class WinProbabilityModel:
             abs_resid = np.abs(resid_train_all)
             self.residual_cap_value = float(np.quantile(abs_resid, self.residual_cap_quantile))
             logger.info(
-                "Residual cap computed: "
-                f"quantile={self.residual_cap_quantile}, "
+                f"Residual cap computed: quantile={self.residual_cap_quantile}, "
                 f"cap={self.residual_cap_value:.4f}"
             )
 
@@ -451,6 +449,40 @@ class WinProbabilityModel:
         elif return_residual_meta:
             residual_meta["p_hat_capped"] = p_blend_raw
             residual_meta["p_hat_final"] = p_blend
+
+        # Optional post-process: shrink final probability toward market-implied p_mkt.
+        # This is applied only for the "final" path (calibrate=True) so p_blend_raw
+        # / calibrate=False outputs keep their original semantics.
+        if calibrate:
+            shrink_alpha = getattr(self.config.model, "market_shrink_alpha", None)
+            if shrink_alpha is not None:
+                try:
+                    a = float(shrink_alpha)
+                except Exception:
+                    a = None
+                if a is not None and np.isfinite(a):
+                    lo, hi = float(self.p_mkt_clip[0]), float(self.p_mkt_clip[1])
+                    p_hat_arr = np.asarray(p_blend, dtype=float)
+                    p_mkt_arr = np.asarray(p_mkt, dtype=float)
+                    mask = np.isfinite(p_hat_arr) & np.isfinite(p_mkt_arr)
+                    p_shrunk = p_hat_arr.copy()
+                    if mask.any():
+                        if a <= 0.0:
+                            p_shrunk[mask] = np.clip(p_mkt_arr[mask], lo, hi)
+                        elif a >= 1.0:
+                            p_shrunk[mask] = np.clip(p_hat_arr[mask], lo, hi)
+                        else:
+                            hat_c = np.clip(p_hat_arr[mask], lo, hi)
+                            mkt_c = np.clip(p_mkt_arr[mask], lo, hi)
+                            logit_hat = np.log(hat_c / (1.0 - hat_c))
+                            logit_mkt = np.log(mkt_c / (1.0 - mkt_c))
+                            logit_shrunk = logit_mkt + a * (logit_hat - logit_mkt)
+                            p_shrunk[mask] = 1.0 / (1.0 + np.exp(-logit_shrunk))
+                    p_blend = p_shrunk
+                    if return_residual_meta:
+                        residual_meta["market_shrink_alpha"] = float(a)
+                        residual_meta["p_hat_pre_market_shrink"] = p_hat_arr
+                        residual_meta["p_hat_final"] = p_blend
 
         if return_residual_meta:
             return p_blend, residual_meta
@@ -607,9 +639,9 @@ def prepare_training_data(
                 bt.date
             FROM features f
             JOIN buy_times bt ON f.race_id = bt.race_id
-            WHERE f.feature_version = :feature_version
-              AND f.asof_time <= bt.buy_time
-            ORDER BY f.race_id, f.horse_id, f.asof_time DESC
+             WHERE f.feature_version = :feature_version
+               AND f.asof_time <= bt.buy_time
+             ORDER BY f.race_id, f.horse_id, f.asof_time DESC
         )
         SELECT
             lf.race_id,
@@ -1004,20 +1036,24 @@ def train_model(
 
     # ★校正（検証データ上で校正器をfit）
     # 明示的な検証データがある場合はそれを使用、なければ内部splitの結果を使用
-    from sklearn.metrics import brier_score_loss, log_loss
+    from sklearn.metrics import brier_score_loss, log_loss  # type: ignore[import-untyped]
 
     if X_valid is not None and len(X_valid) > 0:
         # 明示的な検証データを使用
-        X_valid2 = _align_features(X_valid, model.feature_names)
-        p_blend_valid = model.predict(
-            X_valid2, p_mkt_valid, calibrate=False, segments=segments_valid
-        )
         if y_valid is None:
-            raise ValueError("y_valid is required when X_valid is provided.")
+            model.calibrator = None
+            if model_path:
+                model.save(model_path)
+            return model, metrics
+        X_valid2 = _align_features(X_valid, model.feature_names)
+        pred_out = model.predict(X_valid2, p_mkt_valid, calibrate=False, segments=segments_valid)
+        if isinstance(pred_out, tuple):
+            pred_out = pred_out[0]
+        p_blend_valid = np.asarray(pred_out, dtype=float)
         y_valid_arr = y_valid.values
     elif hasattr(model, "_last_val_predictions") and model._last_val_predictions:
         # ★内部splitした検証データを使用（これがP6の修正ポイント）
-        p_blend_valid = model._last_val_predictions["p_blend"]
+        p_blend_valid = np.asarray(model._last_val_predictions["p_blend"], dtype=float)
         y_valid_arr = model._last_val_predictions["y_true"]
         logger.info("Using internal train/valid split for calibration")
     else:
@@ -1029,7 +1065,7 @@ def train_model(
 
     # 校正器をfit
     calibrator = ProbabilityCalibrator(method=config.model.calibration)
-    p_blend_valid_arr = p_blend_valid[0] if isinstance(p_blend_valid, tuple) else p_blend_valid
+    p_blend_valid_arr = p_blend_valid
     calibrator.fit(p_blend_valid_arr, y_valid_arr)
 
     # 校正後の評価
