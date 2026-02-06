@@ -6,6 +6,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 try:
@@ -217,7 +218,12 @@ def python_exe(root: Path) -> str:
     return sys.executable or "python"
 
 
-def push_branch(root: Path, branch: str, token: str | None) -> None:
+def push_branch(
+    root: Path,
+    branch: str,
+    token: str | None,
+    max_attempts: int = 3,
+) -> None:
     if token:
         remote_url = run(
             ["git", "remote", "get-url", "origin"], cwd=root, capture_output=True
@@ -230,7 +236,46 @@ def push_branch(root: Path, branch: str, token: str | None) -> None:
             https_url = remote_url
         push_url = https_url.replace("https://", f"https://x-access-token:{token}@")
         run(["git", "remote", "set-url", "--push", "origin", push_url], cwd=root)
-    run(["git", "push", "origin", branch], cwd=root)
+
+    # Avoid spurious failures when other automation merges to the same branch
+    # between our pull and push. We retry by rebasing onto the latest remote tip.
+    if current_branch(root) != branch:
+        git_checkout(root, branch)
+
+    attempts = max(1, int(max_attempts))
+    for attempt in range(1, attempts + 1):
+        result = run(
+            ["git", "push", "origin", branch],
+            cwd=root,
+            check=False,
+            capture_output=True,
+        )
+        if result.returncode == 0:
+            return
+
+        stderr = (result.stderr or "").strip()
+        if attempt >= attempts:
+            raise RuntimeError(
+                f"Command failed ({result.returncode}): git push origin {branch}\n{stderr}"
+            )
+
+        run(["git", "fetch", "origin", branch], cwd=root, check=False)
+        rebase = run(
+            ["git", "rebase", f"origin/{branch}"],
+            cwd=root,
+            check=False,
+            capture_output=True,
+        )
+        if rebase.returncode != 0:
+            run(["git", "rebase", "--abort"], cwd=root, check=False)
+            raise RuntimeError(
+                "git push failed and rebase retry also failed.\n"
+                f"push stderr:\n{stderr}\n"
+                f"rebase stderr:\n{(rebase.stderr or '').strip()}"
+            )
+
+        # Small backoff to reduce collisions if multiple pushes happen close together.
+        time.sleep(2)
 
 
 def publish_branch(root: Path, base_branch: str, title: str, body_file: Path) -> None:

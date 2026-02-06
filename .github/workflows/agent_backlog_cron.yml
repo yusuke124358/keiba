@@ -1,18 +1,23 @@
-﻿name: Agent Propose PR
+name: agent_backlog_cron
 
 on:
+  schedule:
+    - cron: "15 * * * *"
   workflow_dispatch:
 
+concurrency:
+  group: agent-backlog-batch
+  cancel-in-progress: false
+
 jobs:
-  propose:
+  batch:
     runs-on: self-hosted
     permissions:
       contents: read
       pull-requests: write
       issues: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -36,17 +41,6 @@ jobs:
         run: |
           if not exist "%USERPROFILE%\\.codex" mkdir "%USERPROFILE%\\.codex"
           copy /Y .github\\runner\\codex.config.toml "%USERPROFILE%\\.codex\\config.toml"
-      - name: Setup Python
-        if: runner.os != 'Windows'
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - name: Verify Python (Windows)
-        if: runner.os == 'Windows'
-        shell: cmd
-        run: |
-          python --version
-          python -m pip --version
       - name: Normalize Codex assets
         shell: cmd
         run: python scripts\\agent\\normalize_codex_assets.py
@@ -58,17 +52,33 @@ jobs:
         if: runner.os == 'Windows'
         shell: cmd
         run: python -m pip install --upgrade pip pyyaml
-      - name: Run propose loop
+      - name: Run backlog batch (Linux/macOS)
+        if: runner.os != 'Windows'
         env:
           AUTO_FIX_PUSH_TOKEN: ${{ secrets.AUTO_FIX_PUSH_TOKEN }}
           GH_TOKEN: ${{ secrets.AUTO_FIX_PUSH_TOKEN }}
         shell: bash
-        if: runner.os != 'Windows'
-        run: python scripts/agent/propose_pr.py --once --publisher token
-      - name: Run propose loop (Windows)
+        run: |
+          python scripts/agent/run_backlog_batch.py \
+            --count 5 \
+            --publish \
+            --push-base \
+            --stale-in-progress-hours 0 \
+            --item-timeout-minutes 90 \
+            --requeue-on-timeout \
+            --base-branch main
+      - name: Run backlog batch (Windows)
         if: runner.os == 'Windows'
         env:
           AUTO_FIX_PUSH_TOKEN: ${{ secrets.AUTO_FIX_PUSH_TOKEN }}
           GH_TOKEN: ${{ secrets.AUTO_FIX_PUSH_TOKEN }}
         shell: cmd
-        run: python scripts\\agent\\propose_pr.py --once --publisher token
+        run: >
+          python scripts\agent\run_backlog_batch.py
+          --count 5
+          --publish
+          --push-base
+          --stale-in-progress-hours 0
+          --item-timeout-minutes 90
+          --requeue-on-timeout
+          --base-branch main
