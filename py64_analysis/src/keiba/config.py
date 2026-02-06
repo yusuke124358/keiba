@@ -451,6 +451,14 @@ class ModelConfig(BaseModel):
             "apply_stage": "pre_calibration",  # pre_calibration or post_calibration
         }
     )
+    # EXP-018: train per-distance bucket models + route inference by distance
+    distance_bucket_models: dict = Field(
+        default_factory=lambda: {
+            "enabled": False,
+            "min_train_samples": 5000,
+            "min_valid_samples": 2000,
+        }
+    )
 
 
 class OddsDynamicsFilterConfig(BaseModel):

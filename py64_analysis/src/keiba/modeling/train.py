@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from ..config import get_config
 from ..features.build_features import FeatureBuilder
+from ..features.history_features import distance_bucket
 from ..features.odds_movement import (
     QUINELLA_ODDS_MOVEMENT_COLS,
     fetch_quinella_odds_movement_features,
@@ -539,6 +540,10 @@ class WinProbabilityModel:
         with open(path, "rb") as f:
             data = pickle.load(f)
 
+        # Allow loading wrapper objects saved via pickle.dump(model_obj, ...).
+        if not isinstance(data, dict):
+            return data
+
         model = cls(version=data["version"])
         model.lgb_model = data["lgb_model"]
         model.blend_weight = data["blend_weight"]
@@ -559,6 +564,144 @@ class WinProbabilityModel:
         )
 
         return model
+
+
+class _DistanceBucketBoosterProxy:
+    def __init__(self, parent: "DistanceBucketWinProbabilityModel"):
+        self._parent = parent
+
+    def predict(self, X: pd.DataFrame, raw_score: bool = False):
+        return self._parent._predict_p_model(X, raw_score=raw_score)
+
+
+class DistanceBucketWinProbabilityModel:
+    """Per-distance bucket wrapper around WinProbabilityModel."""
+
+    def __init__(
+        self,
+        *,
+        fallback_model: WinProbabilityModel,
+        bucket_models: dict[int, WinProbabilityModel],
+        bucket_meta: Optional[dict] = None,
+    ):
+        self.fallback_model = fallback_model
+        self.bucket_models = bucket_models
+        self.bucket_meta = bucket_meta or {}
+
+    def __getattr__(self, name: str):
+        # Delegate config/knobs/attrs (feature_names, calibrator, blend_weight, etc.)
+        return getattr(self.fallback_model, name)
+
+    @property
+    def lgb_model(self):
+        return _DistanceBucketBoosterProxy(self)
+
+    def _bucket_series(self, X: pd.DataFrame) -> pd.Series:
+        if X is None or len(X) == 0 or "distance" not in X.columns:
+            return pd.Series(
+                [None] * (0 if X is None else len(X)), index=getattr(X, "index", None), dtype=object
+            )
+        d = pd.to_numeric(X["distance"], errors="coerce")
+        d = d.where(d > 0)
+        return d.apply(distance_bucket)
+
+    def _predict_p_model(self, X: pd.DataFrame, *, raw_score: bool = False) -> np.ndarray:
+        if X is None or len(X) == 0:
+            return np.asarray([], dtype=float)
+        buckets = self._bucket_series(X)
+        out = np.zeros(len(X), dtype=float)
+
+        for b in sorted(set(buckets.dropna().tolist())):
+            mask = buckets == b
+            m = self.bucket_models.get(int(b)) if b is not None else None
+            booster = (
+                getattr(m, "lgb_model", None)
+                if m is not None
+                else getattr(self.fallback_model, "lgb_model", None)
+            )
+            if booster is None:
+                continue
+            out[mask.values] = booster.predict(X.loc[mask], raw_score=raw_score)
+
+        unknown = buckets.isna()
+        if unknown.any():
+            booster = getattr(self.fallback_model, "lgb_model", None)
+            if booster is not None:
+                out[unknown.values] = booster.predict(X.loc[unknown], raw_score=raw_score)
+        return out
+
+    def predict(
+        self,
+        X: pd.DataFrame,
+        p_mkt: pd.Series,
+        calibrate: bool = True,
+        return_residual_meta: bool = False,
+        segments: Optional[Sequence[str]] = None,
+    ) -> np.ndarray | tuple[np.ndarray, dict]:
+        if X is None or len(X) == 0:
+            empty = np.asarray([], dtype=float)
+            return (empty, {}) if return_residual_meta else empty
+        if return_residual_meta and len(X) != 1:
+            raise ValueError("return_residual_meta is only supported for single-row predictions")
+
+        p_mkt_s = (
+            pd.to_numeric(pd.Series(p_mkt, index=X.index), errors="coerce")
+            .fillna(0.0)
+            .astype(float)
+        )
+        buckets = self._bucket_series(X)
+        cal = getattr(self.fallback_model, "calibrator", None)
+
+        if return_residual_meta:
+            b = buckets.iloc[0] if len(buckets) else None
+            if b is not None:
+                ib = int(b)
+                m = self.bucket_models[ib] if ib in self.bucket_models else self.fallback_model
+            else:
+                m = self.fallback_model
+            p_raw, meta = m.predict(
+                X, p_mkt_s, calibrate=False, return_residual_meta=True, segments=segments
+            )
+            p_out = cal.transform(p_raw) if (calibrate and cal is not None) else p_raw
+            meta = dict(meta or {})
+            meta["distance_bucket"] = int(b) if b is not None else None
+            meta["p_hat_final"] = p_out
+            return p_out, meta
+
+        out = np.zeros(len(X), dtype=float)
+
+        # Unknown distance -> fallback.
+        unknown = buckets.isna()
+        if unknown.any():
+            seg_sub = (
+                segments.reindex(unknown.index)[unknown]
+                if isinstance(segments, pd.Series)
+                else None
+            )
+            p_raw = self.fallback_model.predict(
+                X.loc[unknown], p_mkt_s.loc[unknown], calibrate=False, segments=seg_sub
+            )
+            out[unknown.values] = cal.transform(p_raw) if (calibrate and cal is not None) else p_raw
+
+        for b in sorted(set(buckets.dropna().tolist())):
+            mask = buckets == b
+            if b is not None:
+                ib = int(b)
+                m = self.bucket_models[ib] if ib in self.bucket_models else self.fallback_model
+            else:
+                m = self.fallback_model
+            seg_sub = (
+                segments.reindex(mask.index)[mask] if isinstance(segments, pd.Series) else None
+            )
+            p_raw = m.predict(X.loc[mask], p_mkt_s.loc[mask], calibrate=False, segments=seg_sub)
+            out[mask.values] = cal.transform(p_raw) if (calibrate and cal is not None) else p_raw
+        return out
+
+    def save(self, path: Path) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "wb") as f:
+            pickle.dump(self, f)
+        logger.info(f"DistanceBucketWinProbabilityModel saved to {path}")
 
 
 def prepare_training_data(
@@ -819,7 +962,7 @@ def train_model(
     model_path: Optional[Path] = None,
     calibrator_path: Optional[Path] = None,
     buy_t_minus_minutes: Optional[int] = None,
-) -> tuple[WinProbabilityModel, dict]:
+) -> tuple[WinProbabilityModel | DistanceBucketWinProbabilityModel, dict]:
     """
     モデルを学習（検証データ分離 + 校正統合版）
 
@@ -1082,7 +1225,49 @@ def train_model(
     # モデルに校正器を付与（推論時に使えるように）
     model.calibrator = calibrator
 
-    if model_path:
-        model.save(model_path)
+    # Distance Bucket Models: train per-distance models and route inference by distance bucket.
+    dist_cfg = getattr(getattr(config, "model", None), "distance_bucket_models", None)
+    enabled = bool(dist_cfg.get("enabled", False)) if isinstance(dist_cfg, dict) else False
+    final_model: WinProbabilityModel | DistanceBucketWinProbabilityModel = model
+    if enabled:
+        min_train = (
+            int(dist_cfg.get("min_train_samples", 5000)) if isinstance(dist_cfg, dict) else 5000
+        )
+        dist = (
+            pd.to_numeric(X_train.get("distance"), errors="coerce") if X_train is not None else None
+        )
+        buckets_train = (
+            dist.where(dist > 0).apply(distance_bucket)
+            if dist is not None
+            else pd.Series([], dtype=object)
+        )
 
-    return model, metrics
+        bucket_models: dict[int, WinProbabilityModel] = {}
+        n_train_by_bucket: dict[str, int] = {}
+        for b in sorted(set(buckets_train.dropna().tolist())):
+            mask = buckets_train == b
+            n = int(mask.sum())
+            n_train_by_bucket[str(b)] = n
+            if n < min_train:
+                continue
+            m = WinProbabilityModel()
+            m.fit(X_train.loc[mask], y_train.loc[mask], p_mkt_train.loc[mask])
+            bucket_models[int(b)] = m
+
+        bucket_meta = {
+            "enabled": True,
+            "min_train_samples": min_train,
+            "n_train_by_bucket": n_train_by_bucket,
+            "trained_buckets": sorted(bucket_models.keys()),
+        }
+        metrics["distance_bucket_models"] = bucket_meta
+        final_model = DistanceBucketWinProbabilityModel(
+            fallback_model=model,
+            bucket_models=bucket_models,
+            bucket_meta=bucket_meta,
+        )
+
+    if model_path:
+        final_model.save(model_path)
+
+    return final_model, metrics

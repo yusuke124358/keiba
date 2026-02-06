@@ -1,0 +1,24 @@
+{
+  "run_id": "exp_20260206_103540",
+  "seed_id": "EXP-018",
+  "title": "Distance Bucket Models (Per-Distance Training + Routing)",
+  "status": "inconclusive",
+  "metrics": {
+    "roi": -0.3062541583499667,
+    "total_stake": 150300.0,
+    "n_bets": 411,
+    "max_drawdown": 0.23476666666666668,
+    "test_period": "2024-01-01 to 2024-12-31",
+    "rolling": "no",
+    "design_window": "N/A",
+    "eval_window": "N/A",
+    "paired_delta": "N/A",
+    "pooled_vs_step14_mismatch": "no",
+    "preferred_roi": "pooled"
+  },
+  "artifacts": {
+    "metrics_json": "data/holdout_runs/exp_20260206_103540/metrics.json",
+    "comparison_json": "N/A",
+    "report": "data/holdout_runs/exp_20260206_103540/report/backtest.md"
+  }
+}
