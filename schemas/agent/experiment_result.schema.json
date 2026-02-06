@@ -1,4 +1,4 @@
-﻿{
+{
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "ExperimentResult",
   "type": "object",
@@ -9,6 +9,12 @@
     "title",
     "status",
     "metrics",
+    "baseline_metrics",
+    "deltas",
+    "stats",
+    "breakdowns",
+    "reproducibility",
+    "decision",
     "artifacts"
   ],
   "properties": {
@@ -22,7 +28,10 @@
       "required": [
         "roi",
         "total_stake",
+        "total_return",
         "n_bets",
+        "n_races",
+        "n_days",
         "test_period",
         "max_drawdown",
         "rolling",
@@ -33,11 +42,14 @@
         "preferred_roi"
       ],
       "properties": {
-        "roi": {"type": "number"},
-        "total_stake": {"type": "number"},
-        "n_bets": {"type": "integer"},
+        "roi": {"type": ["number", "null"]},
+        "total_stake": {"type": ["number", "null"]},
+        "total_return": {"type": ["number", "null"]},
+        "n_bets": {"type": ["integer", "null"]},
+        "n_races": {"type": "integer"},
+        "n_days": {"type": "integer"},
         "test_period": {"type": "string"},
-        "max_drawdown": {"type": "number"},
+        "max_drawdown": {"type": ["number", "null"]},
         "rolling": {"type": "string", "enum": ["yes", "no"]},
         "design_window": {"type": "string"},
         "eval_window": {"type": "string"},
@@ -46,15 +58,202 @@
         "preferred_roi": {"type": "string", "enum": ["step14", "pooled"]}
       }
     },
+    "baseline_metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "roi",
+        "total_stake",
+        "total_return",
+        "n_bets",
+        "n_races",
+        "n_days",
+        "test_period",
+        "max_drawdown"
+      ],
+      "properties": {
+        "roi": {"type": ["number", "null"]},
+        "total_stake": {"type": ["number", "null"]},
+        "total_return": {"type": ["number", "null"]},
+        "n_bets": {"type": ["integer", "null"]},
+        "n_races": {"type": "integer"},
+        "n_days": {"type": "integer"},
+        "test_period": {"type": "string"},
+        "max_drawdown": {"type": ["number", "null"]}
+      }
+    },
+    "deltas": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["delta_roi", "delta_max_drawdown"],
+      "properties": {
+        "delta_roi": {"type": ["number", "null"]},
+        "delta_max_drawdown": {"type": ["number", "null"]}
+      }
+    },
+    "stats": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "roi_ci95",
+        "baseline_roi_ci95",
+        "delta_roi_ci95",
+        "p_one_sided_delta_le_0",
+        "bootstrap",
+        "resampling_unit"
+      ],
+      "properties": {
+        "roi_ci95": {
+          "type": "array",
+          "items": {"type": "number"},
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "baseline_roi_ci95": {
+          "type": "array",
+          "items": {"type": "number"},
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "delta_roi_ci95": {
+          "type": "array",
+          "items": {"type": "number"},
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "p_one_sided_delta_le_0": {"type": "number"},
+        "bootstrap": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["B", "seed", "block_unit"],
+          "properties": {
+            "B": {"type": "integer"},
+            "seed": {"type": "integer"},
+            "block_unit": {"type": "string"}
+          }
+        },
+        "resampling_unit": {"type": ["string", "null"]}
+      }
+    },
+    "breakdowns": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["odds_bucket", "month"],
+      "properties": {
+        "odds_bucket": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "odds_bucket",
+              "roi",
+              "stake",
+              "bets",
+              "baseline_roi",
+              "baseline_stake",
+              "baseline_bets"
+            ],
+            "properties": {
+              "odds_bucket": {"type": "string"},
+              "roi": {"type": ["number", "null"]},
+              "stake": {"type": "number"},
+              "bets": {"type": "integer"},
+              "baseline_roi": {"type": ["number", "null"]},
+              "baseline_stake": {"type": "number"},
+              "baseline_bets": {"type": "integer"}
+            }
+          }
+        },
+        "month": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "month",
+              "roi",
+              "stake",
+              "bets",
+              "baseline_roi",
+              "baseline_stake",
+              "baseline_bets"
+            ],
+            "properties": {
+              "month": {"type": "string"},
+              "roi": {"type": ["number", "null"]},
+              "stake": {"type": "number"},
+              "bets": {"type": "integer"},
+              "baseline_roi": {"type": ["number", "null"]},
+              "baseline_stake": {"type": "number"},
+              "baseline_bets": {"type": "integer"}
+            }
+          }
+        }
+      }
+    },
+    "reproducibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "base_commit",
+        "head_commit",
+        "config_hash",
+        "eval_command",
+        "python_executable",
+        "environment_summary",
+        "bootstrap_seed"
+      ],
+      "properties": {
+        "base_commit": {"type": "string"},
+        "head_commit": {"type": "string"},
+        "config_hash": {"type": ["string", "null"]},
+        "eval_command": {"type": "string"},
+        "python_executable": {"type": "string"},
+        "environment_summary": {"type": "object"},
+        "bootstrap_seed": {"type": "integer"}
+      }
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision", "rationale", "flags", "leakage_pre_race_only"],
+      "properties": {
+        "decision": {
+          "type": "string",
+          "enum": ["accept", "reject", "iterate", "needs-human"]
+        },
+        "rationale": {"type": "string"},
+        "flags": {"type": "array", "items": {"type": "string"}},
+        "leakage_pre_race_only": {"type": "string", "enum": ["yes", "no"]}
+      }
+    },
     "artifacts": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["metrics_json", "comparison_json", "report"],
+      "required": [
+        "metrics_json",
+        "baseline_metrics_json",
+        "per_bet_pnl",
+        "baseline_per_bet_pnl",
+        "summary_stats_json",
+        "report",
+        "config_used_variant",
+        "config_used_baseline",
+        "changed_files"
+      ],
       "properties": {
         "metrics_json": {"type": "string"},
-        "comparison_json": {"type": "string"},
-        "report": {"type": "string"}
+        "baseline_metrics_json": {"type": "string"},
+        "per_bet_pnl": {"type": "string"},
+        "baseline_per_bet_pnl": {"type": "string"},
+        "summary_stats_json": {"type": "string"},
+        "report": {"type": "string"},
+        "config_used_variant": {"type": "string"},
+        "config_used_baseline": {"type": "string"},
+        "changed_files": {"type": "array", "items": {"type": "string"}}
       }
     }
   }
 }
+

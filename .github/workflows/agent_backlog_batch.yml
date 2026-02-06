@@ -168,3 +168,11 @@ jobs:
           if /I "%AUTO_STASH%"=="true" set "ARGS=%ARGS% --auto-stash"
           if not "%BASE_BRANCH%"=="" set "ARGS=%ARGS% --base-branch %BASE_BRANCH%"
           py64_analysis\\.venv\\Scripts\\python.exe scripts\\agent\\run_backlog_batch.py %ARGS%
+      - name: Upload experiment artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: experiment-artifacts-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            artifacts/experiments/**
+          if-no-files-found: ignore

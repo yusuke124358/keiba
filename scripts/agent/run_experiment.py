@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 import argparse
+import hashlib
 import json
 import os
+import platform
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
+from typing import Any
 
 
 def repo_root() -> Path:
@@ -160,6 +164,68 @@ def coerce_eval_command(eval_command) -> list[str]:
     return tokens
 
 
+def select_holdout_tokens(eval_cmds: list[str], run_id: str) -> list[str]:
+    raw = ""
+    for cmd in eval_cmds:
+        cmd2 = normalize_eval_command(cmd, run_id)
+        if cmd2 and "run_holdout.py" in cmd2:
+            raw = cmd2
+            break
+    if not raw:
+        raw = default_holdout_command(run_id)
+
+    tokens = raw.strip().split()
+    if not tokens:
+        raise RuntimeError("eval_command is empty after normalization.")
+
+    first = Path(tokens[0]).name.lower()
+    if first in {"python", "python3", "py"} or first.endswith("python.exe"):
+        tokens = tokens[1:]
+
+    if not tokens or not tokens[0].endswith("run_holdout.py"):
+        raise RuntimeError(
+            "Only run_holdout.py eval_command is supported for statistical outputs. "
+            f"Got: {raw}"
+        )
+    return tokens
+
+
+def compute_baseline_key(
+    base_commit: str, test_start: str, test_end: str, config_hash: str | None
+) -> str:
+    payload = {
+        "base_commit": base_commit,
+        "test_start": test_start,
+        "test_end": test_end,
+        "config_hash": config_hash or "unknown",
+    }
+    blob = json.dumps(payload, ensure_ascii=True, sort_keys=True).encode("utf-8")
+    return _sha256_bytes(blob)
+
+
+def run_holdout(
+    root: Path,
+    base_tokens: list[str],
+    *,
+    name: str,
+    out_dir: Path,
+    config_path: str | None,
+) -> None:
+    tokens = list(base_tokens)
+    _set_arg(tokens, "--name", name)
+    _set_arg(tokens, "--out-dir", str(out_dir).replace("\\", "/"))
+
+    env = os.environ.copy()
+    # Prevent runner-wide env leaking into baseline/variant runs.
+    env["KEIBA_CONFIG_PATH"] = config_path or ""
+
+    result = subprocess.run([sys.executable, *tokens], cwd=root, env=env, check=False)
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"Command failed ({result.returncode}): {' '.join([sys.executable, *tokens])}"
+        )
+
+
 def find_codex_bin() -> str:
     if os.name == "nt":
         for name in ("codex.cmd", "codex.exe", "codex"):
@@ -176,6 +242,217 @@ def slugify(text: str) -> str:
     text = text.lower()
     text = re.sub(r"[^a-z0-9]+", "-", text)
     return text.strip("-") or "experiment"
+
+
+def _sha256_bytes(payload: bytes) -> str:
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _sha256_file(path: Path) -> str | None:
+    try:
+        h = hashlib.sha256()
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(8192), b""):
+                h.update(chunk)
+        return h.hexdigest()
+    except Exception:
+        return None
+
+
+def _rel(root: Path, path: Path) -> str:
+    try:
+        return str(path.resolve().relative_to(root.resolve())).replace("\\", "/")
+    except Exception:
+        return str(path).replace("\\", "/")
+
+
+def _parse_arg(tokens: list[str], flag: str) -> str | None:
+    if flag in tokens:
+        i = tokens.index(flag)
+        return tokens[i + 1] if i + 1 < len(tokens) else None
+    prefix = flag + "="
+    for t in tokens:
+        if t.startswith(prefix):
+            return t[len(prefix) :]
+    return None
+
+
+def _set_arg(tokens: list[str], flag: str, value: str) -> None:
+    if flag in tokens:
+        i = tokens.index(flag)
+        if i + 1 < len(tokens):
+            tokens[i + 1] = value
+            return
+        tokens.append(value)
+        return
+    prefix = flag + "="
+    for i, t in enumerate(tokens):
+        if t.startswith(prefix):
+            tokens[i] = f"{flag}={value}"
+            return
+    tokens.extend([flag, value])
+
+
+def _format_float(x: Any) -> str:
+    try:
+        return f"{float(x):.6f}"
+    except Exception:
+        return str(x)
+
+
+def load_json(path: Path) -> dict[str, Any]:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def extract_metrics_for_log(metrics_json: dict[str, Any]) -> dict[str, Any]:
+    backtest = metrics_json.get("backtest")
+    if not isinstance(backtest, dict):
+        raise RuntimeError("metrics.json missing required 'backtest' section.")
+
+    split = (
+        metrics_json.get("split", {})
+        if isinstance(metrics_json.get("split"), dict)
+        else {}
+    )
+    test_split = split.get("test", {}) if isinstance(split.get("test"), dict) else {}
+    test_start = str(test_split.get("start") or "N/A")
+    test_end = str(test_split.get("end") or "N/A")
+    test_period = f"{test_start} to {test_end}"
+
+    roi = backtest.get("roi")
+    total_stake = backtest.get("total_stake")
+    total_profit = backtest.get("total_profit")
+    total_return = None
+    try:
+        if total_stake is not None and total_profit is not None:
+            total_return = float(total_stake) + float(total_profit)
+    except Exception:
+        total_return = None
+
+    run_kind = str(metrics_json.get("run_kind") or "holdout")
+    rolling = "yes" if run_kind == "rolling_holdout" else "no"
+
+    step14 = metrics_json.get("step14") or {}
+    step14_roi = step14.get("roi") if isinstance(step14, dict) else None
+    pooled_vs_step14_mismatch = "no"
+    preferred_roi = "pooled"
+    if rolling == "yes" and step14_roi is not None and roi is not None:
+        try:
+            if (float(roi) >= 0) != (float(step14_roi) >= 0):
+                pooled_vs_step14_mismatch = "yes"
+            preferred_roi = "step14"
+        except Exception:
+            preferred_roi = "step14"
+
+    return {
+        "roi": float(roi) if roi is not None else None,
+        "total_stake": float(total_stake) if total_stake is not None else None,
+        "total_return": float(total_return) if total_return is not None else None,
+        "n_bets": int(backtest.get("n_bets"))
+        if backtest.get("n_bets") is not None
+        else None,
+        "max_drawdown": float(backtest.get("max_drawdown"))
+        if backtest.get("max_drawdown") is not None
+        else None,
+        "test_period": test_period,
+        "test_start": test_start,
+        "test_end": test_end,
+        "rolling": rolling,
+        "design_window": "N/A",
+        "eval_window": "N/A",
+        "paired_delta": "N/A",
+        "pooled_vs_step14_mismatch": pooled_vs_step14_mismatch,
+        "preferred_roi": preferred_roi,
+        "config_hash_sha256": metrics_json.get("config_hash_sha256"),
+        "config_used_path": metrics_json.get("config_used_path"),
+        "data_cutoff": metrics_json.get("data_cutoff") or {},
+        "run_kind": run_kind,
+    }
+
+
+def propose_decision(
+    *,
+    delta_roi_ci95: list[float],
+    delta_max_drawdown: float | None,
+    robustness: list[dict[str, Any]],
+    leakage_pre_race_only: str,
+) -> tuple[str, str, list[str]]:
+    flags: list[str] = []
+    lo, hi = float(delta_roi_ci95[0]), float(delta_roi_ci95[1])
+    if lo <= 0 <= hi:
+        flags.append("CI_crosses_0")
+    if delta_max_drawdown is not None and delta_max_drawdown > 0:
+        flags.append("drawdown_worse")
+
+    neg = 0
+    tot = 0
+    for row in robustness:
+        v = row.get("roi")
+        b = row.get("baseline_roi")
+        vs = row.get("stake", 0.0)
+        bs = row.get("baseline_stake", 0.0)
+        if v is None or b is None:
+            continue
+        try:
+            if float(vs) <= 0 or float(bs) <= 0:
+                continue
+            tot += 1
+            if float(v) - float(b) < 0:
+                neg += 1
+        except Exception:
+            continue
+    if tot > 0 and neg / tot > 0.5:
+        flags.append("robustness_worse_majority")
+
+    if leakage_pre_race_only == "no":
+        flags.append("leakage_check_failed_or_unknown")
+        return "needs-human", "Leakage safety check did not pass (heuristic).", flags
+
+    if hi < 0:
+        return "reject", "delta_ROI_CI95.upper < 0", flags
+
+    accept_drawdown_ok = delta_max_drawdown is None or delta_max_drawdown <= 0
+    accept_robust_ok = tot == 0 or neg / tot <= 0.5
+    if lo > 0 and accept_drawdown_ok and accept_robust_ok:
+        return (
+            "accept",
+            "delta_ROI_CI95.lower > 0 and no robustness/drawdown regression.",
+            flags,
+        )
+
+    return (
+        "iterate",
+        "Uncertain improvement (CI crosses 0 and/or robustness/drawdown unclear).",
+        flags,
+    )
+
+
+PLACEHOLDER_RE = re.compile(r"<[^>]+>")
+
+
+def ensure_no_placeholders(text: str) -> None:
+    bad: list[str] = []
+    for m in PLACEHOLDER_RE.finditer(text):
+        bad.append(m.group(0))
+        if len(bad) >= 5:
+            break
+    if bad:
+        raise RuntimeError(
+            "Experiment log contains template placeholders: " + ", ".join(bad)
+        )
+
+
+def validate_schema(result: dict[str, Any], schema_path: Path) -> None:
+    try:
+        import jsonschema  # type: ignore[import-untyped]
+    except Exception as exc:
+        raise RuntimeError(
+            "jsonschema is required for experiment_result validation. "
+            "Install with: pip install jsonschema"
+        ) from exc
+
+    schema = json.loads(schema_path.read_text(encoding="utf-8-sig"))
+    jsonschema.validate(instance=result, schema=schema)
 
 
 def _format_metric(value):
@@ -330,6 +607,173 @@ def detect_experiment_config(root: Path) -> str | None:
     return configs[0]
 
 
+def render_experiment_md(
+    *,
+    run_id: str,
+    plan: dict[str, Any],
+    base_commit: str,
+    head_commit: str,
+    variant_metrics: dict[str, Any],
+    baseline_metrics: dict[str, Any],
+    stats: dict[str, Any],
+    breakdowns: dict[str, Any],
+    decision: dict[str, Any],
+    artifacts: dict[str, Any],
+    holdout_tokens: list[str],
+    bootstrap_seed: int,
+) -> str:
+    title = str(plan.get("title") or "").strip()
+    hypothesis = str(plan.get("hypothesis") or "").strip()
+    risk_level = str(plan.get("risk_level") or "medium").strip()
+    max_diff_size = int(plan.get("max_diff_size") or 0)
+
+    test_period = str(variant_metrics.get("test_period") or "N/A")
+    eval_cmd = " ".join([sys.executable, *holdout_tokens]).replace("\\", "/")
+
+    changed_files = artifacts.get("changed_files") or []
+    change_summary = "(unavailable)"
+    if changed_files:
+        items = ", ".join(changed_files[:6])
+        suffix = "" if len(changed_files) <= 6 else f" (+{len(changed_files) - 6} more)"
+        change_summary = f"{items}{suffix}"
+
+    # Robustness tables.
+    odds_rows = breakdowns.get("odds_bucket") or []
+    odds_table = [
+        "| odds_bucket | ROI | stake | bets | baseline_ROI | baseline_stake | baseline_bets |",
+        "|---|---:|---:|---:|---:|---:|---:|",
+    ]
+    for r in odds_rows:
+        odds_table.append(
+            "| {bucket} | {roi} | {stake} | {bets} | {b_roi} | {b_stake} | {b_bets} |".format(
+                bucket=r.get("odds_bucket"),
+                roi="N/A" if r.get("roi") is None else _format_float(r.get("roi")),
+                stake=_format_float(r.get("stake")),
+                bets=int(r.get("bets") or 0),
+                b_roi="N/A"
+                if r.get("baseline_roi") is None
+                else _format_float(r.get("baseline_roi")),
+                b_stake=_format_float(r.get("baseline_stake")),
+                b_bets=int(r.get("baseline_bets") or 0),
+            )
+        )
+
+    month_rows = breakdowns.get("month") or []
+    month_table = [
+        "| month | ROI | stake | bets | baseline_ROI | baseline_stake | baseline_bets |",
+        "|---|---:|---:|---:|---:|---:|---:|",
+    ]
+    for r in month_rows:
+        month_table.append(
+            "| {month} | {roi} | {stake} | {bets} | {b_roi} | {b_stake} | {b_bets} |".format(
+                month=r.get("month"),
+                roi="N/A" if r.get("roi") is None else _format_float(r.get("roi")),
+                stake=_format_float(r.get("stake")),
+                bets=int(r.get("bets") or 0),
+                b_roi="N/A"
+                if r.get("baseline_roi") is None
+                else _format_float(r.get("baseline_roi")),
+                b_stake=_format_float(r.get("baseline_stake")),
+                b_bets=int(r.get("baseline_bets") or 0),
+            )
+        )
+
+    lines: list[str] = []
+    lines.append(f"# Experiment {run_id} - {title}")
+    lines.append("")
+    lines.append("## Metadata")
+    lines.append(f"- run_id: {run_id}")
+    lines.append(f"- seed_id: {plan.get('seed_id')}")
+    lines.append(f"- base_commit: {base_commit}")
+    lines.append(f"- head_commit: {head_commit}")
+    lines.append(f"- python_executable: {sys.executable}")
+    lines.append(f"- bootstrap_seed: {bootstrap_seed}")
+    lines.append("- unit_of_resampling: day-block (YYYY-MM-DD)")
+    lines.append("")
+    lines.append("## Hypothesis")
+    lines.append(hypothesis or "(missing)")
+    lines.append("")
+    lines.append("## Experimental Design")
+    lines.append(f"- test_period: {test_period}")
+    lines.append(f"- eval_command: `{eval_cmd}`")
+    lines.append(
+        f"- config_used (variant): {artifacts.get('config_used_variant', 'N/A')}"
+    )
+    lines.append(
+        f"- config_used (baseline): {artifacts.get('config_used_baseline', 'N/A')}"
+    )
+    lines.append("")
+    lines.append("## Change Summary")
+    lines.append(f"Changed files: {change_summary}.")
+    lines.append("")
+    lines.append("## Risk")
+    lines.append("- Experiment type: experiment")
+    lines.append(f"- risk_level: {risk_level}")
+    lines.append(f"- max_diff_size: {max_diff_size}")
+    lines.append("")
+    lines.append("## Metrics (required)")
+    lines.append(f"- ROI: {variant_metrics.get('roi')}")
+    lines.append(f"- Total stake: {variant_metrics.get('total_stake')}")
+    lines.append(f"- n_bets: {variant_metrics.get('n_bets')}")
+    lines.append(f"- Test period: {test_period}")
+    lines.append(f"- Max drawdown: {variant_metrics.get('max_drawdown')}")
+    lines.append("- ROI definition: ROI = profit / stake, profit = return - stake.")
+    lines.append(f"- Rolling: {variant_metrics.get('rolling')}")
+    lines.append(f"- Design window: {variant_metrics.get('design_window', 'N/A')}")
+    lines.append(f"- Eval window: {variant_metrics.get('eval_window', 'N/A')}")
+    lines.append(
+        f"- Paired delta vs baseline: {variant_metrics.get('paired_delta', 'N/A')}"
+    )
+    lines.append(
+        f"- Pooled vs step14 sign mismatch: {variant_metrics.get('pooled_vs_step14_mismatch')}"
+    )
+    lines.append(
+        f"- Preferred ROI for decisions: {variant_metrics.get('preferred_roi')}"
+    )
+    lines.append("")
+    lines.append("## Baseline (point estimates)")
+    lines.append(f"- baseline_ROI: {baseline_metrics.get('roi')}")
+    lines.append(f"- baseline_total_stake: {baseline_metrics.get('total_stake')}")
+    lines.append(f"- baseline_n_bets: {baseline_metrics.get('n_bets')}")
+    lines.append(f"- baseline_max_drawdown: {baseline_metrics.get('max_drawdown')}")
+    lines.append("")
+    lines.append("## Paired Delta vs Baseline")
+    lines.append(f"- delta_ROI: {decision.get('delta_roi')}")
+    lines.append(f"- delta_max_drawdown: {decision.get('delta_max_drawdown')}")
+    lines.append("")
+    lines.append("## Uncertainty (day-block bootstrap)")
+    lines.append(f"- ROI_variant_CI95: {stats.get('roi_ci95')}")
+    lines.append(f"- ROI_baseline_CI95: {stats.get('baseline_roi_ci95')}")
+    lines.append(f"- delta_ROI_CI95: {stats.get('delta_roi_ci95')}")
+    lines.append(f"- p_one_sided (P(delta<=0)): {stats.get('p_one_sided_delta_le_0')}")
+    lines.append(f"- bootstrap: {stats.get('bootstrap')}")
+    lines.append("")
+    lines.append("## Robustness")
+    lines.append("### ROI by odds bucket")
+    lines.extend(odds_table)
+    lines.append("")
+    lines.append("### ROI by month")
+    lines.extend(month_table)
+    lines.append("")
+    lines.append("## Artifacts")
+    for k, v in artifacts.items():
+        if k == "changed_files":
+            continue
+        lines.append(f"- {k}: {v}")
+    lines.append("")
+    lines.append("## Decision")
+    lines.append(f"- decision: {decision.get('decision')}")
+    lines.append(f"- rationale: {decision.get('rationale')}")
+    lines.append(f"- flags: {', '.join(decision.get('flags') or []) or '(none)'}")
+    lines.append("")
+    lines.append("## Notes")
+    lines.append(
+        f"- leakage_check_pre_race_only: {decision.get('leakage_pre_race_only', 'unknown')}"
+    )
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def render_experiment_log(
     template: Path, out_path: Path, plan: dict, result: dict
 ) -> None:
@@ -420,6 +864,7 @@ def main() -> int:
     p.add_argument(
         "--metrics-schema", default="schemas/agent/experiment_result.schema.json"
     )
+    p.add_argument("--bootstrap-b", type=int, default=2000)
     args = p.parse_args()
 
     root = repo_root()
@@ -442,6 +887,47 @@ def main() -> int:
     branch = f"agent/{run_id}-{slugify(plan['title'])}"
     run(["git", "checkout", "-b", branch], cwd=root)
 
+    base_commit = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout.strip()
+
+    # Baseline (cacheable): run holdout on base_commit before codex changes.
+    eval_cmds = coerce_eval_command(plan.get("eval_command"))
+    holdout_tokens = select_holdout_tokens(eval_cmds, run_id)
+    test_start = _parse_arg(holdout_tokens, "--test-start")
+    test_end = _parse_arg(holdout_tokens, "--test-end")
+    if not test_start or not test_end:
+        raise RuntimeError("eval_command must include --test-start and --test-end.")
+
+    cli_cfg = _parse_arg(holdout_tokens, "--config")
+    cfg_path = Path(cli_cfg) if cli_cfg else (root / "config" / "config.yaml")
+    cfg_path_abs = cfg_path if cfg_path.is_absolute() else (root / cfg_path)
+    baseline_cfg_hash = _sha256_file(cfg_path_abs)
+    baseline_key = compute_baseline_key(
+        base_commit, test_start, test_end, baseline_cfg_hash
+    )
+    baseline_dir = root / "artifacts" / "baselines" / baseline_key
+    baseline_metrics_path = baseline_dir / "metrics.json"
+    baseline_pnl_path = baseline_dir / "per_bet_pnl.csv"
+
+    if not (baseline_metrics_path.exists() and baseline_pnl_path.exists()):
+        print(f"[baseline] cache miss -> running baseline in {baseline_dir}")
+        run_holdout(
+            root,
+            holdout_tokens,
+            name=f"baseline_{baseline_key[:8]}",
+            out_dir=baseline_dir,
+            config_path=None,
+        )
+    else:
+        print(f"[baseline] cache hit: {baseline_dir}")
+
+    baseline_extracted = extract_metrics_for_log(load_json(baseline_metrics_path))
+
     log_dir = root / "artifacts" / "agent"
     log_dir.mkdir(parents=True, exist_ok=True)
     codex_log = log_dir / f"{plan['run_id']}_implement.log"
@@ -451,70 +937,224 @@ def main() -> int:
     ensure_no_disallowed_changes(root)
     ensure_substantive_changes(root)
 
-    eval_cmd = coerce_eval_command(plan.get("eval_command"))
-    if not eval_cmd:
-        raise RuntimeError("eval_command is empty.")
-    normalized_cmds = [normalize_eval_command(cmd, run_id) for cmd in eval_cmd]
-    normalized_cmds = [cmd for cmd in normalized_cmds if cmd]
-    if not normalized_cmds:
-        normalized_cmds = [default_holdout_command(run_id)]
-    config_path = detect_experiment_config(root)
-    if config_path:
-        normalized_cmds = [f"$env:KEIBA_CONFIG_PATH='{config_path}'"] + normalized_cmds
-    run_shell_commands(normalized_cmds, cwd=root)
+    exp_config_path = detect_experiment_config(root)
 
-    metrics_path = root / substitute_metrics_path(plan["metrics_path"], run_id)
-    if not metrics_path.exists():
-        raise RuntimeError(f"metrics_path not found: {metrics_path}")
-    metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
-
-    normalized = normalize_metrics(metrics)
-    run_dir = metrics.get("run_dir", f"data/holdout_runs/{run_id}")
-    metrics_json_path = str(metrics_path.relative_to(root)).replace("\\", "/")
-    report_path = "N/A"
-    comparison_path = "N/A"
-    report_candidate = root / run_dir / "report" / "backtest.md"
-    if report_candidate.exists():
-        report_path = str(report_candidate.relative_to(root)).replace("\\", "/")
-    comparison_candidate = root / run_dir / "comparison.json"
-    if comparison_candidate.exists():
-        comparison_path = str(comparison_candidate.relative_to(root)).replace("\\", "/")
-
-    result = {
-        "run_id": run_id,
-        "seed_id": plan["seed_id"],
-        "title": plan["title"],
-        "status": metrics.get("status", "inconclusive"),
-        "metrics": normalized,
-        "artifacts": {
-            "metrics_json": metrics_json_path,
-            "comparison_json": comparison_path,
-            "report": report_path,
-        },
-    }
-    result_path = root / "experiments" / "runs" / f"{plan['run_id']}.json"
-    result_path.write_text(
-        json.dumps(result, ensure_ascii=True, indent=2), encoding="utf-8"
-    )
-
-    template = root / "docs" / "experiments" / "_template.md"
-    log_path = root / "docs" / "experiments" / f"{plan['run_id']}.md"
-    render_experiment_log(template, log_path, plan, result)
-
+    # Commit code changes before evaluation so head_commit is stable/reproducible.
     run(["git", "add", "-A"], cwd=root)
-    status = subprocess.run(
-        ["git", "status", "--porcelain"],
+    run(["git", "commit", "-m", f"agent: {run_id} {slugify(plan['title'])}"], cwd=root)
+    head_commit = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
         cwd=root,
         capture_output=True,
         text=True,
         check=False,
     ).stdout.strip()
-    if not status:
-        print("No changes to commit.")
-        return 0
+    changed_files = subprocess.run(
+        ["git", "diff", "--name-only", f"{base_commit}..{head_commit}"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout.splitlines()
+    changed_files = [p.strip() for p in changed_files if p.strip()]
 
-    commit_msg = f"agent: {plan['run_id']} {slugify(plan['title'])}"
-    run(["git", "commit", "-m", commit_msg], cwd=root)
+    # Variant evaluation (uses experiment config if one was modified).
+    run_dir = root / "data" / "holdout_runs" / run_id
+    print(f"[variant] running eval into {run_dir}")
+    run_holdout(
+        root,
+        holdout_tokens,
+        name=run_id,
+        out_dir=run_dir,
+        config_path=exp_config_path,
+    )
+
+    variant_metrics_path = run_dir / "metrics.json"
+    variant_pnl_path = run_dir / "per_bet_pnl.csv"
+    if not variant_metrics_path.exists():
+        raise RuntimeError(f"metrics.json not found: {variant_metrics_path}")
+    if not variant_pnl_path.exists():
+        raise RuntimeError(f"per_bet_pnl.csv not found: {variant_pnl_path}")
+
+    variant_extracted = extract_metrics_for_log(load_json(variant_metrics_path))
+
+    exp_art_dir = root / "artifacts" / "experiments" / run_id
+    exp_art_dir.mkdir(parents=True, exist_ok=True)
+    variant_pnl_art = exp_art_dir / "per_bet_pnl.csv"
+    variant_pnl_art.write_bytes(variant_pnl_path.read_bytes())
+
+    bootstrap_seed = int(_sha256_bytes(run_id.encode("utf-8"))[:8], 16)
+    summary_stats_path = exp_art_dir / "summary_stats.json"
+    run(
+        [
+            sys.executable,
+            "scripts/stats/block_bootstrap.py",
+            "--variant",
+            str(variant_pnl_art),
+            "--baseline",
+            str(baseline_pnl_path),
+            "--out",
+            str(summary_stats_path),
+            "--B",
+            str(int(args.bootstrap_b)),
+            "--seed",
+            str(bootstrap_seed),
+        ],
+        cwd=root,
+    )
+    summary_stats = load_json(summary_stats_path)
+    stats = summary_stats["stats"]
+    breakdowns = summary_stats["breakdowns"]
+
+    delta_roi = None
+    if variant_extracted["roi"] is not None and baseline_extracted["roi"] is not None:
+        delta_roi = float(variant_extracted["roi"]) - float(baseline_extracted["roi"])
+    delta_dd = None
+    if (
+        variant_extracted["max_drawdown"] is not None
+        and baseline_extracted["max_drawdown"] is not None
+    ):
+        delta_dd = float(variant_extracted["max_drawdown"]) - float(
+            baseline_extracted["max_drawdown"]
+        )
+
+    if delta_roi is not None and variant_extracted.get("rolling") == "no":
+        variant_extracted["paired_delta"] = _format_float(delta_roi)
+
+    leakage_pre_race_only = "yes"
+    if any(p.startswith("py64_analysis/src/keiba/features/") for p in changed_files):
+        leakage_pre_race_only = "no"
+
+    decision_value, rationale, flags = propose_decision(
+        delta_roi_ci95=stats["delta_roi_ci95"],
+        delta_max_drawdown=delta_dd,
+        robustness=breakdowns.get("odds_bucket") or [],
+        leakage_pre_race_only=leakage_pre_race_only,
+    )
+    status = "inconclusive"
+    if decision_value == "accept":
+        status = "pass"
+    elif decision_value == "reject":
+        status = "fail"
+
+    artifacts = {
+        "metrics_json": _rel(root, variant_metrics_path),
+        "baseline_metrics_json": _rel(root, baseline_metrics_path),
+        "per_bet_pnl": _rel(root, variant_pnl_art),
+        "baseline_per_bet_pnl": _rel(root, baseline_pnl_path),
+        "summary_stats_json": _rel(root, summary_stats_path),
+        "report": _rel(root, run_dir / "report" / "backtest.md")
+        if (run_dir / "report" / "backtest.md").exists()
+        else "N/A",
+        "config_used_variant": _rel(root, run_dir / "config_used.yaml")
+        if (run_dir / "config_used.yaml").exists()
+        else "N/A",
+        "config_used_baseline": _rel(root, baseline_dir / "config_used.yaml")
+        if (baseline_dir / "config_used.yaml").exists()
+        else "N/A",
+        "changed_files": changed_files,
+    }
+
+    result = {
+        "run_id": run_id,
+        "seed_id": plan["seed_id"],
+        "title": plan["title"],
+        "status": status,
+        "metrics": {
+            "roi": variant_extracted["roi"],
+            "total_stake": variant_extracted["total_stake"],
+            "total_return": variant_extracted["total_return"],
+            "n_bets": variant_extracted["n_bets"],
+            "n_races": summary_stats["variant"]["n_races"],
+            "n_days": summary_stats["variant"]["n_days"],
+            "max_drawdown": variant_extracted["max_drawdown"],
+            "test_period": variant_extracted["test_period"],
+            "rolling": variant_extracted["rolling"],
+            "design_window": variant_extracted["design_window"],
+            "eval_window": variant_extracted["eval_window"],
+            "paired_delta": variant_extracted["paired_delta"],
+            "pooled_vs_step14_mismatch": variant_extracted["pooled_vs_step14_mismatch"],
+            "preferred_roi": variant_extracted["preferred_roi"],
+        },
+        "baseline_metrics": {
+            "roi": baseline_extracted["roi"],
+            "total_stake": baseline_extracted["total_stake"],
+            "total_return": baseline_extracted["total_return"],
+            "n_bets": baseline_extracted["n_bets"],
+            "n_races": summary_stats["baseline"]["n_races"],
+            "n_days": summary_stats["baseline"]["n_days"],
+            "max_drawdown": baseline_extracted["max_drawdown"],
+            "test_period": baseline_extracted["test_period"],
+        },
+        "deltas": {"delta_roi": delta_roi, "delta_max_drawdown": delta_dd},
+        "stats": {
+            "roi_ci95": stats["roi_ci95"],
+            "baseline_roi_ci95": stats["baseline_roi_ci95"],
+            "delta_roi_ci95": stats["delta_roi_ci95"],
+            "p_one_sided_delta_le_0": stats["p_one_sided_delta_le_0"],
+            "bootstrap": stats["bootstrap"],
+            "resampling_unit": stats.get("resampling_unit"),
+        },
+        "breakdowns": breakdowns,
+        "reproducibility": {
+            "base_commit": base_commit,
+            "head_commit": head_commit,
+            "config_hash": variant_extracted.get("config_hash_sha256"),
+            "eval_command": " ".join([sys.executable, *holdout_tokens]).replace(
+                "\\", "/"
+            ),
+            "python_executable": sys.executable,
+            "environment_summary": {
+                "platform": platform.platform(),
+                "python_version": platform.python_version(),
+                "runner_os": os.environ.get("RUNNER_OS"),
+            },
+            "bootstrap_seed": bootstrap_seed,
+        },
+        "decision": {
+            "decision": decision_value,
+            "rationale": rationale,
+            "flags": flags,
+            "leakage_pre_race_only": leakage_pre_race_only,
+        },
+        "artifacts": artifacts,
+    }
+
+    result_path = root / "experiments" / "runs" / f"{plan['run_id']}.json"
+    result_path.write_text(
+        json.dumps(result, ensure_ascii=True, indent=2), encoding="utf-8"
+    )
+
+    md_text = render_experiment_md(
+        run_id=run_id,
+        plan=plan,
+        base_commit=base_commit,
+        head_commit=head_commit,
+        variant_metrics=variant_extracted,
+        baseline_metrics=baseline_extracted,
+        stats=stats,
+        breakdowns=breakdowns,
+        decision={
+            "decision": decision_value,
+            "rationale": rationale,
+            "flags": flags,
+            "delta_roi": delta_roi,
+            "delta_max_drawdown": delta_dd,
+            "leakage_pre_race_only": leakage_pre_race_only,
+        },
+        artifacts=artifacts,
+        holdout_tokens=holdout_tokens,
+        bootstrap_seed=bootstrap_seed,
+    )
+    ensure_no_placeholders(md_text)
+
+    log_path = root / "docs" / "experiments" / f"{plan['run_id']}.md"
+    log_path.write_text(md_text, encoding="utf-8")
+
+    validate_schema(result, root / args.metrics_schema)
+
+    run(["git", "add", str(result_path), str(log_path)], cwd=root)
+    run(["git", "commit", "-m", f"agent: {plan['run_id']} results"], cwd=root)
     print(f"Committed {plan['run_id']} on {branch}")
     return 0
 
