@@ -9,7 +9,7 @@ from typing import Optional
 
 import yaml
 
-from ..config import PROJECT_ROOT
+from ..config import PROJECT_ROOT, load_yaml_with_extends
 
 
 def resolve_config_path(cli_config: Optional[str]) -> tuple[Path, str]:
@@ -25,8 +25,7 @@ def resolve_config_path(cli_config: Optional[str]) -> tuple[Path, str]:
 def load_yaml(path: Path) -> dict:
     if not path.exists():
         raise SystemExit(f"config not found: {path}")
-    data = yaml.safe_load(path.read_text(encoding="utf-8"))
-    return data or {}
+    return load_yaml_with_extends(path)
 
 
 def dump_yaml_canonical(data: dict, path: Path) -> None:

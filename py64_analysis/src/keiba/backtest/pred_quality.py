@@ -32,6 +32,7 @@ class PredictionQuality:
     brier_model: float
     brier_blend: float
     brier_calibrated: float
+    ece_calibrated: float
     calibration_method: Optional[str]
 
 
@@ -40,6 +41,26 @@ def _ensure_numeric_frame(X: pd.DataFrame, feature_names: list[str]) -> pd.DataF
     X2 = X.reindex(columns=feature_names, fill_value=0.0)
     X2 = X2.apply(pd.to_numeric, errors="coerce").fillna(0.0).astype(float)
     return X2
+
+
+def expected_calibration_error(y_true: np.ndarray, y_prob: np.ndarray, n_bins: int = 10) -> float:
+    """Compute (weighted) Expected Calibration Error for binary probabilities."""
+    y = np.asarray(y_true, dtype=float).reshape(-1)
+    p = np.asarray(y_prob, dtype=float).reshape(-1)
+    if y.size == 0 or p.size == 0 or y.size != p.size:
+        return float("nan")
+    p = np.clip(p, 0.0, 1.0)
+    n = float(p.size)
+    bins = np.linspace(0.0, 1.0, int(n_bins) + 1)
+    idx = np.digitize(p, bins[1:-1], right=False)  # 0..n_bins-1
+    ece = 0.0
+    for b in range(int(n_bins)):
+        mask = idx == b
+        if not np.any(mask):
+            continue
+        frac = float(np.sum(mask)) / n
+        ece += frac * abs(float(np.mean(p[mask])) - float(np.mean(y[mask])))
+    return float(ece)
 
 
 def _surface_label(val) -> str:
@@ -184,6 +205,8 @@ def compute_prediction_quality(
     b_blend = float(brier_score_loss(y_true, p_blend))
     b_cal = float(brier_score_loss(y_true, p_cal))
 
+    ece_cal = float(expected_calibration_error(y_true, p_cal, n_bins=int(n_bins)))
+
     pq = PredictionQuality(
         n_samples=int(len(y_true)),
         logloss_market=ll_mkt,
@@ -194,6 +217,7 @@ def compute_prediction_quality(
         brier_model=b_model,
         brier_blend=b_blend,
         brier_calibrated=b_cal,
+        ece_calibrated=ece_cal,
         calibration_method=calibration_method,
     )
 

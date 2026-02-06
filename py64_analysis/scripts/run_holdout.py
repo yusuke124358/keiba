@@ -90,7 +90,21 @@ def main() -> None:
         save_config_used,
     )
 
-    resolved_config_path, config_origin = resolve_config_path(args.config)
+    exp_cfg = None
+    if args.config is None and not os.environ.get("KEIBA_CONFIG_PATH"):
+        cand = Path("config") / "experiments" / f"{args.name}.yaml"
+        if cand.exists():
+            exp_cfg = cand
+        else:
+            cand = Path("config") / "experiments" / f"{args.name}.yml"
+            if cand.exists():
+                exp_cfg = cand
+
+    if exp_cfg is not None:
+        resolved_config_path = exp_cfg.resolve()
+        config_origin = f"auto:{exp_cfg}"
+    else:
+        resolved_config_path, config_origin = resolve_config_path(args.config)
     os.environ["KEIBA_CONFIG_PATH"] = str(resolved_config_path)
 
     cfg = get_config()

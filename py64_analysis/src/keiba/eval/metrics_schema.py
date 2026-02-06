@@ -21,6 +21,7 @@ class MetricsV01:
     prob_variant_used: str = "unknown"
     backtest: Dict[str, Optional[Any]] = field(default_factory=dict)
     pred_quality: Dict[str, Optional[Any]] = field(default_factory=dict)
+    calibration: Dict[str, Optional[Any]] = field(default_factory=dict)
     step14: Optional[Dict[str, Optional[Any]]] = None
     incomparable_reasons: List[str] = field(default_factory=list)
 

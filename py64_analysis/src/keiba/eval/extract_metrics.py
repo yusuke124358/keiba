@@ -276,6 +276,9 @@ def extract_metrics_from_holdout_run(
             "brier_blend": _coerce_float(_safe_get(summary, "pred_quality.brier_blend")),
             "brier_calibrated": _coerce_float(_safe_get(summary, "pred_quality.brier_calibrated")),
         },
+        calibration={
+            "ece": _coerce_float(_safe_get(summary, "pred_quality.ece_calibrated")),
+        },
         step14=None,
         incomparable_reasons=[],
     )
