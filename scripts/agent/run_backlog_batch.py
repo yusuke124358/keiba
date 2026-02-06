@@ -61,7 +61,9 @@ def git_has_ref(root: Path, ref: str) -> bool:
 
 
 def git_path(root: Path, rel: str) -> Path:
-    p = run(["git", "rev-parse", "--git-path", rel], cwd=root, capture_output=True).stdout.strip()
+    p = run(
+        ["git", "rev-parse", "--git-path", rel], cwd=root, capture_output=True
+    ).stdout.strip()
     pp = Path(p)
     return pp if pp.is_absolute() else root / pp
 
@@ -69,7 +71,10 @@ def git_path(root: Path, rel: str) -> Path:
 def abort_in_progress_git_ops(root: Path) -> None:
     # A previous run can die mid-git-operation and leave the repo un-checkoutable.
     # We abort these states so we can reliably stash/checkout and update backlog status.
-    if git_path(root, "rebase-apply").exists() or git_path(root, "rebase-merge").exists():
+    if (
+        git_path(root, "rebase-apply").exists()
+        or git_path(root, "rebase-merge").exists()
+    ):
         run(["git", "rebase", "--abort"], cwd=root, check=False)
     if git_has_ref(root, "MERGE_HEAD"):
         run(["git", "merge", "--abort"], cwd=root, check=False)
