@@ -7,10 +7,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-import yaml
+import yaml  # type: ignore[import-untyped]
 
-from .metrics_schema import MetricsV01, validate_metrics_v01
 from ..config import PROJECT_ROOT, get_data_path
+from .metrics_schema import MetricsV01, validate_metrics_v01
 
 
 def _project_root() -> Path:
@@ -58,6 +58,7 @@ def _git_commit() -> Optional[str]:
 def _get_db_max_race_date() -> Optional[str]:
     try:
         from sqlalchemy import text
+
         from ..db.loader import get_session
 
         sess = get_session()
@@ -94,7 +95,7 @@ def _get_data_cutoff() -> Dict[str, Optional[str]]:
 
 
 def _safe_get(d: dict, path: str, default=None):
-    cur = d
+    cur: Any = d
     for key in path.split("."):
         if not isinstance(cur, dict):
             return default
@@ -151,7 +152,11 @@ def _universe_from_config(config_path: Optional[Path]) -> Dict[str, Any]:
         return {}
     track_codes = sorted(str(x) for x in (uni.get("track_codes") or []))
     exclude_ids = [str(x) for x in (uni.get("exclude_race_ids") or [])]
-    h = hashlib.sha256("\n".join(sorted(exclude_ids)).encode("utf-8")).hexdigest() if exclude_ids else None
+    h = (
+        hashlib.sha256("\n".join(sorted(exclude_ids)).encode("utf-8")).hexdigest()
+        if exclude_ids
+        else None
+    )
     return {
         "track_codes": track_codes,
         "require_results": bool(uni.get("require_results")) if "require_results" in uni else None,
@@ -193,7 +198,7 @@ def _split_from_summary(summary: dict) -> Dict[str, Dict[str, Optional[Any]]]:
 
 def _pick_step14_from_csv(path: Path) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
     try:
-        import pandas as pd
+        import pandas as pd  # type: ignore[import-untyped]
     except Exception:
         return None, "pandas_unavailable"
     try:
@@ -257,8 +262,12 @@ def extract_metrics_from_holdout_run(
             "closing_odds_multiplier_quantile": summary.get("closing_odds_multiplier_quantile"),
             "slippage_summary": summary.get("slippage_summary"),
             "slippage_table": summary.get("slippage_table"),
-            "market_prob_method": _infer_market_prob_method(config_path if config_path.exists() else None),
-            "market_prob_mode": _infer_market_prob_mode(config_path if config_path.exists() else None),
+            "market_prob_method": _infer_market_prob_method(
+                config_path if config_path.exists() else None
+            ),
+            "market_prob_mode": _infer_market_prob_mode(
+                config_path if config_path.exists() else None
+            ),
         },
         prob_variant_used=_infer_prob_variant(config_path if config_path.exists() else None),
         backtest={
@@ -271,10 +280,15 @@ def extract_metrics_from_holdout_run(
         pred_quality={
             "logloss_market": _coerce_float(_safe_get(summary, "pred_quality.logloss_market")),
             "logloss_blend": _coerce_float(_safe_get(summary, "pred_quality.logloss_blend")),
-            "logloss_calibrated": _coerce_float(_safe_get(summary, "pred_quality.logloss_calibrated")),
+            "logloss_calibrated": _coerce_float(
+                _safe_get(summary, "pred_quality.logloss_calibrated")
+            ),
             "brier_market": _coerce_float(_safe_get(summary, "pred_quality.brier_market")),
             "brier_blend": _coerce_float(_safe_get(summary, "pred_quality.brier_blend")),
             "brier_calibrated": _coerce_float(_safe_get(summary, "pred_quality.brier_calibrated")),
+        },
+        calibration={
+            "ece": _coerce_float(_safe_get(summary, "pred_quality.ece_calibrated")),
         },
         step14=None,
         incomparable_reasons=[],
@@ -345,16 +359,20 @@ def extract_metrics_from_rolling_run(
 
     backtest = {
         "n_bets": _coerce_int(df["n_bets"].sum()) if "n_bets" in df.columns else None,
-        "total_stake": _coerce_float(df["total_stake"].sum()) if "total_stake" in df.columns else None,
-        "total_profit": _coerce_float(df["total_profit"].sum()) if "total_profit" in df.columns else None,
-        "max_drawdown": _coerce_float(df["max_drawdown"].max()) if "max_drawdown" in df.columns else None,
+        "total_stake": _coerce_float(df["total_stake"].sum())
+        if "total_stake" in df.columns
+        else None,
+        "total_profit": _coerce_float(df["total_profit"].sum())
+        if "total_profit" in df.columns
+        else None,
+        "max_drawdown": _coerce_float(df["max_drawdown"].max())
+        if "max_drawdown" in df.columns
+        else None,
     }
-    if (
-        backtest.get("total_stake") is not None
-        and backtest.get("total_profit") is not None
-        and backtest.get("total_stake", 0) > 0
-    ):
-        backtest["roi"] = backtest["total_profit"] / backtest["total_stake"]
+    total_stake = backtest.get("total_stake")
+    total_profit = backtest.get("total_profit")
+    if total_stake is not None and total_profit is not None and total_stake > 0:
+        backtest["roi"] = total_profit / total_stake
     else:
         backtest["roi"] = None
 
@@ -385,15 +403,29 @@ def extract_metrics_from_rolling_run(
         config_hash_sha256=config_hash,
         data_cutoff=data_cutoff_override or _get_data_cutoff(),
         split={
-            "train": {"start": _min_date("train_start"), "end": _max_date("train_end"), "n_races": _unique_or_none("n_train_races")},
-            "valid": {"start": _min_date("valid_start"), "end": _max_date("valid_end"), "n_races": None},
-            "test": {"start": _min_date("test_start"), "end": _max_date("test_end"), "n_races": _unique_or_none("n_test_races")},
+            "train": {
+                "start": _min_date("train_start"),
+                "end": _max_date("train_end"),
+                "n_races": _unique_or_none("n_train_races"),
+            },
+            "valid": {
+                "start": _min_date("valid_start"),
+                "end": _max_date("valid_end"),
+                "n_races": None,
+            },
+            "test": {
+                "start": _min_date("test_start"),
+                "end": _max_date("test_end"),
+                "n_races": _unique_or_none("n_test_races"),
+            },
         },
         universe=_universe_from_config(config_path),
         betting={
             "buy_t_minus_minutes": _unique_or_none("buy_t_minus_minutes"),
             "closing_odds_multiplier": _unique_or_none("closing_odds_multiplier"),
-            "closing_odds_multiplier_estimated": _unique_or_none("closing_odds_multiplier_estimated"),
+            "closing_odds_multiplier_estimated": _unique_or_none(
+                "closing_odds_multiplier_estimated"
+            ),
             "closing_odds_multiplier_quantile": _unique_or_none("closing_odds_multiplier_quantile"),
             "slippage_summary": None,
             "slippage_table": None,

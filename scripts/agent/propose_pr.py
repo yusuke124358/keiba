@@ -74,6 +74,29 @@ def remote_branch_exists(root: Path, remote: str, branch: str) -> bool:
     return result.returncode == 0
 
 
+def fetch_remote_branch(root: Path, remote: str, branch: str) -> None:
+    """
+    Ensure the remote-tracking ref exists for a given branch.
+
+    GitHub Actions checkout can configure a narrow fetch refspec (only the
+    default branch). Using an explicit refspec here avoids false negatives in
+    remote_branch_exists() and prevents non-fast-forward push errors when a
+    previous run already created the branch on the remote.
+    """
+    if not branch:
+        return
+    run(
+        [
+            "git",
+            "fetch",
+            remote,
+            f"+refs/heads/{branch}:refs/remotes/{remote}/{branch}",
+        ],
+        cwd=root,
+        check=False,
+    )
+
+
 def checkout_branch(root: Path, remote: str, branch: str) -> None:
     """
     Create/reset a local branch, preferring the remote branch if it already exists.
@@ -81,10 +104,45 @@ def checkout_branch(root: Path, remote: str, branch: str) -> None:
     This avoids non-fast-forward push failures when the same branch name already
     exists on the remote (e.g., after a previous run or a closed PR).
     """
+    fetch_remote_branch(root, remote, branch)
     if remote_branch_exists(root, remote, branch):
         run(["git", "checkout", "-B", branch, f"{remote}/{branch}"], cwd=root)
     else:
         run(["git", "checkout", "-B", branch], cwd=root)
+
+
+def push_head_ref(root: Path, remote: str, head_ref: str, max_attempts: int = 3) -> None:
+    attempts = max(1, int(max_attempts))
+    for attempt in range(1, attempts + 1):
+        result = run(
+            ["git", "push", remote, f"HEAD:{head_ref}"],
+            cwd=root,
+            check=False,
+        )
+        if result.returncode == 0:
+            return
+
+        stderr = (result.stderr or "").strip()
+        if attempt >= attempts:
+            raise RuntimeError(
+                f"Command failed ({result.returncode}): git push {remote} HEAD:{head_ref}\n{stderr}"
+            )
+
+        # Remote may have advanced (or branch existed but wasn't fetched due to a
+        # narrow refspec). Rebase onto the latest tip and retry.
+        fetch_remote_branch(root, remote, head_ref)
+        rebase = run(
+            ["git", "rebase", f"{remote}/{head_ref}"],
+            cwd=root,
+            check=False,
+        )
+        if rebase.returncode != 0:
+            run(["git", "rebase", "--abort"], cwd=root, check=False)
+            raise RuntimeError(
+                "git push failed and rebase retry also failed.\n"
+                f"push stderr:\n{stderr}\n"
+                f"rebase stderr:\n{(rebase.stderr or '').strip()}"
+            )
 
 
 def load_backlog(path):
@@ -624,7 +682,7 @@ def main():
             https_url = remote_url
         push_url = https_url.replace("https://", f"https://x-access-token:{token}@")
         run(["git", "remote", "set-url", "--push", "origin", push_url], cwd=root)
-        run(["git", "push", "origin", f"HEAD:{branch}"], cwd=root)
+        push_head_ref(root, "origin", branch)
 
         gh_env = os.environ.copy()
         gh_token = os.environ.get("AUTO_FIX_GH_TOKEN") or os.environ.get("GH_TOKEN")

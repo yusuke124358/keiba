@@ -12,13 +12,13 @@ from dataclasses import dataclass
 from typing import Optional
 
 import numpy as np
-import pandas as pd
+import pandas as pd  # type: ignore[import-untyped]
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..config import get_config
-from ..modeling.train import prepare_training_data, WinProbabilityModel
 from ..modeling.race_softmax import apply_race_softmax
+from ..modeling.train import WinProbabilityModel, prepare_training_data
 
 
 @dataclass(frozen=True)
@@ -32,6 +32,7 @@ class PredictionQuality:
     brier_model: float
     brier_blend: float
     brier_calibrated: float
+    ece_calibrated: float
     calibration_method: Optional[str]
 
 
@@ -40,6 +41,26 @@ def _ensure_numeric_frame(X: pd.DataFrame, feature_names: list[str]) -> pd.DataF
     X2 = X.reindex(columns=feature_names, fill_value=0.0)
     X2 = X2.apply(pd.to_numeric, errors="coerce").fillna(0.0).astype(float)
     return X2
+
+
+def expected_calibration_error(y_true: np.ndarray, y_prob: np.ndarray, n_bins: int = 10) -> float:
+    """Compute (weighted) Expected Calibration Error for binary probabilities."""
+    y = np.asarray(y_true, dtype=float).reshape(-1)
+    p = np.asarray(y_prob, dtype=float).reshape(-1)
+    if y.size == 0 or p.size == 0 or y.size != p.size:
+        return float("nan")
+    p = np.clip(p, 0.0, 1.0)
+    n = float(p.size)
+    bins = np.linspace(0.0, 1.0, int(n_bins) + 1)
+    idx = np.digitize(p, bins[1:-1], right=False)  # 0..n_bins-1
+    ece = 0.0
+    for b in range(int(n_bins)):
+        mask = idx == b
+        if not np.any(mask):
+            continue
+        frac = float(np.sum(mask)) / n
+        ece += frac * abs(float(np.mean(p[mask])) - float(np.mean(y[mask])))
+    return float(ece)
 
 
 def _surface_label(val) -> str:
@@ -101,7 +122,7 @@ def compute_prediction_quality(
       - df_pred（1行=1頭: y_true, p_mkt, p_model, p_blend, p_cal）
       - reliability_df（ビン集計）
     """
-    from sklearn.metrics import log_loss, brier_score_loss
+    from sklearn.metrics import brier_score_loss, log_loss  # type: ignore[import-untyped]
 
     cfg = get_config()
     if buy_t_minus_minutes is None:
@@ -121,13 +142,21 @@ def compute_prediction_quality(
 
     # 予測（校正前）
     if getattr(model, "use_market_offset", False):
-        p_model = model.predict(X2, p_mkt, calibrate=False)
+        model_out = model.predict(X2, p_mkt, calibrate=False)
+        if isinstance(model_out, tuple):
+            model_out = model_out[0]
+        p_model = np.asarray(model_out, dtype=float)
     else:
-        p_model = model.lgb_model.predict(X2) if model.lgb_model is not None else np.zeros(len(X2))
-    p_model = np.asarray(p_model, dtype=float)
+        lgb_out = (
+            model.lgb_model.predict(X2)
+            if model.lgb_model is not None
+            else np.zeros(len(X2), dtype=float)
+        )
+        p_model = np.asarray(lgb_out, dtype=float)
 
     segments = None
-    if getattr(model, "blend_segmented", None) and model.blend_segmented.get("enabled"):
+    blend_segmented = getattr(model, "blend_segmented", None)
+    if isinstance(blend_segmented, dict) and bool(blend_segmented.get("enabled")):
         segments = _surface_segments_from_race_ids(session, race_ids, X.get("is_turf"))
 
     rs_cfg = getattr(cfg.model, "race_softmax", None)
@@ -136,9 +165,10 @@ def compute_prediction_quality(
     if race_softmax_enabled and race_ids is not None:
         w = None
         t = None
-        if getattr(model, "race_softmax_params", None):
-            w = model.race_softmax_params.get("w")
-            t = model.race_softmax_params.get("T")
+        race_softmax_params = getattr(model, "race_softmax_params", None)
+        if isinstance(race_softmax_params, dict):
+            w = race_softmax_params.get("w")
+            t = race_softmax_params.get("T")
         if w is None:
             w = float(getattr(getattr(rs_cfg, "apply", None), "w_default", 0.2))
         if t is None:
@@ -161,11 +191,17 @@ def compute_prediction_quality(
         p_cal = p_blend
         calibration_method = None
     else:
-        p_blend = model.predict(X2, p_mkt, calibrate=False, segments=segments)
+        blend_out = model.predict(X2, p_mkt, calibrate=False, segments=segments)
+        if isinstance(blend_out, tuple):
+            blend_out = blend_out[0]
+        p_blend = np.asarray(blend_out, dtype=float)
 
         # 校正（あれば）
         if getattr(model, "calibrator", None) is not None:
-            p_cal = model.predict(X2, p_mkt, calibrate=True, segments=segments)
+            cal_out = model.predict(X2, p_mkt, calibrate=True, segments=segments)
+            if isinstance(cal_out, tuple):
+                cal_out = cal_out[0]
+            p_cal = np.asarray(cal_out, dtype=float)
             calibration_method = cfg.model.calibration
         else:
             p_cal = p_blend
@@ -184,6 +220,8 @@ def compute_prediction_quality(
     b_blend = float(brier_score_loss(y_true, p_blend))
     b_cal = float(brier_score_loss(y_true, p_cal))
 
+    ece_cal = float(expected_calibration_error(y_true, p_cal, n_bins=int(n_bins)))
+
     pq = PredictionQuality(
         n_samples=int(len(y_true)),
         logloss_market=ll_mkt,
@@ -194,6 +232,7 @@ def compute_prediction_quality(
         brier_model=b_model,
         brier_blend=b_blend,
         brier_calibrated=b_cal,
+        ece_calibrated=ece_cal,
         calibration_method=calibration_method,
     )
 

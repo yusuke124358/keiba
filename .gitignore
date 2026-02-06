@@ -51,6 +51,7 @@ output for 5.2pro/
 output_work/
 artifacts/
 tmp/
+.tmp/
 JRAVANData/
 !artifacts/
 artifacts/*

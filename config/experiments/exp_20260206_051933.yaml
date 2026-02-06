@@ -1,0 +1,5 @@
+extends: ../config.yaml
+
+model:
+  calibration: temperature
+

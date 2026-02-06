@@ -81,14 +81,25 @@ jobs:
         run: |
           if not exist "%USERPROFILE%\\.codex" mkdir "%USERPROFILE%\\.codex"
           copy /Y .github\\runner\\codex.config.toml "%USERPROFILE%\\.codex\\config.toml"
-      - name: Install Python deps (Linux/macOS)
+      - name: Install deps (venv) (Linux/macOS)
         if: runner.os != 'Windows'
         shell: bash
-        run: python -m pip install --upgrade pip pyyaml
-      - name: Install Python deps (Windows)
+        run: |
+          python -m venv py64_analysis/.venv
+          py64_analysis/.venv/bin/python -m pip install -U pip
+          py64_analysis/.venv/bin/python -m pip install -e "py64_analysis[dev]"
+      - name: Install deps (venv) (Windows)
         if: runner.os == 'Windows'
         shell: cmd
-        run: python -m pip install --upgrade pip pyyaml
+        run: |
+          where py >nul 2>nul
+          if %ERRORLEVEL%==0 (
+            py -3.12 -m venv py64_analysis\\.venv
+          ) else (
+            python -m venv py64_analysis\\.venv
+          )
+          py64_analysis\\.venv\\Scripts\\python.exe -m pip install -U pip
+          py64_analysis\\.venv\\Scripts\\python.exe -m pip install -e "py64_analysis[dev]"
       - name: Run backlog batch (Linux/macOS)
         if: runner.os != 'Windows'
         env:
@@ -130,7 +141,7 @@ jobs:
           if [[ -n "$BASE_BRANCH" ]]; then
             args+=(--base-branch "$BASE_BRANCH")
           fi
-          python scripts/agent/run_backlog_batch.py "${args[@]}"
+          py64_analysis/.venv/bin/python scripts/agent/run_backlog_batch.py "${args[@]}"
       - name: Run backlog batch (Windows)
         if: runner.os == 'Windows'
         env:
@@ -156,4 +167,4 @@ jobs:
           if /I "%CONTINUE_ON_FAILURE%"=="true" set "ARGS=%ARGS% --continue-on-failure"
           if /I "%AUTO_STASH%"=="true" set "ARGS=%ARGS% --auto-stash"
           if not "%BASE_BRANCH%"=="" set "ARGS=%ARGS% --base-branch %BASE_BRANCH%"
-          python scripts\\agent\\run_backlog_batch.py %ARGS%
+          py64_analysis\\.venv\\Scripts\\python.exe scripts\\agent\\run_backlog_batch.py %ARGS%

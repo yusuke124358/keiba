@@ -19,6 +19,10 @@ from sqlalchemy.orm import Session
 
 from ..config import get_config
 from ..features.build_features import FeatureBuilder
+from ..features.odds_movement import (
+    QUINELLA_ODDS_MOVEMENT_COLS,
+    fetch_quinella_odds_movement_features,
+)
 from .race_softmax import fit_race_softmax
 
 logger = logging.getLogger(__name__)
@@ -161,6 +165,8 @@ class WinProbabilityModel:
             else "pre_calibration"
         )
         self.residual_cap_value: Optional[float] = None  # fit()で計算して保存
+        # Dynamically attached (see calibrate_model); keep attribute for mypy.
+        self.calibrator: Any | None = None
         self.feature_names: list[str] = []
 
     def fit(
@@ -296,7 +302,6 @@ class WinProbabilityModel:
         # Ticket G1: Residual Cap計算（train期間の全候補から）
         if self.residual_cap_enabled and self.use_market_offset:
             # train期間の全候補のresidを計算
-            lo, hi = float(self.p_mkt_clip[0]), float(self.p_mkt_clip[1])
             resid_train_all = self.lgb_model.predict(X_train, raw_score=True)
             # |resid|のquantileからcapを算出
             abs_resid = np.abs(resid_train_all)
@@ -616,9 +621,9 @@ def prepare_training_data(
                       AND res.finish_pos IS NOT NULL
               ))
               AND (:require_ts_win = FALSE OR EXISTS (
-                     SELECT 1 FROM odds_ts_win o
-                     WHERE o.race_id = r.race_id
-                       AND o.odds > 0
+                    SELECT 1 FROM odds_ts_win o
+                    WHERE o.race_id = r.race_id
+                      AND o.odds > 0
                       AND o.asof_time <= (
                             (r.date::timestamp + r.start_time)
                             - make_interval(mins => :buy_minutes)
@@ -684,6 +689,21 @@ def prepare_training_data(
 
     df = pd.DataFrame(rows)
 
+    # 0B42 (quinella) odds movement features at buy_time (leak-free, snapshot-based).
+    q_df = fetch_quinella_odds_movement_features(
+        session,
+        df["race_id"].unique().tolist(),
+        buy_t_minus_minutes=buy_t_minus_minutes,
+        lookback_minutes=60,
+    )
+    if not q_df.empty:
+        df = df.merge(q_df, on=["race_id", "horse_no"], how="left")
+    else:
+        # Ensure columns exist so feature selection stays stable (filled to 0.0 later).
+        for c in QUINELLA_ODDS_MOVEMENT_COLS:
+            if c not in df.columns:
+                df[c] = None
+
     # 特徴量カラム
     feature_cols = [
         "odds",
@@ -692,15 +712,20 @@ def prepare_training_data(
         "odds_rank",
         "is_favorite",
         # 時系列オッズ特徴量（直近）
+        "snap_age_min",
+        "odds_chg_5m",
         "odds_chg_10m",
         "odds_chg_30m",
         "odds_chg_60m",
+        "p_mkt_chg_5m",
         "p_mkt_chg_10m",
         "p_mkt_chg_30m",
         "p_mkt_chg_60m",
         "log_odds_slope_60m",
         "log_odds_std_60m",
         "n_pts_60m",
+        # 0B42: 馬連オッズ（スナップショット + 60分変化）
+        *QUINELLA_ODDS_MOVEMENT_COLS,
         "n_races",
         "win_rate",
         "place_rate",
@@ -1023,7 +1048,9 @@ def train_model(
                 model.save(model_path)
             return model, metrics
         X_valid2 = _align_features(X_valid, model.feature_names)
-        pred_out = model.predict(X_valid2, p_mkt_valid, calibrate=False, segments=segments_valid)
+        pred_out = model.predict(
+            X_valid2, p_mkt_valid, calibrate=False, segments=segments_valid
+        )
         if isinstance(pred_out, tuple):
             pred_out = pred_out[0]
         p_blend_valid = np.asarray(pred_out, dtype=float)
@@ -1042,10 +1069,11 @@ def train_model(
 
     # 校正器をfit
     calibrator = ProbabilityCalibrator(method=config.model.calibration)
-    calibrator.fit(p_blend_valid, y_valid_arr)
+    p_blend_valid_arr = p_blend_valid
+    calibrator.fit(p_blend_valid_arr, y_valid_arr)
 
     # 校正後の評価
-    p_calibrated = calibrator.transform(p_blend_valid)
+    p_calibrated = calibrator.transform(p_blend_valid_arr)
     metrics["valid_brier_calibrated"] = brier_score_loss(y_valid_arr, p_calibrated)
     metrics["valid_logloss_calibrated"] = log_loss(y_valid_arr, p_calibrated)
     metrics["calibration_method"] = config.model.calibration
