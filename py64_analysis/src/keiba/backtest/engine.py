@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from ..config import get_config
 from ..features.build_features import FeatureBuilder
+from ..features.odds_movement import QUINELLA_ODDS_MOVEMENT_COLS, fetch_quinella_odds_movement_features
 from ..analysis.slippage_table import SlippageTable
 from ..betting.odds_band_bias import OddsBandBias
 from ..betting.odds_dynamics import compute_odds_dyn_metric, eval_odds_dyn_filter
@@ -535,6 +536,20 @@ class BacktestEngine:
         seen_horses = set()
         predictions = []
         surface_segment = self._get_race_surface_segment(race_id)
+        q_df = fetch_quinella_odds_movement_features(
+            self.session,
+            [race_id],
+            buy_t_minus_minutes=int(self.config.backtest.buy_t_minus_minutes),
+            lookback_minutes=60,
+        )
+        q_by_horse: dict[int, dict] = {}
+        if not q_df.empty:
+            for _, row in q_df.iterrows():
+                try:
+                    hn = int(row.get("horse_no"))
+                except Exception:
+                    continue
+                q_by_horse[hn] = {k: row.get(k) for k in QUINELLA_ODDS_MOVEMENT_COLS}
         for r in results:
             horse_id = r[0]
             if horse_id in seen_horses:
@@ -546,6 +561,18 @@ class BacktestEngine:
             p_mkt, p_raw, p_race, overround, takeout = self._select_market_prob(payload)
             odds = payload.get("odds")
             horse_no = payload.get("horse_no", 1)
+
+            # 0B42 (quinella) snapshot + movement features at buy_time (if available).
+            try:
+                hn = int(horse_no)
+            except Exception:
+                hn = None
+            q_feat = q_by_horse.get(hn) if hn is not None else None
+            if q_feat:
+                payload.update(q_feat)
+            else:
+                for k in QUINELLA_ODDS_MOVEMENT_COLS:
+                    payload.setdefault(k, None)
             
             if not p_mkt or not odds or p_mkt <= 0 or odds <= 0:
                 continue

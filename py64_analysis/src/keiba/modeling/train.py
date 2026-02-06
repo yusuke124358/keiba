@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from ..db.models import Predictions
 from ..config import get_config
 from ..features.build_features import FeatureBuilder
+from ..features.odds_movement import QUINELLA_ODDS_MOVEMENT_COLS, fetch_quinella_odds_movement_features
 from .race_softmax import fit_race_softmax
 
 logger = logging.getLogger(__name__)
@@ -604,14 +605,32 @@ def prepare_training_data(
         rows.append(row)
     
     df = pd.DataFrame(rows)
+
+    # 0B42 (quinella) odds movement features at buy_time (leak-free, snapshot-based).
+    q_df = fetch_quinella_odds_movement_features(
+        session,
+        df["race_id"].unique().tolist(),
+        buy_t_minus_minutes=buy_t_minus_minutes,
+        lookback_minutes=60,
+    )
+    if not q_df.empty:
+        df = df.merge(q_df, on=["race_id", "horse_no"], how="left")
+    else:
+        # Ensure columns exist so feature selection stays stable (filled to 0.0 later).
+        for c in QUINELLA_ODDS_MOVEMENT_COLS:
+            if c not in df.columns:
+                df[c] = None
     
     # 特徴量カラム
     feature_cols = [
         "odds", "log_odds", "p_mkt", "odds_rank", "is_favorite",
         # 時系列オッズ特徴量（直近）
-        "odds_chg_10m", "odds_chg_30m", "odds_chg_60m",
-        "p_mkt_chg_10m", "p_mkt_chg_30m", "p_mkt_chg_60m",
+        "snap_age_min",
+        "odds_chg_5m", "odds_chg_10m", "odds_chg_30m", "odds_chg_60m",
+        "p_mkt_chg_5m", "p_mkt_chg_10m", "p_mkt_chg_30m", "p_mkt_chg_60m",
         "log_odds_slope_60m", "log_odds_std_60m", "n_pts_60m",
+        # 0B42: 馬連オッズ（スナップショット + 60分変化）
+        *QUINELLA_ODDS_MOVEMENT_COLS,
         "n_races", "win_rate", "place_rate", "avg_finish_pos", "avg_last_3f",
         "days_since_last", "field_size", "distance", "is_turf",
         "frame_no", "horse_no", "horse_no_pct", "weight_carried",
