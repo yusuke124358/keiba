@@ -388,7 +388,9 @@ items:
   - rolling.roi_mean
   risk_level: medium
   max_diff_size: 200
-  status: todo
+  status: in_progress
+  picked_at: '2026-02-06T16:53:49Z'
+  branch: agent/exp_20260206_130000-exp-022-lightweight-hyperparameter-tuning-via-rolling-cv
 - id: EXP-023
   title: Uncertainty-aware staking (ensemble variance)
   hypothesis: Scaling stakes down when prediction uncertainty is high reduces drawdown
