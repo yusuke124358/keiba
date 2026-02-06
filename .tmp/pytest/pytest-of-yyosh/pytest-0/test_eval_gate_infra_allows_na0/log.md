@@ -1,6 +1,0 @@
-- Experiment type: infra
-- ROI: N/A
-- Total stake: N/A
-- n_bets: N/A
-- Test period: N/A
-- Max drawdown: N/A
