@@ -1,0 +1,24 @@
+{
+  "run_id": "exp_20260206_043116",
+  "seed_id": "EXP-014",
+  "title": "Odds time-series movement features (0B41/0B42)",
+  "status": "inconclusive",
+  "metrics": {
+    "roi": -0.32752808988764043,
+    "total_stake": 71200.0,
+    "n_bets": 172,
+    "max_drawdown": 0.12946666666666667,
+    "test_period": "2024-01-01 to 2024-12-31",
+    "rolling": "no",
+    "design_window": "N/A",
+    "eval_window": "N/A",
+    "paired_delta": "N/A",
+    "pooled_vs_step14_mismatch": "no",
+    "preferred_roi": "pooled"
+  },
+  "artifacts": {
+    "metrics_json": "data/holdout_runs/exp_20260206_043116/metrics.json",
+    "comparison_json": "N/A",
+    "report": "data/holdout_runs/exp_20260206_043116/report/backtest.md"
+  }
+}

@@ -8,20 +8,20 @@ config/config.yaml を読み込み、Pydanticで型安全に管理する
     2. なければ cwd から親ディレクトリを遡って config/config.yaml を探索
     3. 見つからなければデフォルト設定を使用
 """
+
 import os
+from datetime import date
 from pathlib import Path
 from typing import Optional
-from datetime import date
 
+import yaml  # type: ignore[import-untyped]
 from pydantic import BaseModel, Field
-from pydantic_settings import BaseSettings
-import yaml
 
 
 def find_project_root() -> Optional[Path]:
     """
     プロジェクトルート（keiba/）を探す
-    
+
     config/config.yaml が存在するディレクトリをプロジェクトルートとみなす
     """
     # 環境変数優先
@@ -30,7 +30,7 @@ def find_project_root() -> Optional[Path]:
         root = Path(env_path)
         if root.exists():
             return root
-    
+
     # カレントディレクトリから親へ遡って探索
     current = Path.cwd()
     for _ in range(10):  # 最大10階層まで
@@ -40,7 +40,7 @@ def find_project_root() -> Optional[Path]:
         if current.parent == current:
             break
         current = current.parent
-    
+
     # このファイルの位置から推測（py64_analysis/src/keiba/config.py）
     module_path = Path(__file__).resolve()
     for _ in range(10):
@@ -50,7 +50,7 @@ def find_project_root() -> Optional[Path]:
         if module_path.parent == module_path:
             break
         module_path = module_path.parent
-    
+
     return None
 
 
@@ -60,6 +60,7 @@ PROJECT_ROOT: Optional[Path] = find_project_root()
 
 class PayoutRateDefault(BaseModel):
     """デフォルト払戻率"""
+
     win: float = 0.80
     place: float = 0.80
     bracket_quinella: float = 0.775
@@ -73,6 +74,7 @@ class PayoutRateDefault(BaseModel):
 
 class PayoutRateOverride(BaseModel):
     """特定日の払戻率上書き"""
+
     dates: list[str]
     all_types: Optional[float] = None
     win: Optional[float] = None
@@ -81,13 +83,14 @@ class PayoutRateOverride(BaseModel):
 
 class PayoutRateConfig(BaseModel):
     """払戻率設定"""
+
     default: PayoutRateDefault = Field(default_factory=PayoutRateDefault)
     overrides: list[PayoutRateOverride] = Field(default_factory=list)
-    
+
     def get_rate(self, ticket_type: str, race_date: date) -> float:
         """指定日・券種の払戻率を取得"""
         date_str = race_date.strftime("%Y-%m-%d")
-        
+
         # 上書きチェック
         for override in self.overrides:
             if date_str in override.dates:
@@ -96,51 +99,56 @@ class PayoutRateConfig(BaseModel):
                 rate = getattr(override, ticket_type, None)
                 if rate is not None:
                     return rate
-        
+
         # デフォルト
         return getattr(self.default, ticket_type, 0.80)
 
 
 class DatabaseConfig(BaseModel):
     """データベース設定"""
+
     url: str = "postgresql+psycopg://postgres:postgres@localhost:5432/keiba"
 
 
 class OddsTimeseriesConfig(BaseModel):
     """時系列オッズ設定"""
-    supported_types: list[str] = Field(
-        default=["win", "place", "bracket_quinella", "quinella"]
-    )
+
+    supported_types: list[str] = Field(default=["win", "place", "bracket_quinella", "quinella"])
     interval_minutes: list[int] = Field(default=[5, 10])
     include_total_sales: bool = True
 
 
 class SlippageConfig(BaseModel):
     """スリッページ設定"""
+
     enabled_if_no_ts_odds: bool = True
     odds_multiplier: float = 0.95
 
 
 class BacktestConfig(BaseModel):
     """バックテスト設定"""
+
     buy_t_minus_minutes: int = 10
     slippage: SlippageConfig = Field(default_factory=SlippageConfig)
 
 
 class SizingConfig(BaseModel):
     """賭け金計算設定"""
+
     method: str = "fractional_kelly"
     fraction: float = 0.2
 
 
 class CapsConfig(BaseModel):
     """上限設定"""
+
     per_race_pct: float = 0.01
     per_day_pct: float = 0.03
 
 
 class StakeConfig(BaseModel):
     """Stake clip 設定"""
+
     enabled: bool = False
     max_frac_per_bet: Optional[float] = Field(default=None, gt=0)
     max_frac_per_race: Optional[float] = Field(default=None, gt=0)
@@ -151,6 +159,7 @@ class StakeConfig(BaseModel):
 
 class UncertaintyConfig(BaseModel):
     """Stake uncertainty 設定"""
+
     enabled: bool = False
     n_bins: int = 10
     n0: int = 2000
@@ -159,6 +168,7 @@ class UncertaintyConfig(BaseModel):
 
 class StopConfig(BaseModel):
     """停止条件"""
+
     max_daily_loss_pct: float = 0.03
 
 
@@ -168,7 +178,8 @@ class SlippageTableConfig(BaseModel):
 
     目的:
       - r = odds_final / odds_buy の分位点（例: q=0.30）を
-        odds帯×TSボラ（×snap_age）で見積もり、odds_effective = odds_buy * r_hat としてEV/賭け金計算に使う。
+        odds帯×TSボラ（×snap_age）で見積もり、
+        odds_effective = odds_buy * r_hat としてEV/賭け金計算に使う。
 
     注意:
       - 窓ごとに推定する想定（train〜validまで。testは参照しない）
@@ -217,6 +228,7 @@ class OddsBandBiasConfig(BaseModel):
 
 class BlendSegmentedConfig(BaseModel):
     """segment別ブレンド設定"""
+
     enabled: bool = False
     segment_by: str = "surface"
     min_count: int = 200
@@ -229,25 +241,31 @@ class BlendSegmentedConfig(BaseModel):
 
 class BlendConfig(BaseModel):
     """ブレンド設定"""
+
     segmented: BlendSegmentedConfig = Field(default_factory=BlendSegmentedConfig)
 
 
 class RaceSoftmaxFitConfig(BaseModel):
     """race softmax fit 設定"""
+
     enabled: bool = True
     w_grid_step: float = 0.02
-    t_grid: list[float] = Field(default_factory=lambda: [0.5, 0.7, 0.9, 1.0, 1.1, 1.3, 1.5, 1.8, 2.0])
+    t_grid: list[float] = Field(
+        default_factory=lambda: [0.5, 0.7, 0.9, 1.0, 1.1, 1.3, 1.5, 1.8, 2.0]
+    )
     loss: str = "race_logloss"
 
 
 class RaceSoftmaxApplyConfig(BaseModel):
     """race softmax apply 設定"""
+
     w_default: float = 0.2
     t_default: float = 1.0
 
 
 class RaceSoftmaxSelectorConfig(BaseModel):
     """race softmax selector 設定 (valid-based)"""
+
     enabled: bool = False
     metric: str = "valid_roi"
     min_valid_bets: int = 30
@@ -260,6 +278,7 @@ class RaceSoftmaxSelectorConfig(BaseModel):
 
 class RaceSoftmaxConfig(BaseModel):
     """race-level softmax 設定"""
+
     enabled: bool = False
     score_space: str = "logit"
     clip_eps: float = 1e-6
@@ -270,6 +289,7 @@ class RaceSoftmaxConfig(BaseModel):
 
 class DailyTopNSelectionConfig(BaseModel):
     """Daily top-N selection config."""
+
     enabled: bool = False
     n: int = 5
     metric: str = "ev"
@@ -281,16 +301,22 @@ class DailyTopNSelectionConfig(BaseModel):
 
 class SelectionConfig(BaseModel):
     """Bet selection mode config."""
+
     mode: str = "ev_threshold"
     daily_top_n: DailyTopNSelectionConfig = Field(default_factory=DailyTopNSelectionConfig)
 
 
-
-
 class RaceCostFilterSelectorConfig(BaseModel):
     """Race cost cap selector config (valid-only)."""
+
     enabled: bool = False
-    candidate_caps: list[Optional[float]] = Field(default_factory=lambda: [None])
+
+    @staticmethod
+    def _default_candidate_caps() -> list[Optional[float]]:
+        # Keep the default as a list containing a single "no-cap" candidate.
+        return [None]
+
+    candidate_caps: list[Optional[float]] = Field(default_factory=_default_candidate_caps)
     min_valid_n_bets: int = 80
     min_valid_bets_ratio: float = 0.0
     min_delta_valid_roi: float = 0.02
@@ -303,6 +329,7 @@ class RaceCostFilterSelectorConfig(BaseModel):
 
 class RaceCostFilterConfig(BaseModel):
     """Race-level cost filter (overround / takeout)."""
+
     enabled: bool = False
     metric: str = "takeout_implied"
     cap_mode: str = "fixed"
@@ -318,6 +345,7 @@ class RaceCostFilterConfig(BaseModel):
 
 class TakeoutEvMarginConfig(BaseModel):
     """Takeout-aware EV margin config (soft filter)."""
+
     enabled: bool = False
     ref_takeout: float = 0.215
     slope: float = 0.0
@@ -325,6 +353,7 @@ class TakeoutEvMarginConfig(BaseModel):
 
 class StakeOddsDampConfig(BaseModel):
     """Stake damping by odds (post-selection)."""
+
     enabled: bool = False
     ref_odds: float = Field(default=0.0, ge=0.0)
     power: float = Field(default=1.0, gt=0.0)
@@ -333,6 +362,7 @@ class StakeOddsDampConfig(BaseModel):
 
 class BettingConfig(BaseModel):
     """ベッティング設定"""
+
     ev_margin: float = 0.10
     enable_market_blend: bool = False
     market_prob_method: str = "p_mkt_col"
@@ -346,10 +376,12 @@ class BettingConfig(BaseModel):
     # 例: 0.97 なら「締切でオッズが平均3%悪化する」想定でEV計算・stake計算に使う
     closing_odds_multiplier: float = Field(default=1.0, gt=0)
     # Ticket G2: EV上側カット（過大EVによるdecile9/10壊滅を抑止）
-    ev_upper_cap: dict = Field(default_factory=lambda: {
-        "enabled": False,
-        "quantile": 0.95,  # train期間のbet候補EV分布のquantile（例: 0.90, 0.95）
-    })
+    ev_upper_cap: dict = Field(
+        default_factory=lambda: {
+            "enabled": False,
+            "quantile": 0.95,  # train期間のbet候補EV分布のquantile（例: 0.90, 0.95）
+        }
+    )
     # Ticket N6: overlay shrink (logit residual) for p_hat toward p_mkt
     # alpha=1.0 keeps p_hat, alpha=0.0 uses p_mkt
     overlay_shrink_alpha: Optional[float] = Field(default=None, ge=0.0, le=1.0)
@@ -376,9 +408,13 @@ class BettingConfig(BaseModel):
     overlay_abs_cap_quantile: Optional[float] = Field(default=None, gt=0, lt=1)
     reject_if_overlay_missing: bool = True
     # Odds dynamics filter (train/valid-fitted quantile threshold)
-    odds_dynamics_filter: "OddsDynamicsFilterConfig" = Field(default_factory=lambda: OddsDynamicsFilterConfig())
+    odds_dynamics_filter: "OddsDynamicsFilterConfig" = Field(
+        default_factory=lambda: OddsDynamicsFilterConfig()
+    )
     # Odds dynamics EV margin (post-cap soft filter)
-    odds_dyn_ev_margin: "OddsDynamicsEvMarginConfig" = Field(default_factory=lambda: OddsDynamicsEvMarginConfig())
+    odds_dyn_ev_margin: "OddsDynamicsEvMarginConfig" = Field(
+        default_factory=lambda: OddsDynamicsEvMarginConfig()
+    )
     max_bets_per_race: int = 1
     bankroll_yen: int = 300000
     sizing: SizingConfig = Field(default_factory=SizingConfig)
@@ -390,12 +426,16 @@ class BettingConfig(BaseModel):
 
 class ModelConfig(BaseModel):
     """モデル設定"""
+
     type: str = "lightgbm"
     blend_weight_w: float = 0.8
     blend: BlendConfig = Field(default_factory=BlendConfig)
     race_softmax: RaceSoftmaxConfig = Field(default_factory=RaceSoftmaxConfig)
     calibration: str = "isotonic"
     market_prob_mode: str = "raw"
+    # Post-processing: shrink final p_hat toward p_mkt in logit space.
+    # alpha=1.0 keeps p_hat, alpha=0.0 uses p_mkt.
+    market_shrink_alpha: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     # rolling比較の再現性向上（LightGBMの乱数seed）
     seed: int = 42
     # Option C0: 市場確率 p_mkt を prior として固定し、残差（logit）だけを学習する
@@ -403,16 +443,19 @@ class ModelConfig(BaseModel):
     # p_mkt の clip（logit計算の発散防止）
     p_mkt_clip: tuple[float, float] = (1e-4, 1.0 - 1e-4)
     # Ticket G1: 市場からの乖離（logit残差）を上限制限してdecile10壊滅を潰す
-    residual_cap: dict = Field(default_factory=lambda: {
-        "enabled": False,
-        "quantile": 0.99,
-        "p_clip": [1e-4, 1.0 - 1e-4],
-        "apply_stage": "pre_calibration",  # pre_calibration or post_calibration
-    })
+    residual_cap: dict = Field(
+        default_factory=lambda: {
+            "enabled": False,
+            "quantile": 0.99,
+            "p_clip": [1e-4, 1.0 - 1e-4],
+            "apply_stage": "pre_calibration",  # pre_calibration or post_calibration
+        }
+    )
 
 
 class OddsDynamicsFilterConfig(BaseModel):
     """Odds dynamics post-cap filter config."""
+
     enabled: bool = False
     lookback_minutes: int = 5
     metric: str = "odds_delta_log"  # odds_delta_log or p_mkt_delta
@@ -426,6 +469,7 @@ class OddsDynamicsFilterConfig(BaseModel):
 
 class OddsDynamicsEvMarginConfig(BaseModel):
     """Odds dynamics EV margin config (post-cap soft margin)."""
+
     enabled: bool = False
     metric: str = "odds_delta_log"
     lookback_minutes: int = 5
@@ -436,20 +480,21 @@ class OddsDynamicsEvMarginConfig(BaseModel):
     fit_population: str = "candidates_with_bets_under_baseline_gating"
 
 
-
-
 class PaceHistoryFeatureConfig(BaseModel):
     """Pace history feature flags."""
+
     enabled: bool = False
 
 
 class FeaturesConfig(BaseModel):
     """Feature selection flags."""
+
     pace_history: PaceHistoryFeatureConfig = Field(default_factory=PaceHistoryFeatureConfig)
 
 
 class CVConfig(BaseModel):
     """クロスバリデーション設定"""
+
     scheme: str = "walk_forward"
     train_years: int = 4
     test_months: int = 12
@@ -457,6 +502,7 @@ class CVConfig(BaseModel):
 
 class DataSourceConfig(BaseModel):
     """データソース設定"""
+
     provider: str = "jra_van_datalab"
     storage_raw_dir: str = "data/raw"
     storage_processed_dir: str = "data/processed"
@@ -464,6 +510,7 @@ class DataSourceConfig(BaseModel):
 
 class UniverseConfig(BaseModel):
     """学習/検証に使うレース母集団（race_universe）"""
+
     # 中央（01..10）をデフォルトにする
     track_codes: list[str] = Field(default_factory=lambda: [f"{i:02d}" for i in range(1, 11)])
     # 結果があるレースのみ（ラベル汚染防止）
@@ -476,6 +523,7 @@ class UniverseConfig(BaseModel):
 
 class Config(BaseModel):
     """全体設定"""
+
     data_source: DataSourceConfig = Field(default_factory=DataSourceConfig)
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     universe: UniverseConfig = Field(default_factory=UniverseConfig)
@@ -488,13 +536,78 @@ class Config(BaseModel):
     betting: BettingConfig = Field(default_factory=BettingConfig)
 
 
+def _deep_merge_dict(base: dict, override: dict) -> dict:
+    out = dict(base or {})
+    for k, v in (override or {}).items():
+        if isinstance(v, dict) and isinstance(out.get(k), dict):
+            out[k] = _deep_merge_dict(out[k], v)
+        else:
+            out[k] = v
+    return out
+
+
+def load_yaml_with_extends(path: Path) -> dict:
+    """
+    Load YAML config with optional inheritance.
+
+    If the YAML root contains `extends: <path>|[paths...]`, we load the base(s)
+    first and deep-merge current keys on top. The `extends` key is removed from
+    the returned dict.
+    """
+    stack: list[Path] = []
+
+    def _resolve_base(child_path: Path, base: str) -> Path:
+        p = Path(str(base))
+        if p.is_absolute():
+            return p
+        cand = (child_path.parent / p).resolve()
+        if cand.exists():
+            return cand
+        if PROJECT_ROOT is not None:
+            cand2 = (PROJECT_ROOT / p).resolve()
+            if cand2.exists():
+                return cand2
+        return cand
+
+    def _load(cur_path: Path) -> dict:
+        cur_path = cur_path.resolve()
+        if cur_path in stack:
+            raise ValueError(f"config extends cycle detected: {cur_path}")
+        stack.append(cur_path)
+        data = yaml.safe_load(cur_path.read_text(encoding="utf-8")) or {}
+        if not isinstance(data, dict):
+            data = {}
+        extends = data.pop("extends", None)
+        merged: dict = {}
+        if extends:
+            bases = (
+                [extends]
+                if isinstance(extends, str)
+                else list(extends)
+                if isinstance(extends, list)
+                else []
+            )
+            for b in bases:
+                base_path = _resolve_base(cur_path, str(b))
+                if not base_path.exists():
+                    raise FileNotFoundError(
+                        f"config extends not found: {base_path} (from {cur_path})"
+                    )
+                merged = _deep_merge_dict(merged, _load(base_path))
+        merged = _deep_merge_dict(merged, data)
+        stack.pop()
+        return merged
+
+    return _load(path)
+
+
 def load_config(config_path: Optional[Path | str] = None) -> Config:
     """
     設定ファイルを読み込む
-    
+
     Args:
         config_path: 設定ファイルパス（Noneなら自動探索）
-    
+
     探索順序:
         1. 引数で指定されたパス
         2. 環境変数 KEIBA_CONFIG_PATH
@@ -505,27 +618,24 @@ def load_config(config_path: Optional[Path | str] = None) -> Config:
     if config_path:
         path = Path(config_path)
         if path.exists():
-            with open(path, "r", encoding="utf-8") as f:
-                data = yaml.safe_load(f)
+            data = load_yaml_with_extends(path)
             return Config.model_validate(data)
-    
+
     # 2. 環境変数
     env_config = os.environ.get("KEIBA_CONFIG_PATH")
     if env_config:
         path = Path(env_config)
         if path.exists():
-            with open(path, "r", encoding="utf-8") as f:
-                data = yaml.safe_load(f)
+            data = load_yaml_with_extends(path)
             return Config.model_validate(data)
-    
+
     # 3. プロジェクトルートから
     if PROJECT_ROOT:
         path = PROJECT_ROOT / "config" / "config.yaml"
         if path.exists():
-            with open(path, "r", encoding="utf-8") as f:
-                data = yaml.safe_load(f)
+            data = load_yaml_with_extends(path)
             return Config.model_validate(data)
-    
+
     # 4. デフォルト設定を返す
     return Config()
 
@@ -533,10 +643,10 @@ def load_config(config_path: Optional[Path | str] = None) -> Config:
 def get_data_path(relative_path: str) -> Path:
     """
     データパスを取得（プロジェクトルート基準）
-    
+
     Args:
         relative_path: 相対パス（例: "data/raw"）
-    
+
     Returns:
         絶対パス
     """
@@ -561,4 +671,3 @@ def reset_config() -> None:
     """設定をリセット（テスト用）"""
     global _config
     _config = None
-

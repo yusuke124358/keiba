@@ -3,6 +3,10 @@
 on:
   workflow_dispatch:
 
+concurrency:
+  group: agent-propose-pr
+  cancel-in-progress: false
+
 jobs:
   propose:
     runs-on: self-hosted
@@ -40,35 +44,51 @@ jobs:
         if: runner.os != 'Windows'
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
       - name: Verify Python (Windows)
         if: runner.os == 'Windows'
         shell: cmd
         run: |
           python --version
           python -m pip --version
-      - name: Normalize Codex assets
-        shell: cmd
-        run: python scripts\\agent\\normalize_codex_assets.py
-      - name: Install Python deps (Linux/macOS)
+      - name: Install deps (venv) (Linux/macOS)
         if: runner.os != 'Windows'
         shell: bash
-        run: python -m pip install --upgrade pip pyyaml
-      - name: Install Python deps (Windows)
+        run: |
+          python -m venv py64_analysis/.venv
+          py64_analysis/.venv/bin/python -m pip install -U pip
+          py64_analysis/.venv/bin/python -m pip install -e "py64_analysis[dev]"
+      - name: Install deps (venv) (Windows)
         if: runner.os == 'Windows'
         shell: cmd
-        run: python -m pip install --upgrade pip pyyaml
+        run: |
+          where py >nul 2>nul
+          if %ERRORLEVEL%==0 (
+            py -3.12 -m venv py64_analysis\\.venv
+          ) else (
+            python -m venv py64_analysis\\.venv
+          )
+          py64_analysis\\.venv\\Scripts\\python.exe -m pip install -U pip
+          py64_analysis\\.venv\\Scripts\\python.exe -m pip install -e "py64_analysis[dev]"
+      - name: Normalize Codex assets (Linux/macOS)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: py64_analysis/.venv/bin/python scripts/agent/normalize_codex_assets.py
+      - name: Normalize Codex assets (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: py64_analysis\\.venv\\Scripts\\python.exe scripts\\agent\\normalize_codex_assets.py
       - name: Run propose loop
         env:
           AUTO_FIX_PUSH_TOKEN: ${{ secrets.AUTO_FIX_PUSH_TOKEN }}
           GH_TOKEN: ${{ secrets.AUTO_FIX_PUSH_TOKEN }}
         shell: bash
         if: runner.os != 'Windows'
-        run: python scripts/agent/propose_pr.py --once --publisher token
+        run: py64_analysis/.venv/bin/python scripts/agent/propose_pr.py --once --publisher token
       - name: Run propose loop (Windows)
         if: runner.os == 'Windows'
         env:
           AUTO_FIX_PUSH_TOKEN: ${{ secrets.AUTO_FIX_PUSH_TOKEN }}
           GH_TOKEN: ${{ secrets.AUTO_FIX_PUSH_TOKEN }}
         shell: cmd
-        run: python scripts\\agent\\propose_pr.py --once --publisher token
+        run: py64_analysis\\.venv\\Scripts\\python.exe scripts\\agent\\propose_pr.py --once --publisher token

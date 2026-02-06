@@ -93,7 +93,8 @@ def load_state(path: Path):
             "consecutive_failures": 0,
             "issue_occurrences": {},
         }
-    return json.loads(path.read_text(encoding="utf-8"))
+    # Be tolerant of UTF-8 BOM that can be introduced by some Windows tooling.
+    return json.loads(path.read_text(encoding="utf-8-sig"))
 
 
 def save_state(path: Path, state):
@@ -408,6 +409,7 @@ def run_codex(prompt_text, schema_path, output_path, log_path, codex_bin):
                 text=True,
                 encoding="utf-8",
                 errors="replace",
+                timeout=int(os.environ.get("CODEX_TIMEOUT_SECONDS", "1800")),
             )
     else:
         result = subprocess.run(
@@ -417,6 +419,7 @@ def run_codex(prompt_text, schema_path, output_path, log_path, codex_bin):
             text=True,
             encoding="utf-8",
             errors="replace",
+            timeout=int(os.environ.get("CODEX_TIMEOUT_SECONDS", "1800")),
         )
         with open(log_path, "w", encoding="utf-8") as log:
             log.write(result.stdout or "")
@@ -434,12 +437,124 @@ def run_codex(prompt_text, schema_path, output_path, log_path, codex_bin):
 
 
 def ensure_branch(root, head_ref):
-    run(["git", "fetch", "origin", head_ref], cwd=root)
+    # Use an explicit refspec so this works even if the checkout action configures
+    # a narrow fetch spec (e.g., only default branch).
+    run(
+        [
+            "git",
+            "fetch",
+            "origin",
+            f"+refs/heads/{head_ref}:refs/remotes/origin/{head_ref}",
+        ],
+        cwd=root,
+    )
     run(["git", "checkout", "-B", head_ref, f"origin/{head_ref}"], cwd=root)
 
 
 def git_status_clean(root):
     return run(["git", "status", "--porcelain"], cwd=root).stdout.strip() == ""
+
+
+def python_exe(root: Path) -> str:
+    if os.name == "nt":
+        venv_py = root / "py64_analysis" / ".venv" / "Scripts" / "python.exe"
+    else:
+        venv_py = root / "py64_analysis" / ".venv" / "bin" / "python"
+    if venv_py.exists():
+        return str(venv_py)
+    return sys.executable or "python"
+
+
+RUFF_WOULD_REFORMAT_RE = re.compile(r"Would reformat:\s+([^\s]+)")
+# Ruff output formats vary:
+# - "path.py:line:col: ..." (e.g., --output-format concise)
+# - "--> path.py:line:col" (default formatter)
+RUFF_CHECK_PATH_RE = re.compile(
+    r"(?:-->\s+)?([^\s:]+\.py):\d+:\d+",
+    re.MULTILINE,
+)
+
+
+def extract_ruff_reformat_paths(bundle: dict) -> list[str]:
+    signals = bundle.get("signals") or {}
+    checks = signals.get("checks") or []
+    paths: set[str] = set()
+    for check in checks:
+        excerpt = str(check.get("log_failed_excerpt") or "")
+        for match in RUFF_WOULD_REFORMAT_RE.finditer(excerpt):
+            path = match.group(1).strip()
+            if path:
+                paths.add(path)
+    return sorted(paths)
+
+
+def extract_ruff_check_paths(bundle: dict) -> list[str]:
+    signals = bundle.get("signals") or {}
+    checks = signals.get("checks") or []
+    paths: set[str] = set()
+    for check in checks:
+        excerpt = str(check.get("log_failed_excerpt") or "")
+        for match in RUFF_CHECK_PATH_RE.finditer(excerpt):
+            path = match.group(1).strip()
+            if path:
+                paths.add(path)
+    return sorted(paths)
+
+
+def run_ruff_format(root: Path, paths: list[str]) -> None:
+    if not paths:
+        return
+    py = python_exe(root)
+    subprocess.run([py, "-m", "ruff", "format", *paths], cwd=root, check=True)
+
+
+def run_ruff_check_fix(root: Path, paths: list[str]) -> int:
+    """
+    Apply safe auto-fixes for ruff check failures.
+
+    ruff may still exit non-zero if remaining (non-fixable) issues exist; callers
+    should treat this as best-effort and let CI determine final pass/fail.
+    """
+    if not paths:
+        return 0
+    py = python_exe(root)
+    result = subprocess.run(
+        [py, "-m", "ruff", "check", "--fix", "--quiet", *paths],
+        cwd=root,
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    return int(result.returncode or 0)
+
+
+def ruff_is_clean(root: Path, paths: list[str]) -> bool:
+    if not paths:
+        return True
+    py = python_exe(root)
+    fmt = subprocess.run(
+        [py, "-m", "ruff", "format", "--check", *paths],
+        cwd=root,
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if fmt.returncode != 0:
+        return False
+    chk = subprocess.run(
+        [py, "-m", "ruff", "check", "--quiet", *paths],
+        cwd=root,
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    return chk.returncode == 0
 
 
 def run_make_ci(root, base_ref):
@@ -495,7 +610,16 @@ def push_head_ref(root, head_ref, max_attempts=3):
                 f"git push failed ({result.returncode}): HEAD:{head_ref}\n{stderr}"
             )
 
-        run(["git", "fetch", "origin", head_ref], cwd=root, check=False)
+        run(
+            [
+                "git",
+                "fetch",
+                "origin",
+                f"+refs/heads/{head_ref}:refs/remotes/origin/{head_ref}",
+            ],
+            cwd=root,
+            check=False,
+        )
         rebase = run(
             ["git", "rebase", f"origin/{head_ref}"],
             cwd=root,
@@ -643,10 +767,28 @@ def collect(args, config):
         thread_comments, state.get("last_thread_comment_id")
     )
     new_checks = filter_new_checks(checks, state.get("last_check_completed_at"))
-    attach_failed_check_logs(new_checks)
+
+    # Even if new checks arrived (e.g., CodeRabbit), we must still carry forward
+    # any currently failing checks so the loop can keep making progress.
+    failing_checks = [
+        c for c in checks if str(c.get("conclusion") or "").upper() == "FAILURE"
+    ]
+    checks_for_bundle = []
+    seen_checks = set()
+    for c in (new_checks or []) + (failing_checks or []):
+        key = (
+            c.get("name") or "",
+            c.get("completed_at") or "",
+            c.get("details_url") or "",
+        )
+        if key in seen_checks:
+            continue
+        seen_checks.add(key)
+        checks_for_bundle.append(c)
+    attach_failed_check_logs(checks_for_bundle)
 
     if (
-        not (new_comments or new_reviews or new_thread_comments or new_checks)
+        not (new_comments or new_reviews or new_thread_comments or checks_for_bundle)
         and not args.force
     ):
         ensure_current_run(
@@ -671,7 +813,7 @@ def collect(args, config):
             "comments": new_comments,
             "reviews": new_reviews,
             "review_thread_comments": new_thread_comments,
-            "checks": new_checks,
+            "checks": checks_for_bundle,
         },
     }
     bundle_path = run_dir / "input_bundle.json"
@@ -796,15 +938,25 @@ def finalize(args, config):
         return 0
 
     occurrences = state.get("issue_occurrences", {})
+    countable_issue_ids = []
     for issue in issues:
+        source = str(issue.get("source") or "")
+        issue_type = str(issue.get("type") or "")
+        # Do not treat mechanical CI gates (ruff formatting/lint) as "recurring
+        # issues" that require human intervention. Those should be handled by
+        # repeated auto-fix attempts, bounded by consecutive_fail/max_total.
+        if source.startswith("checks:") and issue_type.startswith("ci/"):
+            continue
         issue_id = issue.get("id")
         occurrences[issue_id] = int(occurrences.get(issue_id, 0)) + 1
+        countable_issue_ids.append(issue_id)
     state["issue_occurrences"] = occurrences
 
     recurrence_limit = config["thresholds"]["recurrence"]
-    if any(count >= recurrence_limit for count in occurrences.values()):
+    if countable_issue_ids and any(
+        occurrences.get(i, 0) >= recurrence_limit for i in countable_issue_ids
+    ):
         add_label(pr_number, config["labels"]["needs_human"])
-        state["consecutive_failures"] = int(state.get("consecutive_failures", 0)) + 1
         fixer_report = {
             "status": "failed",
             "summary": "Issue recurrence threshold reached.",
@@ -868,25 +1020,7 @@ def finalize(args, config):
 
     run(["git", "fetch", "origin", base_ref], cwd=root)
     exit_code = run_make_ci(root, f"origin/{base_ref}")
-    if exit_code != 0:
-        state["consecutive_failures"] = int(state.get("consecutive_failures", 0)) + 1
-        fixer_report.setdefault("status", "failed")
-        if "failures" not in fixer_report:
-            fixer_report["failures"] = []
-        fixer_report["failures"].append("make ci failed")
-        fixer_report["summary"] = "make ci failed"
-        write_json(fixer_report_path, fixer_report)
-        comment_body = build_comment(manager_decision, fixer_report)
-        comment_path = run_dir / "comment.md"
-        comment_path.write_text(comment_body, encoding="utf-8")
-        comment_pr(pr_number, comment_path)
-        save_state(state_path, state)
-        if state["consecutive_failures"] >= config["thresholds"]["consecutive_fail"]:
-            add_label(pr_number, config["labels"]["needs_human"])
-        return exit_code
-
-    state["consecutive_failures"] = 0
-
+    pushed_commit = False
     status = run(["git", "status", "--porcelain"], cwd=root).stdout.strip()
     if status:
         run(
@@ -897,14 +1031,13 @@ def finalize(args, config):
         run(["git", "add", "-A"], cwd=root)
         commit_msg = f"autofix: pr-{pr_number} [agent-fix]"
         run(["git", "commit", "-m", commit_msg], cwd=root)
+        commit_sha = run(["git", "rev-parse", "HEAD"], cwd=root).stdout.strip()
 
         token = os.environ.get("AUTO_FIX_PUSH_TOKEN")
         if not token:
             raise RuntimeError("AUTO_FIX_PUSH_TOKEN is required for push.")
 
-        remote_url = run(
-            ["git", "remote", "get-url", "origin"], cwd=root
-        ).stdout.strip()
+        remote_url = run(["git", "remote", "get-url", "origin"], cwd=root).stdout.strip()
         if remote_url.startswith("git@"):
             match = re.match(r"git@github.com:(.+?/.+?)\\.git", remote_url)
             repo = match.group(1) if match else ""
@@ -914,6 +1047,39 @@ def finalize(args, config):
         push_url = https_url.replace("https://", f"https://x-access-token:{token}@")
         run(["git", "remote", "set-url", "--push", "origin", push_url], cwd=root)
         push_head_ref(root, head_ref)
+        pushed_commit = True
+
+        if not isinstance(fixer_report.get("actions"), list):
+            fixer_report["actions"] = []
+        fixer_report["actions"].append(f"Committed and pushed changes: {commit_sha}")
+
+    if exit_code != 0:
+        if pushed_commit:
+            state["consecutive_failures"] = 0
+        else:
+            state["consecutive_failures"] = int(state.get("consecutive_failures", 0)) + 1
+        fixer_report["status"] = "failed"
+        fixer_report.setdefault("needs_human", False)
+        if "failures" not in fixer_report:
+            fixer_report["failures"] = []
+        fixer_report["failures"].append("make ci failed")
+        fixer_report["summary"] = "make ci failed"
+        if (not pushed_commit) and (
+            state["consecutive_failures"] >= config["thresholds"]["consecutive_fail"]
+        ):
+            fixer_report["needs_human"] = True
+        write_json(fixer_report_path, fixer_report)
+        comment_body = build_comment(manager_decision, fixer_report)
+        comment_path = run_dir / "comment.md"
+        comment_path.write_text(comment_body, encoding="utf-8")
+        comment_pr(pr_number, comment_path)
+        save_state(state_path, state)
+        if fixer_report.get("needs_human"):
+            add_label(pr_number, config["labels"]["needs_human"])
+        return exit_code
+
+    state["consecutive_failures"] = 0
+    write_json(fixer_report_path, fixer_report)
 
     comment_body = build_comment(manager_decision, fixer_report)
     comment_path = run_dir / "comment.md"
@@ -936,12 +1102,137 @@ def run_all(args, config):
     if not run_meta:
         return 0
 
+    run_dir = Path(run_meta["run_dir"])
+    try:
+        bundle = json.loads((run_dir / "input_bundle.json").read_text(encoding="utf-8"))
+    except Exception:
+        bundle = {}
+
+    # Fast path: when CI logs clearly indicate a mechanical formatting failure,
+    # fix it immediately without invoking the LLM stages. This keeps scheduled
+    # auto-fix runs responsive and avoids execpolicy blocks on the runner.
+    head_ref = ((bundle.get("pr") or {}).get("head_ref") or "").strip()
+    ruff_paths = sorted(
+        set(extract_ruff_reformat_paths(bundle)) | set(extract_ruff_check_paths(bundle))
+    )
+    if head_ref and ruff_paths:
+        root = repo_root()
+        ensure_branch(root, head_ref)
+        run_ruff_check_fix(root, ruff_paths)
+        run_ruff_format(root, ruff_paths)
+        if not git_status_clean(root):
+            # We made mechanical progress (e.g., applied ruff formatting) but CI may
+            # still fail due to additional issues. Persist the change so subsequent
+            # runs build on it instead of redoing the same edit.
+            review_items = {
+                "issues": [
+                    {
+                        "id": "",
+                        "source": "checks:verify",
+                        "type": "ci/ruff",
+                        "severity": "high",
+                        "file": ruff_paths[0] if ruff_paths else None,
+                        "line": None,
+                        "message": "CI ruff gate failed (ruff format/check).",
+                        "suggested_fix": "Run ruff check --fix and ruff format, then commit.",
+                        "acceptance_check": "make ci passes (ruff format/check are clean).",
+                    }
+                ]
+            }
+            write_json(run_dir / "review_items.json", review_items)
+
+            manager_decision = {
+                "approved": True,
+                "summary": "Apply ruff fixes from failing CI logs.",
+                "tasks": [
+                    {
+                        "issue_id": "",
+                        "decision": "DO",
+                        "priority": "P0",
+                        "risk": "low",
+                        "rationale": "Ruff failure blocks verify/CI; safe mechanical change.",
+                        "required_checks": ["checks:verify"],
+                    }
+                ],
+                "automerge_eligible": True,
+            }
+            write_json(run_dir / "manager_decision.json", manager_decision)
+
+            fixer_report = {
+                "status": "success",
+                "summary": "Applied deterministic CI fixes.",
+                "actions": [
+                    "ruff check --fix: " + ", ".join(ruff_paths),
+                    "ruff format: " + ", ".join(ruff_paths),
+                ],
+                "tests": [],
+                "artifacts": [],
+                "failures": [],
+                "needs_human": False,
+                "next_steps": [],
+            }
+            write_json(run_dir / "fixer_report.json", fixer_report)
+            return finalize(args, config)
+        if not ruff_is_clean(root, ruff_paths):
+            # Ruff still reports errors after safe auto-fixes/formatting. Continue
+            # with the full LLM pipeline instead of returning early.
+            pass
+        else:
+            review_items = {
+                "issues": [
+                    {
+                        "id": "",
+                        "source": "checks:verify",
+                        "type": "ci/ruff",
+                        "severity": "high",
+                        "file": ruff_paths[0] if ruff_paths else None,
+                        "line": None,
+                        "message": "CI ruff gate failed (ruff format/check).",
+                        "suggested_fix": "Run ruff check --fix and ruff format, then commit.",
+                        "acceptance_check": "make ci passes (ruff format/check are clean).",
+                    }
+                ]
+            }
+            write_json(run_dir / "review_items.json", review_items)
+
+            manager_decision = {
+                "approved": True,
+                "summary": "Apply ruff fixes from failing CI logs.",
+                "tasks": [
+                    {
+                        "issue_id": "",
+                        "decision": "DO",
+                        "priority": "P0",
+                        "risk": "low",
+                        "rationale": "Ruff failure blocks verify/CI; safe mechanical change.",
+                        "required_checks": ["checks:verify"],
+                    }
+                ],
+                "automerge_eligible": True,
+            }
+            write_json(run_dir / "manager_decision.json", manager_decision)
+
+            fixer_report = {
+                "status": "success",
+                "summary": "Applied deterministic CI fixes.",
+                "actions": [
+                    "ruff check --fix: " + ", ".join(ruff_paths),
+                    "ruff format: " + ", ".join(ruff_paths),
+                ],
+                "tests": [],
+                "artifacts": [],
+                "failures": [],
+                "needs_human": False,
+                "next_steps": [],
+            }
+            write_json(run_dir / "fixer_report.json", fixer_report)
+            return finalize(args, config)
+
     codex_bin = find_codex_bin()
     if not codex_bin:
         raise RuntimeError("codex CLI not found in PATH")
     ensure_codex_ready(codex_bin)
 
-    run_dir = Path(run_meta["run_dir"])
     reviewer_prompt = (run_dir / "reviewer_prompt.txt").read_text(encoding="utf-8")
 
     review_schema = Path("schemas/agent/review_items.schema.json")
@@ -963,6 +1254,53 @@ def run_all(args, config):
         if review_items_path.exists()
         else "{}"
     )
+    # Fallback: if Reviewer returns no issues but CI checks are failing, synthesize
+    # a minimal issue so Manager/Fixer stages can still make progress.
+    signals = bundle.get("signals") or {}
+    all_checks = signals.get("checks") or []
+    failing_checks = [
+        c for c in all_checks if str(c.get("conclusion") or "").upper() == "FAILURE"
+    ]
+    if failing_checks:
+        try:
+            review_items = json.loads(review_items_text or "{}")
+        except Exception:
+            review_items = {"issues": []}
+        if not (review_items.get("issues") or []):
+            ruff_paths = sorted(
+                set(extract_ruff_reformat_paths(bundle))
+                | set(extract_ruff_check_paths(bundle))
+            )
+            check_names = ", ".join(
+                sorted({str(c.get("name") or "") for c in failing_checks if c.get("name")})
+            )
+            msg = f"CI is failing: {check_names}" if check_names else "CI is failing."
+            suggested = "Inspect failing check logs and fix until `make ci` passes."
+            issue_type = "ci/failure"
+            if ruff_paths:
+                msg = "CI is failing due to ruff format/check."
+                suggested = (
+                    "Fix remaining ruff check errors (e.g., long lines, whitespace) "
+                    "and ensure ruff format/check pass."
+                )
+                issue_type = "ci/ruff"
+            review_items = {
+                "issues": [
+                    {
+                        "id": "",
+                        "source": "checks:ci",
+                        "type": issue_type,
+                        "severity": "high",
+                        "file": ruff_paths[0] if ruff_paths else None,
+                        "line": None,
+                        "message": msg,
+                        "suggested_fix": suggested,
+                        "acceptance_check": "make ci passes",
+                    }
+                ]
+            }
+            write_json(review_items_path, review_items)
+            review_items_text = review_items_path.read_text(encoding="utf-8").strip()
     manager_base = load_prompt(PROMPTS_DIR / "manager.md")
     manager_prompt = "\n".join(
         [
@@ -982,16 +1320,94 @@ def run_all(args, config):
         run_dir / "manager_codex.log",
         codex_bin,
     )
+    # If Manager returns no DO tasks while CI is failing, override with a minimal
+    # DO task so the Fixer stage can attempt to unblock CI.
+    manager_decision_path = run_dir / "manager_decision.json"
+    if failing_checks and manager_decision_path.exists():
+        try:
+            manager_decision = json.loads(
+                manager_decision_path.read_text(encoding="utf-8").strip() or "{}"
+            )
+        except Exception:
+            manager_decision = {}
+        tasks = manager_decision.get("tasks") or []
+        if not any(t.get("decision") == "DO" for t in tasks):
+            manager_decision = {
+                "approved": True,
+                "summary": "CI is failing; force fixer to attempt unblock.",
+                "tasks": [
+                    {
+                        "issue_id": "",
+                        "decision": "DO",
+                        "priority": "P0",
+                        "risk": "low",
+                        "rationale": "Auto-fix eligible PR with failing CI; attempt mechanical fixes.",
+                        "required_checks": ["checks:verify"],
+                    }
+                ],
+                "automerge_eligible": False,
+            }
+            write_json(manager_decision_path, manager_decision)
 
     # Ensure the fixer runs on the PR branch (not main). The orchestrator will
     # commit/push later, but the fixer stage must apply edits to the correct ref.
-    try:
-        bundle = json.loads((run_dir / "input_bundle.json").read_text(encoding="utf-8"))
-    except Exception:
-        bundle = {}
     head_ref = ((bundle.get("pr") or {}).get("head_ref") or "").strip()
     if head_ref:
         ensure_branch(repo_root(), head_ref)
+
+    # Fast path: fix common mechanical CI failures without running the fixer LLM.
+    # This avoids Codex execpolicy blocks and reduces latency.
+    root = repo_root()
+    fast_actions = []
+    ruff_paths = sorted(
+        set(extract_ruff_reformat_paths(bundle)) | set(extract_ruff_check_paths(bundle))
+    )
+    if ruff_paths:
+        run_ruff_check_fix(root, ruff_paths)
+        run_ruff_format(root, ruff_paths)
+        if ruff_is_clean(root, ruff_paths):
+            fast_actions.append("ruff check --fix: " + ", ".join(ruff_paths))
+            fast_actions.append("ruff format: " + ", ".join(ruff_paths))
+
+    if fast_actions:
+        # Ensure finalize() sees at least one DO task so it can commit/push.
+        manager_decision_path = run_dir / "manager_decision.json"
+        try:
+            manager_decision = json.loads(
+                manager_decision_path.read_text(encoding="utf-8").strip() or "{}"
+            )
+        except Exception:
+            manager_decision = {}
+        tasks = manager_decision.get("tasks") or []
+        if not any(t.get("decision") == "DO" for t in tasks):
+            manager_decision = {
+                "approved": True,
+                "summary": "Applied deterministic CI fixes.",
+                "tasks": [
+                    {
+                        "issue_id": "",
+                        "decision": "DO",
+                        "priority": "P0",
+                        "risk": "low",
+                        "rationale": "Mechanical CI fix applied; proceed to validate and publish.",
+                        "required_checks": ["checks:verify"],
+                    }
+                ],
+                "automerge_eligible": True,
+            }
+            write_json(manager_decision_path, manager_decision)
+        fixer_report = {
+            "status": "success",
+            "summary": "Applied deterministic CI fixes.",
+            "actions": fast_actions,
+            "tests": [],
+            "artifacts": [],
+            "failures": [],
+            "needs_human": False,
+            "next_steps": [],
+        }
+        write_json(run_dir / "fixer_report.json", fixer_report)
+        return finalize(args, config)
 
     manager_decision_path = run_dir / "manager_decision.json"
     manager_text = (

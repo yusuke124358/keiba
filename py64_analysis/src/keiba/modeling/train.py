@@ -20,6 +20,10 @@ from sqlalchemy.orm import Session
 
 from ..config import get_config
 from ..features.build_features import FeatureBuilder
+from ..features.odds_movement import (
+    QUINELLA_ODDS_MOVEMENT_COLS,
+    fetch_quinella_odds_movement_features,
+)
 from .race_softmax import fit_race_softmax
 
 logger = logging.getLogger(__name__)
@@ -342,7 +346,6 @@ class WinProbabilityModel:
         # Ticket G1: Residual Cap計算（train期間の全候補から）
         if self.residual_cap_enabled and self.use_market_offset:
             # train期間の全候補のresidを計算
-            lo, hi = float(self.p_mkt_clip[0]), float(self.p_mkt_clip[1])
             resid_train_all = self.lgb_model.predict(X_train, raw_score=True)
             # |resid|のquantileからcapを算出
             abs_resid = np.abs(resid_train_all)
@@ -466,6 +469,7 @@ class WinProbabilityModel:
             lo, hi = float(self.p_mkt_clip[0]), float(self.p_mkt_clip[1])
             init = _logit_series(_clip_prob_series(p_mkt.astype(float), lo, hi))
             resid = self.lgb_model.predict(X_dispatch, raw_score=True)
+ 
 
             # Ticket G1: Residual Cap適用
             if self.residual_cap_enabled and self.residual_cap_value is not None:
@@ -517,6 +521,39 @@ class WinProbabilityModel:
             residual_meta["p_hat_capped"] = p_blend_raw
             residual_meta["p_hat_final"] = p_blend
 
+        # Optional post-process: shrink final probability toward market-implied p_mkt.
+        # This is applied only for the "final" path (calibrate=True) so p_blend_raw
+        # / calibrate=False outputs keep their original semantics.
+        if calibrate:
+            shrink_alpha = getattr(self.config.model, "market_shrink_alpha", None)
+            if shrink_alpha is not None:
+                try:
+                    a = float(shrink_alpha)
+                except Exception:
+                    a = None
+                if a is not None and np.isfinite(a):
+                    lo, hi = float(self.p_mkt_clip[0]), float(self.p_mkt_clip[1])
+                    p_hat_arr = np.asarray(p_blend, dtype=float)
+                    p_mkt_arr = np.asarray(p_mkt, dtype=float)
+                    mask = np.isfinite(p_hat_arr) & np.isfinite(p_mkt_arr)
+                    p_shrunk = p_hat_arr.copy()
+                    if mask.any():
+                        if a <= 0.0:
+                            p_shrunk[mask] = np.clip(p_mkt_arr[mask], lo, hi)
+                        elif a >= 1.0:
+                            p_shrunk[mask] = np.clip(p_hat_arr[mask], lo, hi)
+                        else:
+                            hat_c = np.clip(p_hat_arr[mask], lo, hi)
+                            mkt_c = np.clip(p_mkt_arr[mask], lo, hi)
+                            logit_hat = np.log(hat_c / (1.0 - hat_c))
+                            logit_mkt = np.log(mkt_c / (1.0 - mkt_c))
+                            logit_shrunk = logit_mkt + a * (logit_hat - logit_mkt)
+                            p_shrunk[mask] = 1.0 / (1.0 + np.exp(-logit_shrunk))
+                    p_blend = p_shrunk
+                    if return_residual_meta:
+                        residual_meta["market_shrink_alpha"] = float(a)
+                        residual_meta["p_hat_pre_market_shrink"] = p_hat_arr
+                        residual_meta["p_hat_final"] = p_blend
         if return_residual_meta:
             return p_blend, residual_meta
         return p_blend
@@ -652,9 +689,9 @@ def prepare_training_data(
                       AND res.finish_pos IS NOT NULL
               ))
               AND (:require_ts_win = FALSE OR EXISTS (
-                     SELECT 1 FROM odds_ts_win o
-                     WHERE o.race_id = r.race_id
-                       AND o.odds > 0
+                    SELECT 1 FROM odds_ts_win o
+                    WHERE o.race_id = r.race_id
+                      AND o.odds > 0
                       AND o.asof_time <= (
                             (r.date::timestamp + r.start_time)
                             - make_interval(mins => :buy_minutes)
@@ -727,7 +764,20 @@ def prepare_training_data(
         df["is_turf"] = (seg == "turf").astype(int)
     except Exception as e:
         logger.warning(f"Failed to normalize is_turf from fact_race.surface: {e}")
-
+    # 0B42 (quinella) odds movement features at buy_time (leak-free, snapshot-based).
+    q_df = fetch_quinella_odds_movement_features(
+        session,
+        df["race_id"].unique().tolist(),
+        buy_t_minus_minutes=buy_t_minus_minutes,
+        lookback_minutes=60,
+    )
+    if not q_df.empty:
+        df = df.merge(q_df, on=["race_id", "horse_no"], how="left")
+    else:
+        # Ensure columns exist so feature selection stays stable (filled to 0.0 later).
+        for c in QUINELLA_ODDS_MOVEMENT_COLS:
+            if c not in df.columns:
+                df[c] = None
     # 特徴量カラム
     feature_cols = [
         "odds",
@@ -736,15 +786,20 @@ def prepare_training_data(
         "odds_rank",
         "is_favorite",
         # 時系列オッズ特徴量（直近）
+        "snap_age_min",
+        "odds_chg_5m",
         "odds_chg_10m",
         "odds_chg_30m",
         "odds_chg_60m",
+        "p_mkt_chg_5m",
         "p_mkt_chg_10m",
         "p_mkt_chg_30m",
         "p_mkt_chg_60m",
         "log_odds_slope_60m",
         "log_odds_std_60m",
         "n_pts_60m",
+        # 0B42: 馬連オッズ（スナップショット + 60分変化）
+        *QUINELLA_ODDS_MOVEMENT_COLS,
         "n_races",
         "win_rate",
         "place_rate",
@@ -1205,10 +1260,11 @@ def train_model(
 
     # 校正器をfit
     calibrator = ProbabilityCalibrator(method=config.model.calibration)
-    calibrator.fit(p_blend_valid, y_valid_arr)
+    p_blend_valid_arr = p_blend_valid
+    calibrator.fit(p_blend_valid_arr, y_valid_arr)
 
     # 校正後の評価
-    p_calibrated = calibrator.transform(p_blend_valid)
+    p_calibrated = calibrator.transform(p_blend_valid_arr)
     metrics["valid_brier_calibrated"] = brier_score_loss(y_valid_arr, p_calibrated)
     metrics["valid_logloss_calibrated"] = log_loss(y_valid_arr, p_calibrated)
     metrics["calibration_method"] = config.model.calibration
