@@ -43,7 +43,9 @@ def run(
 
 
 def repo_root() -> Path:
-    out = run(["git", "rev-parse", "--show-toplevel"], capture_output=True).stdout.strip()
+    out = run(
+        ["git", "rev-parse", "--show-toplevel"], capture_output=True
+    ).stdout.strip()
     return Path(out)
 
 
@@ -326,7 +328,6 @@ def main() -> int:
 
     for item in picked:
         exp_id = item.get("id")
-        title = item.get("title", "")
         if not exp_id:
             raise RuntimeError("Backlog item missing id.")
 
@@ -345,12 +346,7 @@ def main() -> int:
             )
 
             ts = dt.datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-            plan_path = (
-                root
-                / "artifacts"
-                / "agent"
-                / f"plan_{exp_id}_{ts}.json"
-            )
+            plan_path = root / "artifacts" / "agent" / f"plan_{exp_id}_{ts}.json"
             run(
                 [
                     python_exe(root),
@@ -397,10 +393,7 @@ def main() -> int:
                 git_merge_no_edit(root, base_branch)
                 if args.publish:
                     pr_body_path = (
-                        root
-                        / "artifacts"
-                        / "agent"
-                        / f"pr_body_{exp_id}_{ts}.md"
+                        root / "artifacts" / "agent" / f"pr_body_{exp_id}_{ts}.md"
                     )
                     pr_body_path.parent.mkdir(parents=True, exist_ok=True)
                     pr_body_path.write_text(
@@ -452,6 +445,16 @@ def main() -> int:
                 raise RuntimeError(f"Timeout on {exp_id}") from exc
         except Exception as exc:
             git_checkout(root, base_branch)
+            # If we fail before marking the item in progress (e.g., planning failures),
+            # keep the item as todo so reruns don't require manual backlog edits.
+            if str(item.get("status", "")).lower() == "todo":
+                print(
+                    f"Failed on {exp_id} before marking in progress: {exc}",
+                    file=sys.stderr,
+                )
+                if not args.continue_on_failure:
+                    raise
+                continue
             update_item_status(item, "failed")
             save_backlog(backlog_path, data)
             run(["git", "add", str(backlog_path)], cwd=root)
