@@ -3,19 +3,20 @@
 
 リーク防止: asof_time より未来のデータは使用しない
 """
+
 import logging
 from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Optional
-import pandas as pd
-import numpy as np
 
+import numpy as np
+import pandas as pd  # type: ignore[import-untyped]
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from ..db.models import Features
-from ..db.pace_utils import sum_first_n, sum_last_n, lap_stats, pace_diff
 from ..config import get_config
+from ..db.models import Features
+from ..db.pace_utils import lap_stats, sum_first_n, sum_last_n
 
 logger = logging.getLogger(__name__)
 
@@ -33,18 +34,20 @@ def _json_safe(value):
     if isinstance(value, Decimal):
         val = float(value)
         # Infinity/NaNをNoneに変換
-        if not (val == val) or val == float('inf') or val == float('-inf'):
+        if not (val == val) or val == float("inf") or val == float("-inf"):
             return None
         return val
     if isinstance(value, float):
         # Infinity/NaNをNoneに変換
-        if not (value == value) or value == float('inf') or value == float('-inf'):
+        if not (value == value) or value == float("inf") or value == float("-inf"):
             return None
         return value
     if isinstance(value, np.generic):
         val = value.item()
         # Infinity/NaNをNoneに変換
-        if isinstance(val, float) and (not (val == val) or val == float('inf') or val == float('-inf')):
+        if isinstance(val, float) and (
+            not (val == val) or val == float("inf") or val == float("-inf")
+        ):
             return None
         return val
     if isinstance(value, dict):
@@ -56,30 +59,26 @@ def _json_safe(value):
 
 class FeatureBuilder:
     """特徴量ビルダー"""
-    
+
     # Option C1: 履歴特徴量を拡張したためバージョン更新
     # Option C4: ペース/通過順特徴量を追加（1.4.0）
     VERSION = "1.6.1"
-    
+
     def __init__(self, session: Session):
         self.session = session
         self.config = get_config()
         # race_id + asof_time ごとに市場特徴量（全馬分）をキャッシュ
         # build_for_race() 内で同じ race_id/asof_time が何度も呼ばれるため、DBクエリ削減に効く
         self._market_cache: dict[tuple[str, datetime], dict[int, dict]] = {}
-    
-    def build_for_race(
-        self, 
-        race_id: str, 
-        asof_time: datetime
-    ) -> list[dict]:
+
+    def build_for_race(self, race_id: str, asof_time: datetime) -> list[dict]:
         """
         レースの特徴量を生成
-        
+
         Args:
             race_id: レースID
             asof_time: 特徴量計算時点（これより未来のデータは使わない）
-        
+
         Returns:
             list of {horse_id, features}
         """
@@ -87,27 +86,25 @@ class FeatureBuilder:
         race_info = self._get_race_info(race_id)
         if not race_info:
             return []
-        
+
         # 出走馬リスト
         entries = self._get_entries(race_id)
         if not entries:
             return []
-        
+
         # C4: レースレベルの予測ペース特徴量（全出走馬から推定）
         pace_history_by_horse, race_expected_pace = self._build_pace_history_features(
             race_info, entries, asof_time
         )
-        
+
         results = []
         for entry in entries:
             features = {}
-            
+
             # 市場特徴量（オッズベース）
-            market_features = self._build_market_features(
-                race_id, entry["horse_no"], asof_time
-            )
+            market_features = self._build_market_features(race_id, entry["horse_no"], asof_time)
             features.update(market_features)
-            
+
             # 過去走特徴量
             history_features = self._build_history_features(
                 horse_id=entry.get("horse_id"),
@@ -118,28 +115,28 @@ class FeatureBuilder:
             )
             features.update(history_features)
 
-            pace_history = pace_history_by_horse.get(entry.get("horse_id"))
+            pace_history = pace_history_by_horse.get(str(entry["horse_id"]))
             if pace_history:
                 features.update(pace_history)
-            
+
             # 構造特徴量
-            struct_features = self._build_struct_features(
-                race_info, entry
-            )
+            struct_features = self._build_struct_features(race_info, entry)
             features.update(struct_features)
-            
+
             # C4: レースレベルの予測ペース特徴量（全馬共通）
             if race_expected_pace:
                 features.update(race_expected_pace)
-            
-            results.append({
-                "horse_id": entry["horse_id"],
-                "horse_no": entry["horse_no"],
-                "features": features,
-            })
-        
+
+            results.append(
+                {
+                    "horse_id": entry["horse_id"],
+                    "horse_no": entry["horse_no"],
+                    "features": features,
+                }
+            )
+
         return results
-    
+
     def _estimate_race_pace_from_entries(
         self,
         race_id: str,
@@ -149,10 +146,10 @@ class FeatureBuilder:
     ) -> dict:
         """
         C4: 出走馬の過去走からレースレベルの予測ペースを推定
-        
+
         注意: 当該レースの実測値は使わない（リーク防止）
         出走馬全員の過去走から集約して「予測ペース」を計算
-        
+
         Returns:
             {
                 "race_expected_first3f": float | None,
@@ -168,7 +165,7 @@ class FeatureBuilder:
                 "race_expected_pace_diff": None,
                 "race_expected_pace_pressure": None,
             }
-        
+
         # 出走馬全員の過去走からペース情報を取得
         horse_ids = [e.get("horse_id") for e in entries if e.get("horse_id")]
         if not horse_ids:
@@ -178,7 +175,7 @@ class FeatureBuilder:
                 "race_expected_pace_diff": None,
                 "race_expected_pace_pressure": None,
             }
-        
+
         query = text("""
             SELECT
                 r.pace_first3f,
@@ -199,7 +196,7 @@ class FeatureBuilder:
         rows = self.session.execute(
             query, {"horse_ids": horse_ids, "asof_time": asof_time}
         ).fetchall()
-        
+
         if not rows:
             return {
                 "race_expected_first3f": None,
@@ -207,31 +204,31 @@ class FeatureBuilder:
                 "race_expected_pace_diff": None,
                 "race_expected_pace_pressure": None,
             }
-        
+
         df = pd.DataFrame([dict(r._mapping) for r in rows])
         df["pace_first3f"] = pd.to_numeric(df["pace_first3f"], errors="coerce")
         df["pace_last3f"] = pd.to_numeric(df["pace_last3f"], errors="coerce")
         df["pos_1c"] = pd.to_numeric(df["pos_1c"], errors="coerce")
         df["pos_4c"] = pd.to_numeric(df["pos_4c"], errors="coerce")
         df["field_size"] = pd.to_numeric(df["field_size"], errors="coerce")
-        
+
         # 前3F: 速い馬（20%分位点）が作るペースを想定
         first3f_valid = df["pace_first3f"].dropna()
         expected_first3f = None
         if len(first3f_valid) >= 3:
             expected_first3f = float(np.quantile(first3f_valid, 0.20))
-        
+
         # 後3F: 中央値（一般的な上がり）
         last3f_valid = df["pace_last3f"].dropna()
         expected_last3f = None
         if len(last3f_valid) >= 3:
             expected_last3f = float(np.median(last3f_valid))
-        
+
         # ペース差
         expected_pace_diff = None
         if expected_first3f is not None and expected_last3f is not None:
             expected_pace_diff = expected_first3f - expected_last3f
-        
+
         # ペースプレッシャー: 先行型（1Cで前1/3以内）の馬の割合
         pace_pressure = None
         if "pos_1c" in df.columns and "field_size" in df.columns:
@@ -240,14 +237,14 @@ class FeatureBuilder:
             if len(front_runners) >= 3:
                 # 前1/3以内の馬の割合
                 pace_pressure = int((front_runners <= 0.33).sum())
-        
+
         return {
             "race_expected_first3f": expected_first3f,
             "race_expected_last3f": expected_last3f,
             "race_expected_pace_diff": expected_pace_diff,
             "race_expected_pace_pressure": pace_pressure,
         }
-    
+
     def _build_pace_history_features(
         self,
         race_info: dict,
@@ -303,7 +300,14 @@ class FeatureBuilder:
         if df.empty:
             return {}, empty_race
 
-        for c in ("pace_first3f", "pace_last3f", "pace_diff_sec", "lap_slope", "pos_1c", "field_size"):
+        for c in (
+            "pace_first3f",
+            "pace_last3f",
+            "pace_diff_sec",
+            "lap_slope",
+            "pos_1c",
+            "field_size",
+        ):
             if c in df.columns:
                 df[c] = pd.to_numeric(df[c], errors="coerce")
 
@@ -320,9 +324,15 @@ class FeatureBuilder:
                 df.loc[mask, "pace_last3f_calc"] = pd.to_numeric(vals, errors="coerce")
 
         df["pace_diff_calc"] = df.get("pace_diff_sec")
-        mask = df["pace_diff_calc"].isna() & df["pace_first3f_calc"].notna() & df["pace_last3f_calc"].notna()
+        mask = (
+            df["pace_diff_calc"].isna()
+            & df["pace_first3f_calc"].notna()
+            & df["pace_last3f_calc"].notna()
+        )
         if mask.any():
-            df.loc[mask, "pace_diff_calc"] = df.loc[mask, "pace_first3f_calc"] - df.loc[mask, "pace_last3f_calc"]
+            df.loc[mask, "pace_diff_calc"] = (
+                df.loc[mask, "pace_first3f_calc"] - df.loc[mask, "pace_last3f_calc"]
+            )
 
         df["lap_slope_calc"] = df.get("lap_slope")
         if "lap_times_200m" in df.columns:
@@ -357,8 +367,15 @@ class FeatureBuilder:
                 if not pos_pct.empty:
                     pos_means[str(horse_id)] = float(pos_pct.head(3).mean())
 
-        first3f_vals = [v.get("horse_past_first3f_p20") for v in per_horse.values() if v.get("horse_past_first3f_p20") is not None]
-        last3f_vals = [v.get("horse_past_last3f_p50") for v in per_horse.values() if v.get("horse_past_last3f_p50") is not None]
+        first3f_vals: list[float] = []
+        last3f_vals: list[float] = []
+        for v in per_horse.values():
+            raw_first3f = v.get("horse_past_first3f_p20")
+            if raw_first3f is not None:
+                first3f_vals.append(float(raw_first3f))
+            raw_last3f = v.get("horse_past_last3f_p50")
+            if raw_last3f is not None:
+                last3f_vals.append(float(raw_last3f))
 
         expected_first3f = _q(pd.Series(first3f_vals), 0.20) if len(first3f_vals) >= 3 else None
         expected_last3f = _q(pd.Series(last3f_vals), 0.50) if len(last3f_vals) >= 3 else None
@@ -385,7 +402,7 @@ class FeatureBuilder:
     def _get_race_info(self, race_id: str) -> Optional[dict]:
         """レース情報を取得（C4: 実測ペースは使わない。expectedは別途計算）"""
         query = text("""
-            SELECT race_id, date, track_code, race_no, 
+            SELECT race_id, date, track_code, race_no,
                    surface, distance, going_turf, going_dirt, field_size
             FROM fact_race
             WHERE race_id = :race_id
@@ -394,11 +411,11 @@ class FeatureBuilder:
         if result:
             return dict(result._mapping)
         return None
-    
+
     def _get_entries(self, race_id: str) -> list[dict]:
         """出走馬リストを取得"""
         query = text("""
-            SELECT horse_id, horse_no, frame_no, jockey_id, 
+            SELECT horse_id, horse_no, frame_no, jockey_id,
                    weight_carried, horse_weight
             FROM fact_entry
             WHERE race_id = :race_id
@@ -406,19 +423,14 @@ class FeatureBuilder:
         """)
         results = self.session.execute(query, {"race_id": race_id}).fetchall()
         return [dict(r._mapping) for r in results]
-    
-    def _build_market_features(
-        self, 
-        race_id: str, 
-        horse_no: int, 
-        asof_time: datetime
-    ) -> dict:
+
+    def _build_market_features(self, race_id: str, horse_no: int, asof_time: datetime) -> dict:
         """
         市場特徴量（オッズベース）
-        
+
         p_mkt = 1/odds / sum(1/odds) で市場確率を計算
-        
-        重要: 
+
+        重要:
             - asof_time以前のデータのみを使用してリークを防止
             - 同一スナップショット（t_snap）の行のみで計算して整合性を保つ
         """
@@ -471,9 +483,7 @@ class FeatureBuilder:
               AND odds > 0
             ORDER BY horse_no, data_kubun DESC
         """)
-        base_rows = self.session.execute(
-            base_query, {"race_id": race_id, "t0": t0}
-        ).fetchall()
+        base_rows = self.session.execute(base_query, {"race_id": race_id, "t0": t0}).fetchall()
         if not base_rows:
             return {}
 
@@ -513,12 +523,15 @@ class FeatureBuilder:
             # asof_timeごとの市場確率（p_mkt_t）を作る
             df_ts["inv_odds"] = 1.0 / df_ts["odds"]
             df_ts["inv_sum"] = df_ts.groupby("asof_time")["inv_odds"].transform("sum")
-            df_ts["p_mkt_t"] = np.where(df_ts["inv_sum"] > 0, df_ts["inv_odds"] / df_ts["inv_sum"], np.nan)
+            df_ts["p_mkt_t"] = np.where(
+                df_ts["inv_sum"] > 0, df_ts["inv_odds"] / df_ts["inv_sum"], np.nan
+            )
 
         # 参照時刻（t10/t30/t60）はレース内で共通にする（スナップショット混在を避ける）
         times = []
         if not df_ts.empty:
             times = sorted(df_ts["asof_time"].unique().tolist())
+
         # times は昇順。t0 以前の最大が t0 のはず
         def _pick_time(delta_min: int) -> Optional[datetime]:
             target = t0 - timedelta(minutes=delta_min)
@@ -545,7 +558,9 @@ class FeatureBuilder:
                 return None
             return float(np.log(float(v)))
 
-        def _get_at(df: pd.DataFrame, horse: int, t: Optional[datetime], col: str) -> Optional[float]:
+        def _get_at(
+            df: pd.DataFrame, horse: int, t: Optional[datetime], col: str
+        ) -> Optional[float]:
             if t is None or df.empty:
                 return None
             x = df[(df["horse_no"] == horse) & (df["asof_time"] == t)]
@@ -567,7 +582,11 @@ class FeatureBuilder:
             total_inv0 = float((1.0 / df0["odds"]).sum()) if len(df0) > 0 else 0.0
             p_mkt0 = (inv0 / total_inv0) if (inv0 is not None and total_inv0 > 0) else None
             overround_sum_inv = float(total_inv0) if total_inv0 > 0 else None
-            takeout_implied = (1.0 - (1.0 / overround_sum_inv)) if (overround_sum_inv is not None and overround_sum_inv > 0) else None
+            takeout_implied = (
+                (1.0 - (1.0 / overround_sum_inv))
+                if (overround_sum_inv is not None and overround_sum_inv > 0)
+                else None
+            )
             p_mkt_raw = p_mkt0
             p_mkt_race = p_mkt0
 
@@ -626,16 +645,22 @@ class FeatureBuilder:
                 "odds_chg_30m": _ratio_change(odds0, odds30),
                 "odds_chg_60m": _ratio_change(odds0, odds60),
                 "p_mkt_chg_5m": (p_mkt0 - p5) if (p_mkt0 is not None and p5 is not None) else None,
-                "p_mkt_chg_10m": (p_mkt0 - p10) if (p_mkt0 is not None and p10 is not None) else None,
-                "p_mkt_chg_30m": (p_mkt0 - p30) if (p_mkt0 is not None and p30 is not None) else None,
-                "p_mkt_chg_60m": (p_mkt0 - p60) if (p_mkt0 is not None and p60 is not None) else None,
+                "p_mkt_chg_10m": (p_mkt0 - p10)
+                if (p_mkt0 is not None and p10 is not None)
+                else None,
+                "p_mkt_chg_30m": (p_mkt0 - p30)
+                if (p_mkt0 is not None and p30 is not None)
+                else None,
+                "p_mkt_chg_60m": (p_mkt0 - p60)
+                if (p_mkt0 is not None and p60 is not None)
+                else None,
                 "log_odds_slope_60m": slope_60,
                 "log_odds_std_60m": std_60,
                 "n_pts_60m": n_pts_60,
             }
 
         return out
-    
+
     def _empty_market_features(self) -> dict:
         """空の市場特徴量"""
         return {
@@ -649,17 +674,13 @@ class FeatureBuilder:
             "odds_rank": None,
             "is_favorite": 0,
         }
-    
+
     def _fallback_market_features(
-        self, 
-        race_id: str, 
-        horse_no: int, 
-        asof_time: datetime,
-        snap_df: pd.DataFrame
+        self, race_id: str, horse_no: int, asof_time: datetime, snap_df: pd.DataFrame
     ) -> dict:
         """
         フォールバック：該当馬がt_snapにない場合、その馬の直近オッズを使用
-        
+
         注意: この場合、p_mktの分母がずれる可能性があるためフラグを立てる
         """
         query = text("""
@@ -675,12 +696,12 @@ class FeatureBuilder:
         result = self.session.execute(
             query, {"race_id": race_id, "horse_no": horse_no, "asof_time": asof_time}
         ).fetchone()
-        
+
         if not result:
             return self._empty_market_features()
-        
+
         odds = float(result[0])
-        
+
         # p_mktはsnap_dfベースで近似計算（正確ではないが妥当）
         snap_df_copy = snap_df.copy()
         snap_df_copy["inv_odds"] = 1 / snap_df_copy["odds"]
@@ -689,14 +710,18 @@ class FeatureBuilder:
         total_inv = snap_df_copy["inv_odds"].sum() + inv_target
         p_mkt = inv_target / total_inv if total_inv > 0 else None
         overround_sum_inv = float(total_inv) if total_inv > 0 else None
-        takeout_implied = (1.0 - (1.0 / overround_sum_inv)) if (overround_sum_inv is not None and overround_sum_inv > 0) else None
+        takeout_implied = (
+            (1.0 - (1.0 / overround_sum_inv))
+            if (overround_sum_inv is not None and overround_sum_inv > 0)
+            else None
+        )
         p_mkt_raw = p_mkt
         p_mkt_race = p_mkt
-        
+
         # オッズ順位は近似
         n_better = (snap_df_copy["odds"] < odds).sum()
         odds_rank = n_better + 1
-        
+
         return {
             "odds": odds,
             "log_odds": np.log(odds) if odds > 0 else None,
@@ -708,7 +733,7 @@ class FeatureBuilder:
             "odds_rank": odds_rank,
             "is_favorite": 1 if odds_rank == 1 else 0,
         }
-    
+
     def _build_history_features(
         self,
         *,
@@ -720,7 +745,7 @@ class FeatureBuilder:
     ) -> dict:
         """
         過去走特徴量
-        
+
         リーク防止: race_dt < asof_time のデータのみ使用（同日でも時刻で判定）
         """
         from .history_features import compute_horse_history_features
@@ -753,11 +778,17 @@ class FeatureBuilder:
                 ORDER BY (r.date::timestamp + r.start_time) DESC
                 LIMIT 50
             """)
-            rows = self.session.execute(query_h, {"horse_id": horse_id, "asof_time": asof_time}).fetchall()
+            rows = self.session.execute(
+                query_h, {"horse_id": horse_id, "asof_time": asof_time}
+            ).fetchall()
             if rows:
                 df = pd.DataFrame([dict(r._mapping) for r in rows])
                 # compute_* 側で未来除外も入っているが二重でもOK
-                out.update(compute_horse_history_features(df, asof_time=asof_time, target_distance=target_distance))
+                out.update(
+                    compute_horse_history_features(
+                        df, asof_time=asof_time, target_distance=target_distance
+                    )
+                )
 
         # ---- 騎手/調教師/人馬（過去365日） ----
         cutoff = asof_time - timedelta(days=365)
@@ -777,7 +808,9 @@ class FeatureBuilder:
                   AND res.finish_pos IS NOT NULL
                   AND {where_sql}
             """)
-            row = self.session.execute(q, {**params, "cutoff": cutoff, "asof_time": asof_time}).fetchone()
+            row = self.session.execute(
+                q, {**params, "cutoff": cutoff, "asof_time": asof_time}
+            ).fetchone()
             if not row:
                 return 0, None, None
             starts = int(row[0] or 0)
@@ -789,18 +822,25 @@ class FeatureBuilder:
 
         if jockey_id:
             s, w, p = _agg_jt("e.jockey_id = :jockey_id", {"jockey_id": jockey_id})
-            out.update({"jockey_starts_365": s, "jockey_win_rate_365": w, "jockey_place_rate_365": p})
+            out.update(
+                {"jockey_starts_365": s, "jockey_win_rate_365": w, "jockey_place_rate_365": p}
+            )
 
         if trainer_id:
             s, w, p = _agg_jt("e.trainer_id = :trainer_id", {"trainer_id": trainer_id})
-            out.update({"trainer_starts_365": s, "trainer_win_rate_365": w, "trainer_place_rate_365": p})
+            out.update(
+                {"trainer_starts_365": s, "trainer_win_rate_365": w, "trainer_place_rate_365": p}
+            )
 
         if horse_id and jockey_id:
-            s, w, _ = _agg_jt("res.horse_id = :horse_id AND e.jockey_id = :jockey_id", {"horse_id": horse_id, "jockey_id": jockey_id})
+            s, w, _ = _agg_jt(
+                "res.horse_id = :horse_id AND e.jockey_id = :jockey_id",
+                {"horse_id": horse_id, "jockey_id": jockey_id},
+            )
             out.update({"horse_jockey_starts_365": s, "horse_jockey_win_rate_365": w})
 
         return out
-    
+
     def _empty_history_features(self) -> dict:
         return {
             # 既存互換
@@ -852,12 +892,12 @@ class FeatureBuilder:
             "horse_jockey_starts_365": 0,
             "horse_jockey_win_rate_365": None,
         }
-    
+
     def _build_struct_features(self, race_info: dict, entry: dict) -> dict:
         """構造特徴量（レース条件・枠番等 + C4: レースレベルのペース）"""
         field_size = race_info.get("field_size") or 18
         horse_no = entry.get("horse_no") or 1
-        
+
         features = {
             "field_size": field_size,
             "distance": race_info.get("distance"),
@@ -867,37 +907,32 @@ class FeatureBuilder:
             "horse_no_pct": horse_no / field_size,
             "weight_carried": entry.get("weight_carried"),
         }
-        
+
         # C4のレースレベルのペース特徴量は build_for_race で全出走馬から計算して追加される
         # （ここでは構造特徴量のみ）
         return features
-    
-    def save_features(
-        self, 
-        race_id: str, 
-        asof_time: datetime, 
-        features_list: list[dict]
-    ) -> int:
+
+    def save_features(self, race_id: str, asof_time: datetime, features_list: list[dict]) -> int:
         """
         特徴量をDBに保存
-        
+
         重複防止: 同じ race_id + asof_time + feature_version の既存データは
         事前に削除してから再挿入する（再生成時に古いデータが残らない）
-        
+
         Note: 将来的には Features テーブルに UNIQUE 制約を追加し、
               upsert に移行することを推奨
         """
         # 既存の同一条件のデータを削除（再生成時の重複防止）
         self.session.execute(
             text("""
-                DELETE FROM features 
-                WHERE race_id = :race_id 
-                  AND feature_version = :version 
+                DELETE FROM features
+                WHERE race_id = :race_id
+                  AND feature_version = :version
                   AND asof_time = :asof_time
             """),
-            {"race_id": race_id, "version": self.VERSION, "asof_time": asof_time}
+            {"race_id": race_id, "version": self.VERSION, "asof_time": asof_time},
         )
-        
+
         count = 0
         for item in features_list:
             feature = Features(
@@ -909,31 +944,32 @@ class FeatureBuilder:
             )
             self.session.add(feature)
             count += 1
-        
+
         self.session.commit()
         return count
 
 
 def build_features(
-    session: Session, 
-    race_ids: list[str], 
+    session: Session,
+    race_ids: list[str],
     asof_time: Optional[datetime] = None,
     buy_t_minus_minutes: Optional[int] = None,
     skip_existing: bool = True,
 ) -> int:
     """
     複数レースの特徴量を生成
-    
+
     Args:
         session: DBセッション
         race_ids: レースIDリスト
         asof_time: 特徴量計算時点（Noneなら各レースの購入想定時点を使用）
         buy_t_minus_minutes: 発走何分前を購入時点とするか（Noneならconfigから取得）
-        skip_existing: 既に同一(race_id, asof_time, feature_version)が存在する場合は再計算をスキップする
-    
+        skip_existing: 既に同一(race_id, asof_time, feature_version)が存在する場合は
+            再計算をスキップする
+
     Returns:
         生成した特徴量数
-    
+
     重要:
         asof_time=Noneの場合、各レースの「発走時刻 - buy_t_minus_minutes」を
         asof_timeとして使用します。これによりbacktestと同じ購入時点に揃い、
@@ -942,9 +978,9 @@ def build_features(
     # ★config一元化: buy_t_minus_minutes が None なら config から取得
     if buy_t_minus_minutes is None:
         buy_t_minus_minutes = get_config().backtest.buy_t_minus_minutes
-    
+
     builder = FeatureBuilder(session)
-    
+
     total = 0
     if not race_ids:
         return 0
@@ -960,7 +996,10 @@ def build_features(
                 """
                 SELECT
                     r.race_id,
-                    ((r.date::timestamp + r.start_time) - make_interval(mins => :buy_minutes)) AS buy_time
+                    (
+                        (r.date::timestamp + r.start_time)
+                        - make_interval(mins => :buy_minutes)
+                    ) AS buy_time
                 FROM fact_race r
                 WHERE r.race_id = ANY(:race_ids)
                   AND r.start_time IS NOT NULL
@@ -996,7 +1035,10 @@ def build_features(
                     WITH targets AS (
                         SELECT
                             r.race_id,
-                            ((r.date::timestamp + r.start_time) - make_interval(mins => :buy_minutes)) AS buy_time
+                            (
+                                (r.date::timestamp + r.start_time)
+                                - make_interval(mins => :buy_minutes)
+                            ) AS buy_time
                         FROM fact_race r
                         WHERE r.race_id = ANY(:race_ids)
                           AND r.start_time IS NOT NULL
@@ -1010,7 +1052,11 @@ def build_features(
                     GROUP BY t.race_id
                     """
                 ),
-                {"race_ids": list(race_ids), "buy_minutes": int(buy_t_minus_minutes), "version": builder.VERSION},
+                {
+                    "race_ids": list(race_ids),
+                    "buy_minutes": int(buy_t_minus_minutes),
+                    "version": builder.VERSION,
+                },
             ).fetchall()
             existing_race_ids = {str(r[0]) for r in rows if r and r[0]}
 
@@ -1033,40 +1079,43 @@ def build_features(
         logger.info(f"Built {count} features for {race_id} (asof={asof})")
 
     if skipped:
-        logger.info(f"Skipped feature build for {skipped}/{len(race_ids)} races (already exists, version={builder.VERSION})")
+        logger.info(
+            f"Skipped feature build for {skipped}/{len(race_ids)} races "
+            f"(already exists, version={builder.VERSION})"
+        )
     if built_races:
-        logger.info(f"Built features for {built_races}/{len(race_ids)} races (version={builder.VERSION})")
-    
+        logger.info(
+            f"Built features for {built_races}/{len(race_ids)} races (version={builder.VERSION})"
+        )
+
     return total
 
 
 def _get_buy_time_for_race(
-    session: Session, 
-    race_id: str, 
-    buy_t_minus_minutes: int
+    session: Session, race_id: str, buy_t_minus_minutes: int
 ) -> Optional[datetime]:
     """
     レースの購入時点を計算
-    
+
     fact_race.date + fact_race.start_time - buy_t_minus_minutes
     """
     query = text("""
-        SELECT date, start_time 
-        FROM fact_race 
+        SELECT date, start_time
+        FROM fact_race
         WHERE race_id = :race_id
     """)
     result = session.execute(query, {"race_id": race_id}).fetchone()
-    
+
     if not result:
         return None
-    
+
     race_date = result[0]
     start_time = result[1]
-    
+
     if not start_time:
         # start_timeがない場合はNone（特徴量生成をスキップ）
         return None
-    
+
     dt = datetime.combine(race_date, start_time)
     buy_time = dt - timedelta(minutes=buy_t_minus_minutes)
     return buy_time
