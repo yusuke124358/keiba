@@ -983,6 +983,16 @@ def run_all(args, config):
         codex_bin,
     )
 
+    # Ensure the fixer runs on the PR branch (not main). The orchestrator will
+    # commit/push later, but the fixer stage must apply edits to the correct ref.
+    try:
+        bundle = json.loads((run_dir / "input_bundle.json").read_text(encoding="utf-8"))
+    except Exception:
+        bundle = {}
+    head_ref = ((bundle.get("pr") or {}).get("head_ref") or "").strip()
+    if head_ref:
+        ensure_branch(repo_root(), head_ref)
+
     manager_decision_path = run_dir / "manager_decision.json"
     manager_text = (
         manager_decision_path.read_text(encoding="utf-8").strip()
