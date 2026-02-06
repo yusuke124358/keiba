@@ -1175,6 +1175,53 @@ def run_all(args, config):
         if review_items_path.exists()
         else "{}"
     )
+    # Fallback: if Reviewer returns no issues but CI checks are failing, synthesize
+    # a minimal issue so Manager/Fixer stages can still make progress.
+    signals = bundle.get("signals") or {}
+    all_checks = signals.get("checks") or []
+    failing_checks = [
+        c for c in all_checks if str(c.get("conclusion") or "").upper() == "FAILURE"
+    ]
+    if failing_checks:
+        try:
+            review_items = json.loads(review_items_text or "{}")
+        except Exception:
+            review_items = {"issues": []}
+        if not (review_items.get("issues") or []):
+            ruff_paths = sorted(
+                set(extract_ruff_reformat_paths(bundle))
+                | set(extract_ruff_check_paths(bundle))
+            )
+            check_names = ", ".join(
+                sorted({str(c.get("name") or "") for c in failing_checks if c.get("name")})
+            )
+            msg = f"CI is failing: {check_names}" if check_names else "CI is failing."
+            suggested = "Inspect failing check logs and fix until `make ci` passes."
+            issue_type = "ci/failure"
+            if ruff_paths:
+                msg = "CI is failing due to ruff format/check."
+                suggested = (
+                    "Fix remaining ruff check errors (e.g., long lines, whitespace) "
+                    "and ensure ruff format/check pass."
+                )
+                issue_type = "ci/ruff"
+            review_items = {
+                "issues": [
+                    {
+                        "id": "",
+                        "source": "checks:ci",
+                        "type": issue_type,
+                        "severity": "high",
+                        "file": ruff_paths[0] if ruff_paths else None,
+                        "line": None,
+                        "message": msg,
+                        "suggested_fix": suggested,
+                        "acceptance_check": "make ci passes",
+                    }
+                ]
+            }
+            write_json(review_items_path, review_items)
+            review_items_text = review_items_path.read_text(encoding="utf-8").strip()
     manager_base = load_prompt(PROMPTS_DIR / "manager.md")
     manager_prompt = "\n".join(
         [
@@ -1194,6 +1241,34 @@ def run_all(args, config):
         run_dir / "manager_codex.log",
         codex_bin,
     )
+    # If Manager returns no DO tasks while CI is failing, override with a minimal
+    # DO task so the Fixer stage can attempt to unblock CI.
+    manager_decision_path = run_dir / "manager_decision.json"
+    if failing_checks and manager_decision_path.exists():
+        try:
+            manager_decision = json.loads(
+                manager_decision_path.read_text(encoding="utf-8").strip() or "{}"
+            )
+        except Exception:
+            manager_decision = {}
+        tasks = manager_decision.get("tasks") or []
+        if not any(t.get("decision") == "DO" for t in tasks):
+            manager_decision = {
+                "approved": True,
+                "summary": "CI is failing; force fixer to attempt unblock.",
+                "tasks": [
+                    {
+                        "issue_id": "",
+                        "decision": "DO",
+                        "priority": "P0",
+                        "risk": "low",
+                        "rationale": "Auto-fix eligible PR with failing CI; attempt mechanical fixes.",
+                        "required_checks": ["checks:verify"],
+                    }
+                ],
+                "automerge_eligible": False,
+            }
+            write_json(manager_decision_path, manager_decision)
 
     # Ensure the fixer runs on the PR branch (not main). The orchestrator will
     # commit/push later, but the fixer stage must apply edits to the correct ref.
@@ -1216,6 +1291,32 @@ def run_all(args, config):
             fast_actions.append("ruff format: " + ", ".join(ruff_paths))
 
     if fast_actions:
+        # Ensure finalize() sees at least one DO task so it can commit/push.
+        manager_decision_path = run_dir / "manager_decision.json"
+        try:
+            manager_decision = json.loads(
+                manager_decision_path.read_text(encoding="utf-8").strip() or "{}"
+            )
+        except Exception:
+            manager_decision = {}
+        tasks = manager_decision.get("tasks") or []
+        if not any(t.get("decision") == "DO" for t in tasks):
+            manager_decision = {
+                "approved": True,
+                "summary": "Applied deterministic CI fixes.",
+                "tasks": [
+                    {
+                        "issue_id": "",
+                        "decision": "DO",
+                        "priority": "P0",
+                        "risk": "low",
+                        "rationale": "Mechanical CI fix applied; proceed to validate and publish.",
+                        "required_checks": ["checks:verify"],
+                    }
+                ],
+                "automerge_eligible": True,
+            }
+            write_json(manager_decision_path, manager_decision)
         fixer_report = {
             "status": "success",
             "summary": "Applied deterministic CI fixes.",
