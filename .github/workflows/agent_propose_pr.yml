@@ -3,6 +3,10 @@
 on:
   workflow_dispatch:
 
+concurrency:
+  group: agent-propose-pr
+  cancel-in-progress: false
+
 jobs:
   propose:
     runs-on: self-hosted

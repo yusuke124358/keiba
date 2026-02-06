@@ -408,6 +408,7 @@ def run_codex(prompt_text, schema_path, output_path, log_path, codex_bin):
                 text=True,
                 encoding="utf-8",
                 errors="replace",
+                timeout=int(os.environ.get("CODEX_TIMEOUT_SECONDS", "1800")),
             )
     else:
         result = subprocess.run(
@@ -417,6 +418,7 @@ def run_codex(prompt_text, schema_path, output_path, log_path, codex_bin):
             text=True,
             encoding="utf-8",
             errors="replace",
+            timeout=int(os.environ.get("CODEX_TIMEOUT_SECONDS", "1800")),
         )
         with open(log_path, "w", encoding="utf-8") as log:
             log.write(result.stdout or "")
@@ -440,6 +442,39 @@ def ensure_branch(root, head_ref):
 
 def git_status_clean(root):
     return run(["git", "status", "--porcelain"], cwd=root).stdout.strip() == ""
+
+
+def python_exe(root: Path) -> str:
+    if os.name == "nt":
+        venv_py = root / "py64_analysis" / ".venv" / "Scripts" / "python.exe"
+    else:
+        venv_py = root / "py64_analysis" / ".venv" / "bin" / "python"
+    if venv_py.exists():
+        return str(venv_py)
+    return sys.executable or "python"
+
+
+RUFF_WOULD_REFORMAT_RE = re.compile(r"Would reformat:\\s+([^\\s]+)")
+
+
+def extract_ruff_reformat_paths(bundle: dict) -> list[str]:
+    signals = bundle.get("signals") or {}
+    checks = signals.get("checks") or []
+    paths: set[str] = set()
+    for check in checks:
+        excerpt = str(check.get("log_failed_excerpt") or "")
+        for match in RUFF_WOULD_REFORMAT_RE.finditer(excerpt):
+            path = match.group(1).strip()
+            if path:
+                paths.add(path)
+    return sorted(paths)
+
+
+def run_ruff_format(root: Path, paths: list[str]) -> None:
+    if not paths:
+        return
+    py = python_exe(root)
+    subprocess.run([py, "-m", "ruff", "format", *paths], cwd=root, check=True)
 
 
 def run_make_ci(root, base_ref):
@@ -643,10 +678,19 @@ def collect(args, config):
         thread_comments, state.get("last_thread_comment_id")
     )
     new_checks = filter_new_checks(checks, state.get("last_check_completed_at"))
-    attach_failed_check_logs(new_checks)
+
+    # When CI is still failing but no new signals exist, scheduled runs should
+    # continue attempting fixes. Bundle failing checks (with log excerpts) so
+    # we can apply deterministic fixes (e.g., ruff formatting) without requiring
+    # new comments/reviews/check reruns.
+    failing_checks = [
+        c for c in checks if str(c.get("conclusion") or "").upper() == "FAILURE"
+    ]
+    checks_for_bundle = new_checks or failing_checks
+    attach_failed_check_logs(checks_for_bundle)
 
     if (
-        not (new_comments or new_reviews or new_thread_comments or new_checks)
+        not (new_comments or new_reviews or new_thread_comments or checks_for_bundle)
         and not args.force
     ):
         ensure_current_run(
@@ -671,7 +715,7 @@ def collect(args, config):
             "comments": new_comments,
             "reviews": new_reviews,
             "review_thread_comments": new_thread_comments,
-            "checks": new_checks,
+            "checks": checks_for_bundle,
         },
     }
     bundle_path = run_dir / "input_bundle.json"
@@ -992,6 +1036,29 @@ def run_all(args, config):
     head_ref = ((bundle.get("pr") or {}).get("head_ref") or "").strip()
     if head_ref:
         ensure_branch(repo_root(), head_ref)
+
+    # Fast path: fix common mechanical CI failures without running the fixer LLM.
+    # This avoids Codex execpolicy blocks and reduces latency.
+    root = repo_root()
+    fast_actions = []
+    ruff_paths = extract_ruff_reformat_paths(bundle)
+    if ruff_paths:
+        run_ruff_format(root, ruff_paths)
+        fast_actions.append("ruff format: " + ", ".join(ruff_paths))
+
+    if fast_actions:
+        fixer_report = {
+            "status": "success",
+            "summary": "Applied deterministic CI fixes.",
+            "actions": fast_actions,
+            "tests": [],
+            "artifacts": [],
+            "failures": [],
+            "needs_human": False,
+            "next_steps": [],
+        }
+        write_json(run_dir / "fixer_report.json", fixer_report)
+        return finalize(args, config)
 
     manager_decision_path = run_dir / "manager_decision.json"
     manager_text = (
