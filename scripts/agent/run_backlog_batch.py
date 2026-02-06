@@ -145,6 +145,18 @@ def reset_item_to_todo(item: dict) -> None:
     item.pop("picked_at", None)
 
 
+def move_item_to_end(items: list[dict], item: dict) -> None:
+    """
+    Move a (re)queued item to the end of the backlog list to avoid repeated retries
+    blocking progress for the whole batch.
+    """
+    item_id = str(item.get("id") or "").strip()
+    for idx, it in enumerate(items):
+        if it is item or (item_id and str(it.get("id") or "") == item_id):
+            items.append(items.pop(idx))
+            return
+
+
 def requeue_stale_in_progress(items: list[dict], stale_hours: float) -> list[dict]:
     now = dt.datetime.utcnow()
     requeued = []
@@ -163,6 +175,8 @@ def requeue_stale_in_progress(items: list[dict], stale_hours: float) -> list[dic
         if is_stale:
             reset_item_to_todo(item)
             requeued.append(item)
+    for item in requeued:
+        move_item_to_end(items, item)
     return requeued
 
 
@@ -467,6 +481,7 @@ def main() -> int:
             git_checkout(root, base_branch)
             if args.requeue_on_timeout:
                 reset_item_to_todo(item)
+                move_item_to_end(items, item)
                 status_label = "requeued"
             else:
                 update_item_status(item, "failed")
