@@ -405,7 +405,9 @@ items:
   - backtest.roi
   risk_level: medium
   max_diff_size: 200
-  status: todo
+  status: in_progress
+  picked_at: '2026-02-06T20:46:25Z'
+  branch: agent/exp_20260206_120000-speed-figure-normalized-by-course-distance-going
 - id: EXP-026
   title: Pace pressure features
   hypothesis: Pace scenario features (early speed vs closers) improve win probability
