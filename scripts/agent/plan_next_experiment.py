@@ -70,9 +70,10 @@ def load_seed_hypotheses(path: Path) -> list[dict]:
             raise RuntimeError(
                 f"seed_hypotheses entry {seed_name} missing keys: {sorted(missing)}"
             )
-        if not isinstance(item["acceptance_criteria"], list) or not item[
-            "acceptance_criteria"
-        ]:
+        if (
+            not isinstance(item["acceptance_criteria"], list)
+            or not item["acceptance_criteria"]
+        ):
             raise RuntimeError(
                 f"seed_hypotheses entry {item['id']} has empty acceptance_criteria."
             )
@@ -138,7 +139,9 @@ def list_has_valid_text(values) -> bool:
     return True
 
 
-def plan_needs_seed_override(plan: dict, seed_ids: set[str], selected_seed_id: str) -> bool:
+def plan_needs_seed_override(
+    plan: dict, seed_ids: set[str], selected_seed_id: str
+) -> bool:
     if not isinstance(plan, dict):
         return True
     seed_id = str(plan.get("seed_id") or "").strip()
