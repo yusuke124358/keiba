@@ -452,6 +452,16 @@ def main() -> int:
                 raise RuntimeError(f"Timeout on {exp_id}") from exc
         except Exception as exc:
             git_checkout(root, base_branch)
+            # If we fail before marking the item in progress (e.g., planning failures),
+            # keep the item as todo so reruns don't require manual backlog edits.
+            if str(item.get("status", "")).lower() == "todo":
+                print(
+                    f"Failed on {exp_id} before marking in progress: {exc}",
+                    file=sys.stderr,
+                )
+                if not args.continue_on_failure:
+                    raise
+                continue
             update_item_status(item, "failed")
             save_backlog(backlog_path, data)
             run(["git", "add", str(backlog_path)], cwd=root)

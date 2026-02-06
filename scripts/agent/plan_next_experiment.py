@@ -224,8 +224,15 @@ def run_codex(
     ]
     log_path = output_path.with_suffix(".log")
     with open(log_path, "w", encoding="utf-8") as log:
+        # Pass the prompt via stdin to avoid Windows command line length limits.
         result = subprocess.run(
-            cmd + [prompt], cwd=root, stdout=log, stderr=log, text=True
+            cmd + ["-"],
+            cwd=root,
+            input=prompt,
+            stdout=log,
+            stderr=log,
+            text=True,
+            encoding="utf-8",
         )
     if result.returncode != 0:
         raise RuntimeError(
