@@ -407,7 +407,9 @@ items:
   - backtest.max_drawdown
   risk_level: high
   max_diff_size: 200
-  status: todo
+  status: in_progress
+  picked_at: '2026-02-06T17:41:13Z'
+  branch: agent/exp_20260206_120000-uncertainty-aware-staking-via-ensemble-variance
 - id: EXP-024
   title: Odds feature transforms (log-odds, clipped odds)
   hypothesis: Better odds transforms reduce model brittleness and improve calibration.
