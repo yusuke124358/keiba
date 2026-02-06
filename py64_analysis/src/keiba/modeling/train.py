@@ -165,8 +165,6 @@ class WinProbabilityModel:
             else "pre_calibration"
         )
         self.residual_cap_value: Optional[float] = None  # fit()で計算して保存
-        # Dynamically attached (see calibrate_model); keep attribute for mypy.
-        self.calibrator: Any | None = None
         self.feature_names: list[str] = []
 
     def fit(
@@ -1048,9 +1046,7 @@ def train_model(
                 model.save(model_path)
             return model, metrics
         X_valid2 = _align_features(X_valid, model.feature_names)
-        pred_out = model.predict(
-            X_valid2, p_mkt_valid, calibrate=False, segments=segments_valid
-        )
+        pred_out = model.predict(X_valid2, p_mkt_valid, calibrate=False, segments=segments_valid)
         if isinstance(pred_out, tuple):
             pred_out = pred_out[0]
         p_blend_valid = np.asarray(pred_out, dtype=float)
