@@ -39,6 +39,11 @@ def distance_bin(distance: Optional[float]) -> Optional[int]:
     return 2800
 
 
+def distance_bucket(distance: Optional[float]) -> Optional[int]:
+    """Leakage-safe distance bucket for modeling/routing (alias of distance_bin)."""
+    return distance_bin(distance)
+
+
 def compute_horse_history_features(
     past_results: pd.DataFrame,
     *,
