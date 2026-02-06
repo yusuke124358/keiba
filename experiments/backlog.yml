@@ -336,8 +336,7 @@ items:
   - backtest.roi
   risk_level: high
   max_diff_size: 200
-  status: in_progress
-  picked_at: '2026-02-06T09:01:52Z'
+  status: todo
   branch: agent/exp_20260206_090152-distance-bucket-models
 - id: EXP-019
   title: Recency-weighted training
