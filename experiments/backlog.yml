@@ -391,23 +391,6 @@ items:
   status: failed
   picked_at: '2026-02-06T16:53:49Z'
   branch: agent/exp_20260206_130000-exp-022-lightweight-hyperparameter-tuning-via-rolling-cv
-- id: EXP-024
-  title: Odds feature transforms (log-odds, clipped odds)
-  hypothesis: Better odds transforms reduce model brittleness and improve calibration.
-  change_scope:
-  - py64_analysis/src/keiba/features/
-  - py64_analysis/src/keiba/modeling/
-  acceptance_criteria:
-  - ECE improves by >= 5%
-  - ROI >= baseline
-  metrics:
-  - calibration.ece
-  - backtest.roi
-  risk_level: low
-  max_diff_size: 150
-  status: in_progress
-  picked_at: '2026-02-06T19:14:19Z'
-  branch: agent/exp_20260206_120000-exp-024-odds-feature-transforms-clipped-log
 - id: EXP-025
   title: Speed figure normalized by course/distance/going
   hypothesis: A normalized speed figure adds predictive signal beyond raw times/positions.
@@ -859,3 +842,19 @@ items:
   max_diff_size: 200
   status: todo
   branch: agent/exp_20260206_120000-uncertainty-aware-staking-via-ensemble-variance
+- id: EXP-024
+  title: Odds feature transforms (log-odds, clipped odds)
+  hypothesis: Better odds transforms reduce model brittleness and improve calibration.
+  change_scope:
+  - py64_analysis/src/keiba/features/
+  - py64_analysis/src/keiba/modeling/
+  acceptance_criteria:
+  - ECE improves by >= 5%
+  - ROI >= baseline
+  metrics:
+  - calibration.ece
+  - backtest.roi
+  risk_level: low
+  max_diff_size: 150
+  status: todo
+  branch: agent/exp_20260206_120000-exp-024-odds-feature-transforms-clipped-log
