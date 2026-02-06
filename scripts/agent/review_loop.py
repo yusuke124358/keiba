@@ -465,7 +465,13 @@ def python_exe(root: Path) -> str:
 
 
 RUFF_WOULD_REFORMAT_RE = re.compile(r"Would reformat:\s+([^\s]+)")
-RUFF_CHECK_PATH_RE = re.compile(r"^([^\s:]+\.py):\d+:\d+:", re.MULTILINE)
+# Ruff output formats vary:
+# - "path.py:line:col: ..." (e.g., --output-format concise)
+# - "--> path.py:line:col" (default formatter)
+RUFF_CHECK_PATH_RE = re.compile(
+    r"^\s*(?:-->\s+)?([^\s:]+\.py):\d+:\d+",
+    re.MULTILINE,
+)
 
 
 def extract_ruff_reformat_paths(bundle: dict) -> list[str]:
@@ -941,7 +947,6 @@ def finalize(args, config):
         occurrences.get(i, 0) >= recurrence_limit for i in countable_issue_ids
     ):
         add_label(pr_number, config["labels"]["needs_human"])
-        state["consecutive_failures"] = int(state.get("consecutive_failures", 0)) + 1
         fixer_report = {
             "status": "failed",
             "summary": "Issue recurrence threshold reached.",
@@ -1005,28 +1010,7 @@ def finalize(args, config):
 
     run(["git", "fetch", "origin", base_ref], cwd=root)
     exit_code = run_make_ci(root, f"origin/{base_ref}")
-    if exit_code != 0:
-        state["consecutive_failures"] = int(state.get("consecutive_failures", 0)) + 1
-        fixer_report["status"] = "failed"
-        fixer_report.setdefault("needs_human", False)
-        if "failures" not in fixer_report:
-            fixer_report["failures"] = []
-        fixer_report["failures"].append("make ci failed")
-        fixer_report["summary"] = "make ci failed"
-        if state["consecutive_failures"] >= config["thresholds"]["consecutive_fail"]:
-            fixer_report["needs_human"] = True
-        write_json(fixer_report_path, fixer_report)
-        comment_body = build_comment(manager_decision, fixer_report)
-        comment_path = run_dir / "comment.md"
-        comment_path.write_text(comment_body, encoding="utf-8")
-        comment_pr(pr_number, comment_path)
-        save_state(state_path, state)
-        if state["consecutive_failures"] >= config["thresholds"]["consecutive_fail"]:
-            add_label(pr_number, config["labels"]["needs_human"])
-        return exit_code
-
-    state["consecutive_failures"] = 0
-
+    pushed_commit = False
     status = run(["git", "status", "--porcelain"], cwd=root).stdout.strip()
     if status:
         run(
@@ -1037,14 +1021,13 @@ def finalize(args, config):
         run(["git", "add", "-A"], cwd=root)
         commit_msg = f"autofix: pr-{pr_number} [agent-fix]"
         run(["git", "commit", "-m", commit_msg], cwd=root)
+        commit_sha = run(["git", "rev-parse", "HEAD"], cwd=root).stdout.strip()
 
         token = os.environ.get("AUTO_FIX_PUSH_TOKEN")
         if not token:
             raise RuntimeError("AUTO_FIX_PUSH_TOKEN is required for push.")
 
-        remote_url = run(
-            ["git", "remote", "get-url", "origin"], cwd=root
-        ).stdout.strip()
+        remote_url = run(["git", "remote", "get-url", "origin"], cwd=root).stdout.strip()
         if remote_url.startswith("git@"):
             match = re.match(r"git@github.com:(.+?/.+?)\\.git", remote_url)
             repo = match.group(1) if match else ""
@@ -1054,6 +1037,39 @@ def finalize(args, config):
         push_url = https_url.replace("https://", f"https://x-access-token:{token}@")
         run(["git", "remote", "set-url", "--push", "origin", push_url], cwd=root)
         push_head_ref(root, head_ref)
+        pushed_commit = True
+
+        if not isinstance(fixer_report.get("actions"), list):
+            fixer_report["actions"] = []
+        fixer_report["actions"].append(f"Committed and pushed changes: {commit_sha}")
+
+    if exit_code != 0:
+        if pushed_commit:
+            state["consecutive_failures"] = 0
+        else:
+            state["consecutive_failures"] = int(state.get("consecutive_failures", 0)) + 1
+        fixer_report["status"] = "failed"
+        fixer_report.setdefault("needs_human", False)
+        if "failures" not in fixer_report:
+            fixer_report["failures"] = []
+        fixer_report["failures"].append("make ci failed")
+        fixer_report["summary"] = "make ci failed"
+        if (not pushed_commit) and (
+            state["consecutive_failures"] >= config["thresholds"]["consecutive_fail"]
+        ):
+            fixer_report["needs_human"] = True
+        write_json(fixer_report_path, fixer_report)
+        comment_body = build_comment(manager_decision, fixer_report)
+        comment_path = run_dir / "comment.md"
+        comment_path.write_text(comment_body, encoding="utf-8")
+        comment_pr(pr_number, comment_path)
+        save_state(state_path, state)
+        if fixer_report.get("needs_human"):
+            add_label(pr_number, config["labels"]["needs_human"])
+        return exit_code
+
+    state["consecutive_failures"] = 0
+    write_json(fixer_report_path, fixer_report)
 
     comment_body = build_comment(manager_decision, fixer_report)
     comment_path = run_dir / "comment.md"
