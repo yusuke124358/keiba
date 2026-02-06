@@ -353,8 +353,7 @@ items:
   - backtest.roi
   risk_level: medium
   max_diff_size: 160
-  status: in_progress
-  picked_at: '2026-02-06T11:44:54Z'
+  status: todo
   branch: agent/exp_20260206_114454-exp-019-recency-weighted-training-exponential-decay
 - id: EXP-020
   title: Multi-task top1 + top3 probabilities
