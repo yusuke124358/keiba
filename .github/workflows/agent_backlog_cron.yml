@@ -82,6 +82,7 @@ jobs:
             --stale-in-progress-hours 0 \
             --item-timeout-minutes 90 \
             --requeue-on-timeout \
+            --auto-stash \
             --base-branch main
       - name: Run backlog batch (Windows)
         if: runner.os == 'Windows'
@@ -97,4 +98,5 @@ jobs:
           --stale-in-progress-hours 0
           --item-timeout-minutes 90
           --requeue-on-timeout
+          --auto-stash
           --base-branch main
