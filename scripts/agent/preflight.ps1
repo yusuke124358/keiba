@@ -20,15 +20,24 @@ try {
     exit 2
   }
 
-  if (-not (Get-Command make -ErrorAction SilentlyContinue)) {
-    Write-Error "make not found. Install build tools or provide make ci entrypoint."
+  $hasMake = [bool](Get-Command make -ErrorAction SilentlyContinue)
+  $ciPs1 = Join-Path $root "scripts\\ci.ps1"
+  $verifyPs1 = Join-Path $root "scripts\\verify.ps1"
+  $hasCiScript = (Test-Path $ciPs1) -or (Test-Path $verifyPs1)
+
+  if (-not $hasMake -and -not $hasCiScript) {
+    Write-Error "make not found and no scripts/ci.ps1 or scripts/verify.ps1 present."
     exit 2
   }
 
-  & make -n ci | Out-Null
-  if ($LASTEXITCODE -ne 0) {
-    Write-Error "make ci target missing. Add it to Makefile (verify wrappers should call make ci)."
-    exit 2
+  if ($hasMake) {
+    & make -n ci | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+      Write-Error "make ci target missing. Add it to Makefile (verify wrappers should call make ci)."
+      exit 2
+    }
+  } else {
+    Write-Host "make not found; using PowerShell CI script fallback."
   }
 
   Write-Host "Preflight OK."

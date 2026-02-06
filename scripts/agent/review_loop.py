@@ -377,8 +377,69 @@ def git_status_clean(root):
 def run_make_ci(root, base_ref):
     env = os.environ.copy()
     env["VERIFY_BASE"] = base_ref
-    result = subprocess.run(["make", "ci"], cwd=root, env=env)
-    return result.returncode
+    # Ensure pytest temp dir is writable on Windows runners.
+    tmp_root = Path(root) / "tmp" / "pytest"
+    tmp_root.mkdir(parents=True, exist_ok=True)
+    run_id = dt.datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    tmp_session = tmp_root / f"pytest_{run_id}"
+    tmp_session.mkdir(parents=True, exist_ok=True)
+    env.setdefault("TMP", str(tmp_session))
+    env.setdefault("TEMP", str(tmp_session))
+    env.setdefault("TMPDIR", str(tmp_session))
+    env.setdefault("PYTEST_TMPDIR", str(tmp_session))
+
+    if shutil.which("make"):
+        result = subprocess.run(["make", "ci"], cwd=root, env=env)
+        return result.returncode
+
+    ci_ps1 = Path(root) / "scripts" / "ci.ps1"
+    verify_ps1 = Path(root) / "scripts" / "verify.ps1"
+    if ci_ps1.exists():
+        result = subprocess.run(
+            ["powershell", "-ExecutionPolicy", "Bypass", "-File", str(ci_ps1)],
+            cwd=root,
+            env=env,
+        )
+        return result.returncode
+    if verify_ps1.exists():
+        result = subprocess.run(
+            ["powershell", "-ExecutionPolicy", "Bypass", "-File", str(verify_ps1)],
+            cwd=root,
+            env=env,
+        )
+        return result.returncode
+    raise RuntimeError("make not found and no scripts/ci.ps1 or scripts/verify.ps1")
+
+
+def push_head_ref(root, head_ref, max_attempts=3):
+    attempts = max(1, int(max_attempts))
+    for attempt in range(1, attempts + 1):
+        result = run(
+            ["git", "push", "origin", f"HEAD:{head_ref}"],
+            cwd=root,
+            check=False,
+        )
+        if result.returncode == 0:
+            return
+        stderr = (result.stderr or "").strip()
+        if attempt >= attempts:
+            raise RuntimeError(
+                f"git push failed ({result.returncode}): HEAD:{head_ref}\n{stderr}"
+            )
+
+        run(["git", "fetch", "origin", head_ref], cwd=root, check=False)
+        rebase = run(
+            ["git", "rebase", f"origin/{head_ref}"],
+            cwd=root,
+            check=False,
+        )
+        if rebase.returncode != 0:
+            run(["git", "rebase", "--abort"], cwd=root, check=False)
+            raise RuntimeError(
+                "git push failed and rebase retry also failed.\n"
+                f"push stderr:\n{stderr}\n"
+                f"rebase stderr:\n{(rebase.stderr or '').strip()}"
+            )
 
 
 def normalize_issue_ids(issues):
@@ -779,7 +840,7 @@ def finalize(args, config):
             https_url = remote_url
         push_url = https_url.replace("https://", f"https://x-access-token:{token}@")
         run(["git", "remote", "set-url", "--push", "origin", push_url], cwd=root)
-        run(["git", "push", "origin", f"HEAD:{head_ref}"], cwd=root)
+        push_head_ref(root, head_ref)
 
     comment_body = build_comment(manager_decision, fixer_report)
     comment_path = run_dir / "comment.md"
