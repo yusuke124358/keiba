@@ -139,7 +139,9 @@ class FeatureBuilder:
                     frame_no_i = int(frame_no) if frame_no is not None else None
                 except Exception:
                     frame_no_i = None
-                features["course_x_gate_bias"] = float(course_gate_bias_by_frame.get(frame_no_i, 0.0))
+                features["course_x_gate_bias"] = float(
+                    course_gate_bias_by_frame.get(frame_no_i, 0.0)
+                )
 
             # C4: レースレベルの予測ペース特徴量（全馬共通）
             if race_expected_pace:
@@ -1000,7 +1002,9 @@ class FeatureBuilder:
             out[int(frame_no_i)] = float((p_gate - p_all) * shrink)
         return out
 
-    def _patch_course_gate_bias_existing_features(self, *, race_id: str, asof_time: datetime) -> int:
+    def _patch_course_gate_bias_existing_features(
+        self, *, race_id: str, asof_time: datetime
+    ) -> int:
         """
         Patch `course_x_gate_bias` into existing features rows for (race_id, asof_time, VERSION).
 
@@ -1010,7 +1014,9 @@ class FeatureBuilder:
         if not race_info:
             return 0
 
-        bias_by_frame = self._build_course_gate_bias_by_frame(race_info=race_info, asof_time=asof_time)
+        bias_by_frame = self._build_course_gate_bias_by_frame(
+            race_info=race_info, asof_time=asof_time
+        )
         params: dict = {"race_id": race_id, "asof_time": asof_time, "version": self.VERSION}
         if bias_by_frame:
             whens: list[str] = []
