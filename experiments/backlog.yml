@@ -73,7 +73,9 @@ items:
   - backtest.n_bets
   risk_level: medium
   max_diff_size: 200
-  status: todo
+  status: in_progress
+  picked_at: '2026-02-07T07:00:23Z'
+  branch: agent/exp_20260207_000000-dynamic-odds-cap-by-field-size
 - id: EXP-005
   title: EV margin schedule by odds bucket
   hypothesis: Requiring a higher EV margin for high-odds bets increases realized ROI
