@@ -69,5 +69,5 @@ jobs:
           path: |
             ${{ env.KEIBA_ARTIFACT_DIR }}/${{ inputs.campaign_id }}/experiments/**
             ${{ env.KEIBA_ARTIFACT_DIR }}/${{ inputs.campaign_id }}/plans/**
+            AGENTS.md
           if-no-files-found: warn
-

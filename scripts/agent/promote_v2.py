@@ -10,6 +10,7 @@ avoid PR flood.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -77,6 +78,14 @@ def _slug(text: str) -> str:
     s = str(text or "").strip().lower()
     s = re.sub(r"[^a-z0-9]+", "-", s)
     return s.strip("-") or "promotion"
+
+
+def _sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(8192), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 def _load_seeds(path: Path) -> dict[str, dict[str, Any]]:
@@ -243,8 +252,20 @@ def _hard_clean_repo(root: Path) -> None:
 
 
 def _checkout_base(root: Path, base_ref: str) -> None:
+    # Ensure we recheck/publish against the latest remote tip (self-hosted runners can have stale local branches).
+    base_ref = str(base_ref or "").strip()
+    if not base_ref:
+        raise RuntimeError("base_ref is required.")
     run(["git", "fetch", "origin"], cwd=root, check=False, capture_output=True)
-    run(["git", "checkout", "-f", base_ref], cwd=root, check=True, capture_output=True)
+    remote = base_ref if base_ref.startswith("origin/") else f"origin/{base_ref}"
+    local = base_ref[len("origin/") :] if base_ref.startswith("origin/") else base_ref
+    # Make the local base branch match the remote tip deterministically.
+    run(
+        ["git", "checkout", "-B", local, remote],
+        cwd=root,
+        check=True,
+        capture_output=True,
+    )
     _hard_clean_repo(root)
 
 
@@ -354,6 +375,22 @@ def main() -> int:
                 event_type="promotion_skipped_apply_fail",
                 run_id=acc.run_id,
                 reason=f"patch not found: {patch_path}",
+            )
+            continue
+
+        actual_sha256 = _sha256_file(patch_path)
+        if actual_sha256 != acc.patch_sha256:
+            _append_promotion_event(
+                root=root,
+                state_repo_dir=state_repo_dir,
+                campaign_id=cfg.campaign_id,
+                seed_id=acc.seed_id,
+                event_type="promotion_skipped_hash_mismatch",
+                run_id=acc.run_id,
+                reason=(
+                    "patch sha256 mismatch: "
+                    f"expected={acc.patch_sha256} actual={actual_sha256} path={patch_path}"
+                ),
             )
             continue
 
@@ -473,9 +510,38 @@ def main() -> int:
 
         ms = result.get("stats") or {}
         ci = ms.get("delta_roi_ci95") or [None, None]
+        p_one_sided = ms.get("p_one_sided_delta_le_0")
         metrics = result.get("metrics") or {}
         b_metrics = result.get("baseline_metrics") or {}
         delta = (result.get("deltas") or {}).get("delta_roi")
+
+        def _profit(stake: Any, total_return: Any) -> float | None:
+            if stake is None or total_return is None:
+                return None
+            try:
+                return float(total_return) - float(stake)
+            except Exception:
+                return None
+
+        def _split_period(x: Any) -> tuple[str, str]:
+            s = str(x or "").strip()
+            if " to " in s:
+                a, b = s.split(" to ", 1)
+                return a.strip(), b.strip()
+            return "N/A", "N/A"
+
+        v_stake = metrics.get("total_stake")
+        v_return = metrics.get("total_return")
+        v_profit = _profit(v_stake, v_return)
+        v_dd = metrics.get("max_drawdown")
+        v_start, v_end = _split_period(metrics.get("test_period"))
+
+        b_stake = b_metrics.get("total_stake")
+        b_return = b_metrics.get("total_return")
+        b_profit = _profit(b_stake, b_return)
+        b_dd = b_metrics.get("max_drawdown")
+        b_start, b_end = _split_period(b_metrics.get("test_period"))
+
         pr_body = "\n".join(
             [
                 f"Campaign: `{cfg.campaign_id}`",
@@ -484,12 +550,26 @@ def main() -> int:
                 "Decision (recheck): `accept`",
                 "",
                 "## Summary (holdout recheck)",
-                f"- ROI: {metrics.get('roi')}",
-                f"- Baseline ROI: {b_metrics.get('roi')}",
+                f"- ROI (variant): {metrics.get('roi')}",
+                f"- ROI (baseline): {b_metrics.get('roi')}",
+                f"- Stake (variant): {v_stake}",
+                f"- Return (variant): {v_return}",
+                f"- Profit (variant): {v_profit}",
+                f"- Max drawdown (variant): {v_dd}",
+                f"- Stake (baseline): {b_stake}",
+                f"- Return (baseline): {b_return}",
+                f"- Profit (baseline): {b_profit}",
+                f"- Max drawdown (baseline): {b_dd}",
                 f"- delta_ROI: {delta}",
                 f"- delta_ROI_CI95: {ci}",
+                f"- p_one_sided_delta_le_0: {p_one_sided}",
                 f"- n_bets: {metrics.get('n_bets')}",
-                f"- Test period: {metrics.get('test_period')}",
+                f"- n_days: {metrics.get('n_days')}",
+                f"- Test start (variant): {v_start}",
+                f"- Test end (variant): {v_end}",
+                f"- Test start (baseline): {b_start}",
+                f"- Test end (baseline): {b_end}",
+                "- ROI definition: ROI = profit / stake, profit = return - stake.",
                 "",
                 "## Details",
                 f"- Experiment log: `docs/experiments/{acc.run_id}.md`",
