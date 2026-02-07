@@ -348,7 +348,9 @@ def ensure_eval_plan(plan: dict) -> None:
     plan["metrics_path"] = f"data/holdout_runs/{run_id}/metrics.json"
     reason = plan.get("reason", "").strip()
     if reason:
-        reason = f"{reason} (eval_command overridden to run_holdout+compare_metrics_json)"
+        reason = (
+            f"{reason} (eval_command overridden to run_holdout+compare_metrics_json)"
+        )
     else:
         reason = "eval_command overridden to run_holdout+compare_metrics_json"
     plan["reason"] = reason

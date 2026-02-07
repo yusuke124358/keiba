@@ -86,7 +86,12 @@ def load_experiment_decision(root: Path, run_id: str) -> str:
 
 
 def write_publish_marker(
-    root: Path, publish: bool, reason: str, run_id: str = "", decision: str = "", labels: str = ""
+    root: Path,
+    publish: bool,
+    reason: str,
+    run_id: str = "",
+    decision: str = "",
+    labels: str = "",
 ) -> None:
     out_dir = root / "artifacts" / "agent"
     out_dir.mkdir(parents=True, exist_ok=True)

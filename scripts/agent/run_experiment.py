@@ -76,6 +76,17 @@ def run_shell_commands(commands, cwd=None):
                 cmd = f"python {stripped}"
         result = subprocess.run(cmd, cwd=cwd, check=False, shell=True)
         if result.returncode != 0:
+            is_compare = (
+                isinstance(cmd, str)
+                and "compare_metrics_json.py" in cmd.replace("\\", "/").lower()
+            )
+            if is_compare and result.returncode in {1, 2}:
+                # `compare_metrics_json.py` uses exit code 1/2 to encode gate outcomes.
+                # We still want to persist results and decision metadata for reject/needs-human.
+                print(
+                    f"[warn] compare_metrics_json exited with code {result.returncode}; continuing."
+                )
+                continue
             raise RuntimeError(f"Command failed ({result.returncode}): {cmd}")
 
 
