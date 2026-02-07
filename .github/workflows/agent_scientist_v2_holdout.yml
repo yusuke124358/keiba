@@ -17,7 +17,7 @@ on:
         default: "5"
 
 concurrency:
-  group: scientist-v2-${{ github.event.inputs.campaign_id }}-${{ replace(github.event.inputs.shard, '/', '-') }}
+  group: scientist-v2-${{ github.event.inputs.campaign_id }}-${{ github.event.inputs.shard }}
   cancel-in-progress: false
 
 jobs:
@@ -31,6 +31,9 @@ jobs:
       - name: Preflight
         shell: cmd
         run: powershell -ExecutionPolicy Bypass -File scripts\agent\preflight.ps1
+      - name: Configure Codex
+        shell: cmd
+        run: powershell -ExecutionPolicy Bypass -Command "New-Item -ItemType Directory -Force -Path \"$env:USERPROFILE\\.codex\" | Out-Null; Copy-Item -Path .github/runner/codex.config.toml -Destination \"$env:USERPROFILE\\.codex\\config.toml\" -Force"
       - name: Configure Git Remote (push token)
         shell: cmd
         env:
@@ -40,7 +43,7 @@ jobs:
       - name: Configure Paths
         shell: cmd
         run: >
-          powershell -ExecutionPolicy Bypass -Command "$shard='${{ inputs.shard }}'; $idx=$shard.Split('/')[0]; $runner=$env:RUNNER_NAME; if (-not $runner) { $runner='runner' }; $state=\"C:\\keiba_scientist\\state_repo\\$runner\"; $art=\"C:\\keiba_scientist\\artifacts\\$runner\\shard-$idx\"; New-Item -ItemType Directory -Force -Path $state,$art | Out-Null; \"KEIBA_STATE_REPO_DIR=$state\" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8; \"KEIBA_ARTIFACT_DIR=$art\" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8"
+          powershell -ExecutionPolicy Bypass -Command "$shard='${{ inputs.shard }}'; $safeShard=$shard.Replace('/','-'); $idx=$shard.Split('/')[0]; $runner=$env:RUNNER_NAME; if (-not $runner) { $runner='runner' }; $state=\"C:\\keiba_scientist\\state_repo\\$runner\"; $art=\"C:\\keiba_scientist\\artifacts\\$runner\\shard-$idx\"; New-Item -ItemType Directory -Force -Path $state,$art | Out-Null; \"KEIBA_STATE_REPO_DIR=$state\" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8; \"KEIBA_ARTIFACT_DIR=$art\" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8; \"SAFE_SHARD=$safeShard\" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8"
       - name: Install deps (venv)
         shell: cmd
         run: |
@@ -60,7 +63,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: scientist-v2-${{ github.event.inputs.campaign_id }}-holdout-${{ replace(github.event.inputs.shard, '/', '-') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          name: scientist-v2-${{ github.event.inputs.campaign_id }}-holdout-${{ env.SAFE_SHARD }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             ${{ env.KEIBA_ARTIFACT_DIR }}/${{ inputs.campaign_id }}/experiments/**
             ${{ env.KEIBA_ARTIFACT_DIR }}/${{ inputs.campaign_id }}/plans/**
