@@ -442,7 +442,7 @@ items:
   - backtest.roi
   risk_level: low
   max_diff_size: 160
-  status: in_progress
+  status: failed
   picked_at: '2026-02-07T01:07:22Z'
   branch: agent/exp_20260207_000000-exp-029-weight-carried-and-weight-change-interactions
 - id: EXP-030
