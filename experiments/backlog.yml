@@ -133,9 +133,11 @@ items:
   - backtest.n_bets
   risk_level: low
   max_diff_size: 120
-  status: in_progress
+  status: done
   picked_at: '2026-02-07T14:32:12Z'
   branch: agent/exp_20260207_090000-exp-009-skip-low-field-size-races-min-field-size-10
+  run_id: exp_20260207_090000
+  decision: iterate
 - id: EXP-010
   title: Minimum odds floor for win bets
   hypothesis: Skipping extremely low odds improves ROI after takeout and reduces opportunity
