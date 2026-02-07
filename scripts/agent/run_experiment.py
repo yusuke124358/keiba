@@ -218,6 +218,81 @@ def normalize_metrics(metrics_json: dict) -> dict:
     }
 
 
+def _read_json_or_none(path: Path) -> dict | None:
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else None
+    except Exception:
+        return None
+
+
+def _derive_decision(comparison: dict | None) -> tuple[str, str, dict]:
+    """
+    Map compare_metrics_json decision to our publish/triage decision vocabulary.
+
+    Returns: (decision, status_for_template, details)
+      decision: accept | reject | iterate | needs-human
+      status_for_template: pass | fail | inconclusive
+    """
+
+    if not comparison:
+        return (
+            "iterate",
+            "inconclusive",
+            {"source": "missing_comparison_json", "comparison_decision": None},
+        )
+
+    raw = str(comparison.get("decision") or "").strip().lower()
+    details: dict = {"source": "comparison_json", "comparison_decision": raw or None}
+    if isinstance(comparison.get("incomparable_reasons"), list):
+        details["incomparable_reasons"] = comparison.get("incomparable_reasons")
+    if isinstance(comparison.get("gates"), dict):
+        details["gates"] = comparison.get("gates")
+
+    if raw == "pass":
+        return ("accept", "pass", details)
+    if raw == "fail":
+        return ("reject", "fail", details)
+    if raw == "incomparable":
+        # Treat as needs-human because baseline/candidate definitions differ.
+        return ("needs-human", "inconclusive", details)
+    return ("iterate", "inconclusive", details)
+
+
+def _bundle_experiment_artifacts(
+    *,
+    root: Path,
+    run_id: str,
+    plan_path: Path,
+    result_path: Path,
+    log_path: Path,
+    codex_log: Path,
+    metrics_path: Path,
+    comparison_path: Path | None,
+    report_path: Path | None,
+) -> None:
+    out_dir = root / "artifacts" / "experiments" / run_id
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # Always include the minimal reproducibility bundle even if we don't open a PR.
+    shutil.copy2(plan_path, out_dir / "plan.json")
+    shutil.copy2(result_path, out_dir / "experiment_result.json")
+    shutil.copy2(log_path, out_dir / "experiment.md")
+    if codex_log.exists():
+        shutil.copy2(codex_log, out_dir / "codex_implement.log")
+
+    if metrics_path.exists():
+        shutil.copy2(metrics_path, out_dir / "metrics.json")
+
+    if comparison_path is not None and comparison_path.exists():
+        shutil.copy2(comparison_path, out_dir / "comparison.json")
+
+    if report_path is not None and report_path.exists():
+        shutil.copy2(report_path, out_dir / "backtest.md")
+
+
 def ensure_clean(root: Path) -> None:
     status = subprocess.run(
         ["git", "status", "--porcelain"],
@@ -480,11 +555,20 @@ def main() -> int:
     if comparison_candidate.exists():
         comparison_path = str(comparison_candidate.relative_to(root)).replace("\\", "/")
 
+    decision, status, decision_details = _derive_decision(
+        _read_json_or_none(comparison_candidate)
+    )
+
     result = {
         "run_id": run_id,
         "seed_id": plan["seed_id"],
         "title": plan["title"],
-        "status": metrics.get("status", "inconclusive"),
+        "status": status,
+        "decision": {
+            "decision": decision,
+            "status": status,
+            "details": decision_details,
+        },
         "metrics": normalized,
         "artifacts": {
             "metrics_json": metrics_json_path,
@@ -500,6 +584,18 @@ def main() -> int:
     template = root / "docs" / "experiments" / "_template.md"
     log_path = root / "docs" / "experiments" / f"{plan['run_id']}.md"
     render_experiment_log(template, log_path, plan, result)
+
+    _bundle_experiment_artifacts(
+        root=root,
+        run_id=run_id,
+        plan_path=plan_path,
+        result_path=result_path,
+        log_path=log_path,
+        codex_log=codex_log,
+        metrics_path=metrics_path,
+        comparison_path=comparison_candidate if comparison_candidate.exists() else None,
+        report_path=report_candidate if report_candidate.exists() else None,
+    )
 
     run(["git", "add", "-A"], cwd=root)
     status = subprocess.run(

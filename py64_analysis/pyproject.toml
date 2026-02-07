@@ -67,3 +67,4 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
 norecursedirs = ["tmp*"]
+addopts = "--basetemp=.pytest_tmp"

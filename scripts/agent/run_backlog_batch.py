@@ -343,6 +343,65 @@ def publish_branch(root: Path, base_branch: str, title: str, body_file: Path) ->
     )
 
 
+def load_experiment_decision(root: Path, run_id: str) -> str:
+    """
+    Load the experiment decision ("accept" / "reject" / "iterate" / "needs-human")
+    from the standard experiment result JSON emitted by run_experiment.py.
+    """
+
+    path = root / "experiments" / "runs" / f"{run_id}.json"
+    if not path.exists():
+        return ""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            return ""
+        decision = data.get("decision")
+        if isinstance(decision, dict):
+            decision = decision.get("decision")
+        decision = str(decision or "").strip()
+        if decision:
+            return decision
+
+        # Backward-compat: older runs store only status.
+        status = str(data.get("status") or "").strip().lower()
+        if status == "pass":
+            return "accept"
+        if status == "fail":
+            return "reject"
+        if status in {"needs-human", "needs_human"}:
+            return "needs-human"
+        if status == "inconclusive":
+            return "iterate"
+        return ""
+    except Exception:
+        return ""
+
+
+def should_publish_for_decision(decision: str, policy: str) -> bool:
+    """
+    Decide whether to publish a PR from an experiment branch based on the outcome.
+
+    policy:
+    - always: publish regardless of decision
+    - accept: publish only when decision == "accept"
+    - accept_or_needs_human: publish when decision in {"accept", "needs-human"}
+    - never: never publish
+    """
+
+    policy = (policy or "always").strip().lower()
+    if policy == "never":
+        return False
+    if policy == "always":
+        return True
+    decision = (decision or "").strip().lower()
+    if policy == "accept":
+        return decision == "accept"
+    if policy in {"accept_or_needs_human", "accept-or-needs-human"}:
+        return decision in {"accept", "needs-human"}
+    return True
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--backlog", default="experiments/backlog.yml")
@@ -350,6 +409,12 @@ def main() -> int:
     parser.add_argument("--remote", default="origin")
     parser.add_argument("--count", type=int, default=5)
     parser.add_argument("--publish", action="store_true")
+    parser.add_argument(
+        "--publish-on",
+        choices=["always", "accept", "accept_or_needs_human", "never"],
+        default="always",
+        help="When --publish is set, control which experiment outcomes create PRs.",
+    )
     parser.add_argument("--push-base", action="store_true")
     parser.add_argument("--continue-on-failure", action="store_true")
     parser.add_argument(
@@ -473,6 +538,12 @@ def main() -> int:
                 timeout=timeout_seconds,
             )
             exp_branch = current_branch(root)
+            decision = load_experiment_decision(root, plan.get("run_id", ""))
+            item["run_id"] = plan.get("run_id", "")
+            item["decision"] = decision or "unknown"
+            publish_ok = bool(args.publish) and should_publish_for_decision(
+                decision, args.publish_on
+            )
 
             git_checkout(root, base_branch)
             update_item_status(item, "done", branch=exp_branch)
@@ -484,7 +555,7 @@ def main() -> int:
 
             if exp_branch:
                 git_checkout(root, exp_branch)
-                if args.publish:
+                if publish_ok:
                     pr_body_path = (
                         root / "artifacts" / "agent" / f"pr_body_{exp_id}_{ts}.md"
                     )

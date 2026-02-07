@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import json
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -67,6 +68,40 @@ def write_loop_artifacts(root: Path, title: str, labels: str) -> Path:
     return body_path
 
 
+def load_experiment_decision(root: Path, run_id: str) -> str:
+    path = root / "experiments" / "runs" / f"{run_id}.json"
+    if not path.exists():
+        return ""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            return ""
+        decision = data.get("decision")
+        if isinstance(decision, dict):
+            decision = decision.get("decision")
+        decision = str(decision or "").strip().lower()
+        return decision
+    except Exception:
+        return ""
+
+
+def write_publish_marker(
+    root: Path, publish: bool, reason: str, run_id: str = "", decision: str = "", labels: str = ""
+) -> None:
+    out_dir = root / "artifacts" / "agent"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "publish": bool(publish),
+        "reason": str(reason or ""),
+        "run_id": str(run_id or ""),
+        "decision": str(decision or ""),
+        "labels": str(labels or ""),
+    }
+    (out_dir / "loop_publish.json").write_text(
+        json.dumps(payload, ensure_ascii=True, indent=2), encoding="utf-8"
+    )
+
+
 def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--once", action="store_true", help="Run at most one action.")
@@ -87,6 +122,7 @@ def main() -> int:
         if git_ahead_count(root) > 0:
             labels = "checkpoint,needs-human"
             write_loop_artifacts(root, "checkpoint", labels)
+            write_publish_marker(root, True, "checkpoint", labels=labels)
             print("Checkpoint created; stopping after one action.")
             return 0
     elif checkpoint_result.returncode != 2:
@@ -99,11 +135,32 @@ def main() -> int:
     plans = list((root / "artifacts" / "agent").glob("plan_*.json"))
     if not plans:
         print("No plan generated.")
+        write_publish_marker(root, False, "no_plan")
         return 0
     plan_path = max(plans, key=lambda p: p.stat().st_mtime)
+    try:
+        plan = json.loads(plan_path.read_text(encoding="utf-8"))
+    except Exception:
+        plan = {}
+    run_id = str(plan.get("run_id") or "").strip()
     run(["python", "scripts/agent/run_experiment.py", "--plan", str(plan_path)], root)
-    if git_ahead_count(root) > 0:
-        write_loop_artifacts(root, "experiment", "autogen,auto-fix")
+    decision = load_experiment_decision(root, run_id) if run_id else ""
+    publish_ok = decision in {"accept", "needs-human"}
+    labels = "autogen,auto-fix"
+    if decision == "needs-human":
+        labels = "autogen,needs-human"
+
+    write_publish_marker(
+        root,
+        publish_ok and git_ahead_count(root) > 0,
+        "decision_gate",
+        run_id=run_id,
+        decision=decision,
+        labels=labels,
+    )
+
+    if git_ahead_count(root) > 0 and publish_ok:
+        write_loop_artifacts(root, "experiment", labels)
     print("Experiment run complete.")
     return 0
 

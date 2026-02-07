@@ -78,6 +78,7 @@ jobs:
           py64_analysis/.venv/bin/python scripts/agent/run_backlog_batch.py \
             --count 5 \
             --publish \
+            --publish-on accept_or_needs_human \
             --push-base \
             --stale-in-progress-hours 0 \
             --item-timeout-minutes 90 \
@@ -94,9 +95,19 @@ jobs:
           py64_analysis\.venv\Scripts\python.exe scripts\agent\run_backlog_batch.py
           --count 5
           --publish
+          --publish-on accept_or_needs_human
           --push-base
           --stale-in-progress-hours 0
           --item-timeout-minutes 90
           --requeue-on-timeout
           --auto-stash
           --base-branch main
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backlog-batch-${{ github.run_id }}
+          path: |
+            artifacts/agent/**
+            artifacts/experiments/**
