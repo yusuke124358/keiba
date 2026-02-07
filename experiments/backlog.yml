@@ -498,24 +498,6 @@ items:
   status: done
   picked_at: '2026-02-07T02:32:31Z'
   branch: agent/exp_20260207_101500-exp-032-course-specific-gate-draw-bias-feature
-- id: EXP-033
-  title: Course record features (horse/trainer)
-  hypothesis: Course/distance history features improve prediction where specialization
-    matters.
-  change_scope:
-  - py64_analysis/src/keiba/features/
-  - py64_analysis/src/keiba/modeling/
-  acceptance_criteria:
-  - Logloss improves by >= 0.2%
-  - ROI >= baseline
-  metrics:
-  - model.logloss
-  - backtest.roi
-  risk_level: medium
-  max_diff_size: 200
-  status: in_progress
-  picked_at: '2026-02-07T03:52:03Z'
-  branch: agent/exp_20260207_120000-course-distance-record-features-for-horse-and-trainer
 - id: EXP-034
   title: Distance change suitability
   hypothesis: Capturing distance-up/down suitability improves predictions for tactical
@@ -874,3 +856,20 @@ items:
   max_diff_size: 180
   status: todo
   branch: agent/exp_20260206_130000-exp-027-add-minimal-form-cycle-improving-declining-features
+- id: EXP-033
+  title: Course record features (horse/trainer)
+  hypothesis: Course/distance history features improve prediction where specialization
+    matters.
+  change_scope:
+  - py64_analysis/src/keiba/features/
+  - py64_analysis/src/keiba/modeling/
+  acceptance_criteria:
+  - Logloss improves by >= 0.2%
+  - ROI >= baseline
+  metrics:
+  - model.logloss
+  - backtest.roi
+  risk_level: medium
+  max_diff_size: 200
+  status: todo
+  branch: agent/exp_20260207_120000-course-distance-record-features-for-horse-and-trainer
