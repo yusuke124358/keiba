@@ -111,7 +111,9 @@ items:
   - backtest.worst_day_loss
   risk_level: low
   max_diff_size: 150
-  status: todo
+  status: in_progress
+  picked_at: '2026-02-07T10:54:14Z'
+  branch: agent/exp_20260207_090000-per-race-stake-cap-as-bankroll-percentage
 - id: EXP-008
   title: Daily stop-loss / stop-win guardrails
   hypothesis: Daily stop rules reduce deep drawdowns and tail losses in volatile periods.
