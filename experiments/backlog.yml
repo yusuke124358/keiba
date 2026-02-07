@@ -216,7 +216,9 @@ items:
   - model.logloss
   risk_level: high
   max_diff_size: 200
-  status: todo
+  status: in_progress
+  picked_at: '2026-02-07T20:03:39Z'
+  branch: agent/exp_20260207_090000-odds-movement-features-normalized-deltas-volatility-summaries
 - id: EXP-015
   title: Calibration method sweep (isotonic vs temperature)
   hypothesis: Better probability calibration improves EV-based selection and realized
