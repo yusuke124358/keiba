@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "campaign_id": "camp_20260207",
+  "seed_id": "EXP-007",
+  "owner": "RUNNER_NAME=DESKTOP-CUOT9LI GITHUB_RUN_ID=21779070627 GITHUB_RUN_ATTEMPT=1",
+  "event_id": "7cb9ce96d5b85a35bd465df6cf665d966df59421d37a121e96db4d06f981068b",
+  "event_type": "lease_acquired",
+  "stage": "stage1",
+  "attempt": 1,
+  "period_key": "stage1_test",
+  "run_id": "camp_20260207-stage1-EXP-007-a1",
+  "base_commit": "701612035a26449105f8d1c0a2c771496b584883",
+  "started_at": "2026-02-07T16:00:46Z"
+}
