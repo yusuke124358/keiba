@@ -477,7 +477,9 @@ items:
   - backtest.roi
   risk_level: medium
   max_diff_size: 180
-  status: todo
+  status: in_progress
+  picked_at: '2026-02-07T02:08:00Z'
+  branch: agent/exp_20260207_020800-jockey-horse-synergy-feature
 - id: EXP-032
   title: Gate/draw bias interactions by course
   hypothesis: Modeling gate bias per course improves predictions and avoids systematically
