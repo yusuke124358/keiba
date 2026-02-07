@@ -923,7 +923,9 @@ def prepare_training_data(
 
     # Odds movement representation (EXP-014 follow-up).
     feats_cfg = getattr(cfg, "features", None)
-    odds_move_norm = bool(getattr(feats_cfg, "odds_movement_norm_v1", False)) if feats_cfg else False
+    odds_move_norm = (
+        bool(getattr(feats_cfg, "odds_movement_norm_v1", False)) if feats_cfg else False
+    )
     if odds_move_norm:
         odds_movement_cols = [
             "snap_age_min",
