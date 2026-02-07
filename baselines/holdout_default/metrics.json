@@ -1,0 +1,83 @@
+{
+  "schema_version": "0.1",
+  "run_kind": "holdout",
+  "run_dir": "data\\holdout_runs\\exp_20260204_140946",
+  "name": "exp_20260204_140946",
+  "generated_at": "20260204_231053",
+  "git_commit": "6bb7f292a3a33c139b806618899ae5245dfb3190",
+  "config_used_path": "data\\holdout_runs\\exp_20260204_140946\\config_used.yaml",
+  "config_hash_sha256": "e5710c123a3c9a1d9e96f2dd7645c9d8ac68ce3c68c7aa517e44fbf241e62aca",
+  "data_cutoff": {
+    "db_max_race_date": "2026-01-12",
+    "raw_max_mtime": null
+  },
+  "split": {
+    "train": {
+      "start": "2020-01-01",
+      "end": "2022-12-31",
+      "n_races": 10321
+    },
+    "valid": {
+      "start": "2023-01-01",
+      "end": "2023-12-31",
+      "n_races": 3447
+    },
+    "test": {
+      "start": "2024-01-01",
+      "end": "2024-12-31",
+      "n_races": 3422
+    }
+  },
+  "universe": {
+    "track_codes": [
+      "01",
+      "02",
+      "03",
+      "04",
+      "05",
+      "06",
+      "07",
+      "08",
+      "09",
+      "10"
+    ],
+    "require_results": true,
+    "require_ts_win": true,
+    "exclude_race_ids_count": 68,
+    "exclude_race_ids_hash": "f86dbc5d9d9ca54411fe4a3da37b7ab79f4c1ce2c73874a00ecf37c91c6ee997"
+  },
+  "betting": {
+    "buy_t_minus_minutes": 1,
+    "closing_odds_multiplier": 1.0,
+    "closing_odds_multiplier_estimated": null,
+    "closing_odds_multiplier_quantile": null,
+    "slippage_summary": null,
+    "slippage_table": {
+      "enabled": false,
+      "path": null,
+      "meta": null,
+      "train_start": "2020-01-01",
+      "train_end": "2022-12-31"
+    },
+    "market_prob_method": null,
+    "market_prob_mode": "raw"
+  },
+  "prob_variant_used": "p_hat",
+  "backtest": {
+    "n_bets": 104,
+    "roi": 0.10399002493765586,
+    "total_stake": 40100.0,
+    "total_profit": 4170.0,
+    "max_drawdown": 0.04843090415262279
+  },
+  "pred_quality": {
+    "logloss_market": 0.20418711582002733,
+    "logloss_blend": 0.20411488249438056,
+    "logloss_calibrated": 0.20476387730857398,
+    "brier_market": 0.057945072491638785,
+    "brier_blend": 0.05791573330666001,
+    "brier_calibrated": 0.05788163275163409
+  },
+  "step14": null,
+  "incomparable_reasons": []
+}

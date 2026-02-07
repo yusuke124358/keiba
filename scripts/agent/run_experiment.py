@@ -80,6 +80,17 @@ def run_shell_commands(commands, cwd=None):
                 cmd = f"python {stripped}"
         result = subprocess.run(cmd, cwd=cwd, check=False, shell=True)
         if result.returncode != 0:
+            is_compare = (
+                isinstance(cmd, str)
+                and "compare_metrics_json.py" in cmd.replace("\\", "/").lower()
+            )
+            if is_compare and result.returncode in {1, 2}:
+                # `compare_metrics_json.py` uses exit code 1/2 to encode gate outcomes.
+                # We still want to persist results and decision metadata for reject/needs-human.
+                print(
+                    f"[warn] compare_metrics_json exited with code {result.returncode}; continuing."
+                )
+                continue
             raise RuntimeError(f"Command failed ({result.returncode}): {cmd}")
 
 
@@ -620,6 +631,98 @@ def normalize_metrics(metrics_json: dict) -> dict:
     }
 
 
+def _read_json_or_none(path: Path) -> dict | None:
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else None
+    except Exception:
+        return None
+
+
+def _derive_decision(comparison: dict | None) -> tuple[str, str, dict]:
+    """
+    Map compare_metrics_json decision to our publish/triage decision vocabulary.
+
+    Returns: (decision, status_for_template, details)
+      decision: accept | reject | iterate | needs-human
+      status_for_template: pass | fail | inconclusive
+    """
+
+    if not comparison:
+        return (
+            "iterate",
+            "inconclusive",
+            {"source": "missing_comparison_json", "comparison_decision": None},
+        )
+
+    raw = str(comparison.get("decision") or "").strip().lower()
+    details: dict = {"source": "comparison_json", "comparison_decision": raw or None}
+    if isinstance(comparison.get("incomparable_reasons"), list):
+        details["incomparable_reasons"] = comparison.get("incomparable_reasons")
+    if isinstance(comparison.get("gates"), dict):
+        details["gates"] = comparison.get("gates")
+
+    if raw == "pass":
+        return ("accept", "pass", details)
+    if raw == "fail":
+        return ("reject", "fail", details)
+    if raw == "incomparable":
+        # Treat as needs-human because baseline/candidate definitions differ.
+        return ("needs-human", "inconclusive", details)
+    return ("iterate", "inconclusive", details)
+
+
+def _bundle_experiment_artifacts(
+    *,
+    root: Path,
+    run_id: str,
+    plan_path: Path,
+    result_path: Path,
+    log_path: Path,
+    codex_log: Path,
+    metrics_path: Path,
+    comparison_path: Path | None,
+    report_path: Path | None,
+) -> None:
+    out_dir = root / "artifacts" / "experiments" / run_id
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # Always include the minimal reproducibility bundle even if we don't open a PR.
+    shutil.copy2(plan_path, out_dir / "plan.json")
+    shutil.copy2(result_path, out_dir / "experiment_result.json")
+    shutil.copy2(log_path, out_dir / "experiment.md")
+    if codex_log.exists():
+        shutil.copy2(codex_log, out_dir / "codex_implement.log")
+
+    if metrics_path.exists():
+        shutil.copy2(metrics_path, out_dir / "metrics.json")
+
+    agents_path = root / "AGENTS.md"
+    if agents_path.exists():
+        shutil.copy2(agents_path, out_dir / "AGENTS.md")
+
+    config_used_path = metrics_path.parent / "config_used.yaml"
+    if not config_used_path.exists():
+        metrics_json = (
+            _read_json_or_none(metrics_path) if metrics_path.exists() else None
+        )
+        config_used_rel = (
+            str(metrics_json.get("config_used_path") or "") if metrics_json else ""
+        ).strip()
+        if config_used_rel:
+            config_used_path = root / config_used_rel
+    if config_used_path.exists():
+        shutil.copy2(config_used_path, out_dir / "config_used.yaml")
+
+    if comparison_path is not None and comparison_path.exists():
+        shutil.copy2(comparison_path, out_dir / "comparison.json")
+
+    if report_path is not None and report_path.exists():
+        shutil.copy2(report_path, out_dir / "backtest.md")
+
+
 def ensure_clean(root: Path) -> None:
     status = subprocess.run(
         ["git", "status", "--porcelain"],
@@ -1082,7 +1185,6 @@ def main() -> int:
     ensure_impl_changes(root)
     ensure_no_disallowed_changes(root)
     ensure_substantive_changes(root)
-
     exp_config_path = detect_experiment_config(root)
 
     # Commit code changes before evaluation so head_commit is stable/reproducible.
@@ -1135,6 +1237,17 @@ def main() -> int:
     exp_art_dir.mkdir(parents=True, exist_ok=True)
     variant_pnl_art = exp_art_dir / "per_bet_pnl.csv"
     variant_pnl_art.write_bytes(variant_pnl_path.read_bytes())
+
+    # Ensure the experiment artifact bundle is self-contained for audits/repro.
+    agents_path = root / "AGENTS.md"
+    if agents_path.exists():
+        shutil.copy2(agents_path, exp_art_dir / "AGENTS.md")
+    variant_config_used = run_dir / "config_used.yaml"
+    if variant_config_used.exists():
+        shutil.copy2(variant_config_used, exp_art_dir / "config_used_variant.yaml")
+    baseline_config_used = baseline_dir / "config_used.yaml"
+    if baseline_config_used.exists():
+        shutil.copy2(baseline_config_used, exp_art_dir / "config_used_baseline.yaml")
 
     bootstrap_seed = int(_sha256_bytes(run_id.encode("utf-8"))[:8], 16)
     summary_stats_path = exp_art_dir / "summary_stats.json"

@@ -18,6 +18,11 @@ on:
         required: false
         default: "true"
         type: string
+      publish_on:
+        description: "When publishing, which outcomes create PRs."
+        required: false
+        default: "accept_or_needs_human"
+        type: string
       push_base:
         description: "Push backlog status commits to the base branch."
         required: false
@@ -108,6 +113,7 @@ jobs:
           COUNT: ${{ inputs.count || '5' }}
           CONTINUE_ON_FAILURE: ${{ inputs.continue_on_failure || 'false' }}
           PUBLISH: ${{ inputs.publish || 'true' }}
+          PUBLISH_ON: ${{ inputs.publish_on || 'accept_or_needs_human' }}
           PUSH_BASE: ${{ inputs.push_base || 'true' }}
           STALE_HOURS: ${{ inputs.stale_in_progress_hours || '0' }}
           ITEM_TIMEOUT_MINUTES: ${{ inputs.item_timeout_minutes || '0' }}
@@ -119,6 +125,9 @@ jobs:
           args=(--count "$COUNT")
           if [[ "$PUBLISH" == "true" ]]; then
             args+=(--publish)
+            if [[ -n "$PUBLISH_ON" ]]; then
+              args+=(--publish-on "$PUBLISH_ON")
+            fi
           fi
           if [[ "$PUSH_BASE" == "true" ]]; then
             args+=(--push-base)
@@ -150,6 +159,7 @@ jobs:
           COUNT: ${{ inputs.count || '5' }}
           CONTINUE_ON_FAILURE: ${{ inputs.continue_on_failure || 'false' }}
           PUBLISH: ${{ inputs.publish || 'true' }}
+          PUBLISH_ON: ${{ inputs.publish_on || 'accept_or_needs_human' }}
           PUSH_BASE: ${{ inputs.push_base || 'true' }}
           STALE_HOURS: ${{ inputs.stale_in_progress_hours || '0' }}
           ITEM_TIMEOUT_MINUTES: ${{ inputs.item_timeout_minutes || '0' }}
@@ -159,7 +169,7 @@ jobs:
         shell: cmd
         run: |
           set "ARGS=--count %COUNT%"
-          if /I "%PUBLISH%"=="true" set "ARGS=%ARGS% --publish"
+          if /I "%PUBLISH%"=="true" set "ARGS=%ARGS% --publish --publish-on %PUBLISH_ON%"
           if /I "%PUSH_BASE%"=="true" set "ARGS=%ARGS% --push-base"
           if not "%STALE_HOURS%"=="" set "ARGS=%ARGS% --stale-in-progress-hours %STALE_HOURS%"
           if not "%ITEM_TIMEOUT_MINUTES%"=="" if not "%ITEM_TIMEOUT_MINUTES%"=="0" set "ARGS=%ARGS% --item-timeout-minutes %ITEM_TIMEOUT_MINUTES%"
@@ -168,12 +178,13 @@ jobs:
           if /I "%AUTO_STASH%"=="true" set "ARGS=%ARGS% --auto-stash"
           if not "%BASE_BRANCH%"=="" set "ARGS=%ARGS% --base-branch %BASE_BRANCH%"
           py64_analysis\\.venv\\Scripts\\python.exe scripts\\agent\\run_backlog_batch.py %ARGS%
-      - name: Upload experiment artifacts
+      - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: experiment-artifacts-${{ github.run_id }}-${{ github.run_attempt }}
+          name: backlog-batch-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
+            artifacts/agent/**
             artifacts/experiments/**
             AGENTS.md
-          if-no-files-found: ignore
+          if-no-files-found: warn

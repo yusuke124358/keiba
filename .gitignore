@@ -93,8 +93,8 @@ docs/_private/
 
 # Pytest
 .pytest_cache/
-py64_analysis/tests/_tmp/
 .pytest_tmp/
+py64_analysis/tests/_tmp/
 
 # Accidental local artifacts (do not commit)
 '@ + $out + r'/

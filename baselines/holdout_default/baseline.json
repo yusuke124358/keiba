@@ -1,0 +1,13 @@
+{
+  "scenario": "holdout_default",
+  "created_at": "2026-02-07T02:17:44.657605+00:00",
+  "git_commit": "6bb7f292a3a33c139b806618899ae5245dfb3190",
+  "config_hash_sha256": "e5710c123a3c9a1d9e96f2dd7645c9d8ac68ce3c68c7aa517e44fbf241e62aca",
+  "data_cutoff": {
+    "db_max_race_date": "2026-01-12",
+    "raw_max_mtime": null
+  },
+  "prob_variant_used": "p_hat",
+  "run_dir": "data\\holdout_runs\\exp_20260204_140946",
+  "note": "baseline for agent experiments (holdout 2020-2024)"
+}

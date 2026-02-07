@@ -339,14 +339,20 @@ def ensure_eval_plan(plan: dict) -> None:
         "--train-start 2020-01-01 --train-end 2022-12-31 "
         "--valid-start 2023-01-01 --valid-end 2023-12-31 "
         "--test-start 2024-01-01 --test-end 2024-12-31 "
-        f"--name {run_id} --out-dir data/holdout_runs/{run_id}"
+        f"--name {run_id} --out-dir data/holdout_runs/{run_id}",
+        "py64_analysis\\.venv\\Scripts\\python.exe py64_analysis/scripts/compare_metrics_json.py "
+        "--baseline baselines/holdout_default/metrics.json "
+        f"--candidate data/holdout_runs/{run_id}/metrics.json "
+        "--gates config/gates/default.yaml",
     ]
     plan["metrics_path"] = f"data/holdout_runs/{run_id}/metrics.json"
     reason = plan.get("reason", "").strip()
     if reason:
-        reason = f"{reason} (eval_command overridden to run_holdout)"
+        reason = (
+            f"{reason} (eval_command overridden to run_holdout+compare_metrics_json)"
+        )
     else:
-        reason = "eval_command overridden to run_holdout"
+        reason = "eval_command overridden to run_holdout+compare_metrics_json"
     plan["reason"] = reason
 
 
