@@ -295,7 +295,9 @@ items:
   - backtest.roi
   risk_level: high
   max_diff_size: 200
-  status: todo
+  status: in_progress
+  picked_at: '2026-02-07T23:45:52Z'
+  branch: agent/exp_20260207_090000-distance-bucket-models-sparse-bucket-fallback-to-global
 - id: EXP-019
   title: Recency-weighted training
   hypothesis: Recency weighting improves out-of-sample stability under regime shifts.
