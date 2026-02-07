@@ -1,0 +1,118 @@
+diff --git a/config/experiments/camp_20260207-stage1-SEED-003-a1.yaml b/config/experiments/camp_20260207-stage1-SEED-003-a1.yaml
+new file mode 100644
+index 0000000..5bf49e3
+--- /dev/null
++++ b/config/experiments/camp_20260207-stage1-SEED-003-a1.yaml
+@@ -0,0 +1,3 @@
++extends: ../config.yaml
++betting:
++  stake_vol_damp: {enabled: true, lookback_days: 30, target_daily_vol: 0.00975, min_mult: 0.5}
+diff --git a/py64_analysis/src/keiba/backtest/engine.py b/py64_analysis/src/keiba/backtest/engine.py
+index 888edf3..681d58b 100644
+--- a/py64_analysis/src/keiba/backtest/engine.py
++++ b/py64_analysis/src/keiba/backtest/engine.py
+@@ -201,7 +201,7 @@ class BacktestEngine:
+ 
+         def _profit_before_damp(bet: Bet, profit_actual: float) -> float:
+             extra = bet.extra or {}
+-            stake_before = extra.get("stake_before")
++            stake_before = extra.get("stake_before_vol") or extra.get("stake_before")
+             try:
+                 stake_before_val = float(stake_before) if stake_before is not None else None
+             except Exception:
+@@ -348,16 +348,46 @@ class BacktestEngine:
+                     dd = (peak_bankroll - bankroll) / peak_bankroll if peak_bankroll > 0 else 0
+                     result.max_drawdown = max(result.max_drawdown, dd)
+         else:
++            vol_cfg = getattr(self.config.betting, "stake_vol_damp", {}) or {}
++            vol_enabled = bool(vol_cfg.get("enabled", False))
++            lookback_days = max(2, int(vol_cfg.get("lookback_days", 30) or 30))
++            target_vol = float(vol_cfg.get("target_daily_vol", 0.0) or 0.0)
++            min_mult = float(vol_cfg.get("min_mult", 0.0) or 0.0)
++            if not np.isfinite(min_mult):
++                min_mult = 0.0
++            min_mult = min(1.0, max(0.0, min_mult))
++            daily_returns: list[float] = []
++            unit = int(min_yen) if min_yen and min_yen > 0 else 1
++
++            def _vol_mult() -> float:
++                if not vol_enabled or target_vol <= 0:
++                    return 1.0
++                window = daily_returns[-lookback_days:]
++                if len(window) < 2:
++                    return 1.0
++                vol = float(np.std(window, ddof=1))
++                if not np.isfinite(vol) or vol <= 0:
++                    return 1.0
++                return float(min(1.0, max(min_mult, target_vol / vol)))
++
+             current_date = None
+             daily_stake = 0.0
+             daily_loss = 0.0
+             per_day_cap = _per_day_cap_for(bankroll_decision)
++            bankroll_day0 = bankroll
++            daily_n_bets = 0
++            stake_vol_mult = _vol_mult()
+ 
+             for race_id in races:
+                 # ???????E???E?????E????E???E?E
+                 race_date = race_id[:8]  # YYYYMMDD
+                 if race_date != current_date:
++                    if current_date is not None and daily_n_bets > 0 and bankroll_day0 > 0:
++                        daily_returns.append((bankroll - bankroll_day0) / bankroll_day0)
+                     current_date = race_date
++                    bankroll_day0 = bankroll
++                    daily_n_bets = 0
++                    stake_vol_mult = _vol_mult()
+                     daily_stake = 0.0
+                     daily_loss = 0.0
+                     per_day_cap = _per_day_cap_for(bankroll_decision)
+@@ -387,7 +417,17 @@ class BacktestEngine:
+                     bankroll_decision,
+                     remaining_daily_budget=remaining_daily_budget,
+                 )
++                if stake_vol_mult < 1.0:
++                    for bet in bets:
++                        base = float(bet.stake)
++                        extra = bet.extra or {}
++                        extra["stake_before_vol"] = base
++                        bet.extra = extra
++                        stake_after = int((base * stake_vol_mult) // unit * unit)
++                        stake_after = max(float(unit), float(stake_after))
++                        bet.stake = float(min(base, stake_after))
+                 bets = self._apply_stake_odds_damp(bets, min_yen=min_yen)
++                daily_n_bets += len(bets)
+ 
+                 # ????E
+                 for bet in bets:
+@@ -404,7 +444,7 @@ class BacktestEngine:
+                     # ?E???????
+                     # Use pre-damp stake for daily budget to keep selection invariant.
+                     extra = bet.extra or {}
+-                    stake_before = extra.get("stake_before")
++                    stake_before = extra.get("stake_before_vol") or extra.get("stake_before")
+                     try:
+                         stake_before = float(stake_before) if stake_before is not None else None
+                     except Exception:
+@@ -421,6 +461,8 @@ class BacktestEngine:
+                     # ????????E
+                     dd = (peak_bankroll - bankroll) / peak_bankroll if peak_bankroll > 0 else 0
+                     result.max_drawdown = max(result.max_drawdown, dd)
++            if current_date is not None and daily_n_bets > 0 and bankroll_day0 > 0:
++                daily_returns.append((bankroll - bankroll_day0) / bankroll_day0)
+ 
+         if daily_topn_stats:
+             result.daily_topn_stats = daily_topn_stats
+diff --git a/py64_analysis/src/keiba/config.py b/py64_analysis/src/keiba/config.py
+index ec0aeaa..793f305 100644
+--- a/py64_analysis/src/keiba/config.py
++++ b/py64_analysis/src/keiba/config.py
+@@ -403,6 +403,8 @@ class BettingConfig(BaseModel):
+     max_buy_odds: Optional[float] = Field(default=None, gt=0)
+     odds_floor_min_odds: float = Field(default=0.0, ge=0.0)
+     stake_odds_damp: StakeOddsDampConfig = Field(default_factory=StakeOddsDampConfig)
++    # Loose dict for fast iteration; code should treat missing keys as disabled/default.
++    stake_vol_damp: dict = Field(default_factory=dict)
+     # EV/overlay tail cap (post-hoc quantile filter)
+     ev_cap_quantile: Optional[float] = Field(default=None, gt=0, lt=1)
+     overlay_abs_cap_quantile: Optional[float] = Field(default=None, gt=0, lt=1)
