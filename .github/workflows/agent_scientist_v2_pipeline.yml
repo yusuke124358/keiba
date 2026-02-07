@@ -1,0 +1,73 @@
+name: scientist_v2_pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      campaign_id:
+        description: Campaign ID (config/scientist_campaigns/<id>.yml)
+        required: true
+        default: camp_20260207
+      shard:
+        description: Shard in i/n form (e.g. 0/2)
+        required: true
+        default: "0/2"
+      max_jobs:
+        description: Max seeds to process per stage (per run)
+        required: true
+        default: "5"
+
+concurrency:
+  group: scientist-v2-${{ github.event.inputs.campaign_id }}-${{ github.event.inputs.shard }}
+  cancel-in-progress: false
+
+jobs:
+  pipeline:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Preflight
+        shell: cmd
+        run: powershell -ExecutionPolicy Bypass -File scripts\agent\preflight.ps1
+      - name: Configure Codex
+        shell: cmd
+        run: powershell -ExecutionPolicy Bypass -Command "New-Item -ItemType Directory -Force -Path \"$env:USERPROFILE\\.codex\" | Out-Null; Copy-Item -Path .github/runner/codex.config.toml -Destination \"$env:USERPROFILE\\.codex\\config.toml\" -Force"
+      - name: Configure Git Remote (push token)
+        shell: cmd
+        env:
+          AUTO_FIX_PUSH_TOKEN: ${{ secrets.AUTO_FIX_PUSH_TOKEN }}
+        run: >
+          powershell -ExecutionPolicy Bypass -Command "if (-not $env:AUTO_FIX_PUSH_TOKEN) { throw 'AUTO_FIX_PUSH_TOKEN missing' }; git remote set-url origin https://x-access-token:$env:AUTO_FIX_PUSH_TOKEN@github.com/${{ github.repository }}.git"
+      - name: Configure Paths
+        shell: cmd
+        run: >
+          powershell -ExecutionPolicy Bypass -Command "$shard='${{ inputs.shard }}'; $safeShard=$shard.Replace('/','-'); $idx=$shard.Split('/')[0]; $runner=$env:RUNNER_NAME; if (-not $runner) { $runner='runner' }; $state=\"C:\\keiba_scientist\\state_repo\\$runner\"; $art=\"C:\\keiba_scientist\\artifacts\\$runner\\shard-$idx\"; New-Item -ItemType Directory -Force -Path $state,$art | Out-Null; \"KEIBA_STATE_REPO_DIR=$state\" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8; \"KEIBA_ARTIFACT_DIR=$art\" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8; \"SAFE_SHARD=$safeShard\" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8"
+      - name: Install deps (venv)
+        shell: cmd
+        run: |
+          where py >nul 2>nul
+          if %ERRORLEVEL%==0 (
+            py -3.12 -m venv py64_analysis\\.venv
+          ) else (
+            python -m venv py64_analysis\\.venv
+          )
+          py64_analysis\\.venv\\Scripts\\python.exe -m pip install -U pip
+          py64_analysis\\.venv\\Scripts\\python.exe -m pip install -e "py64_analysis[dev]"
+      - name: Run Scientist V2 (Stage1 -> Stage2 -> Holdout)
+        shell: cmd
+        run: |
+          py64_analysis\\.venv\\Scripts\\python.exe scripts\\agent\\scientist_v2.py --campaign ${{ inputs.campaign_id }} --stage stage1 --shard ${{ inputs.shard }} --max-jobs ${{ inputs.max_jobs }}
+          py64_analysis\\.venv\\Scripts\\python.exe scripts\\agent\\scientist_v2.py --campaign ${{ inputs.campaign_id }} --stage stage2 --shard ${{ inputs.shard }} --max-jobs ${{ inputs.max_jobs }}
+          py64_analysis\\.venv\\Scripts\\python.exe scripts\\agent\\scientist_v2.py --campaign ${{ inputs.campaign_id }} --stage holdout --shard ${{ inputs.shard }} --max-jobs ${{ inputs.max_jobs }}
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scientist-v2-${{ github.event.inputs.campaign_id }}-pipeline-${{ env.SAFE_SHARD }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.KEIBA_ARTIFACT_DIR }}/${{ inputs.campaign_id }}/experiments/**
+            ${{ env.KEIBA_ARTIFACT_DIR }}/${{ inputs.campaign_id }}/plans/**
+            AGENTS.md
+          if-no-files-found: warn

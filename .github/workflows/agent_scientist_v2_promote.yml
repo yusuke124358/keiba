@@ -1,0 +1,70 @@
+name: scientist_v2_promote
+
+on:
+  workflow_dispatch:
+    inputs:
+      campaign_id:
+        description: Campaign ID (config/scientist_campaigns/<id>.yml)
+        required: true
+        default: camp_20260207
+      base:
+        description: Base branch to target
+        required: true
+        default: main
+      max_prs:
+        description: Max PRs to create per run
+        required: true
+        default: "3"
+      dry_run:
+        description: If true, only print what would be promoted
+        required: true
+        default: "false"
+
+concurrency:
+  group: scientist-v2-promote-${{ github.event.inputs.campaign_id }}
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: self-hosted
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Preflight
+        shell: cmd
+        run: powershell -ExecutionPolicy Bypass -File scripts\agent\preflight.ps1
+      - name: Configure Git Remote (push token)
+        shell: cmd
+        env:
+          AUTO_FIX_PUSH_TOKEN: ${{ secrets.AUTO_FIX_PUSH_TOKEN }}
+        run: >
+          powershell -ExecutionPolicy Bypass -Command "if (-not $env:AUTO_FIX_PUSH_TOKEN) { throw 'AUTO_FIX_PUSH_TOKEN missing' }; git remote set-url origin https://x-access-token:$env:AUTO_FIX_PUSH_TOKEN@github.com/${{ github.repository }}.git"
+      - name: Configure State Worktree Dir
+        shell: cmd
+        run: >
+          powershell -ExecutionPolicy Bypass -Command "$runner=$env:RUNNER_NAME; if (-not $runner) { $runner='runner' }; $state=\"C:\\keiba_scientist\\state_repo\\$runner\"; New-Item -ItemType Directory -Force -Path $state | Out-Null; \"KEIBA_STATE_REPO_DIR=$state\" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8"
+      - name: Install deps (venv)
+        shell: cmd
+        run: |
+          where py >nul 2>nul
+          if %ERRORLEVEL%==0 (
+            py -3.12 -m venv py64_analysis\\.venv
+          ) else (
+            python -m venv py64_analysis\\.venv
+          )
+          py64_analysis\\.venv\\Scripts\\python.exe -m pip install -U pip
+          py64_analysis\\.venv\\Scripts\\python.exe -m pip install -e "py64_analysis[dev]"
+      - name: Promote Holdout Accepts (create PRs)
+        shell: cmd
+        env:
+          AUTO_FIX_PUSH_TOKEN: ${{ secrets.AUTO_FIX_PUSH_TOKEN }}
+          GH_TOKEN: ${{ secrets.AUTO_FIX_PUSH_TOKEN }}
+        run: >
+          py64_analysis\\.venv\\Scripts\\python.exe scripts\\agent\\promote_v2.py --campaign ${{ inputs.campaign_id }} --base ${{ inputs.base }} --max-prs ${{ inputs.max_prs }} ${{ inputs.dry_run == 'true' && '--dry-run' || '' }}
+
