@@ -155,7 +155,9 @@ items:
   - backtest.n_bets
   risk_level: low
   max_diff_size: 120
-  status: todo
+  status: in_progress
+  picked_at: '2026-02-07T15:23:56Z'
+  branch: agent/exp_20260207_000000-exp-010-minimum-odds-floor-for-win-bets-min-odds-floor-1-3
 - id: EXP-011
   title: Odds drift robustness filter
   hypothesis: Betting only when EV remains positive under a conservative odds-drop
