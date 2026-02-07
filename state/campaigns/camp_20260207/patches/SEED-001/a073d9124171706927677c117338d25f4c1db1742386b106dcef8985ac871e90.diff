@@ -1,0 +1,11 @@
+diff --git a/config/experiments/camp_20260207-stage1-SEED-001-a1.yaml b/config/experiments/camp_20260207-stage1-SEED-001-a1.yaml
+new file mode 100644
+index 0000000..f6907aa
+--- /dev/null
++++ b/config/experiments/camp_20260207-stage1-SEED-001-a1.yaml
+@@ -0,0 +1,5 @@
++# Experiment: Odds cap tightening for win bets (tail-risk reduction)
++extends: ../config.yaml
++
++betting:
++  max_odds: 60.0
