@@ -94,26 +94,6 @@ items:
   status: failed
   picked_at: '2026-02-07T09:25:50Z'
   branch: agent/exp_20260207_090000-adaptive-fractional-kelly-under-drawdown
-- id: EXP-007
-  title: Per-race stake cap as bankroll percentage
-  hypothesis: Adding a per-race stake cap reduces worst-case loss and drawdown with
-    little impact on ROI.
-  change_scope:
-  - config/
-  - py64_analysis/src/keiba/betting/
-  acceptance_criteria:
-  - ROI >= baseline - 0.005
-  - Max drawdown improves by >= 5%
-  - Worst-day loss improves by >= 10%
-  metrics:
-  - backtest.roi
-  - backtest.max_drawdown
-  - backtest.worst_day_loss
-  risk_level: low
-  max_diff_size: 150
-  status: in_progress
-  picked_at: '2026-02-07T10:54:14Z'
-  branch: agent/exp_20260207_090000-per-race-stake-cap-as-bankroll-percentage
 - id: EXP-008
   title: Daily stop-loss / stop-win guardrails
   hypothesis: Daily stop rules reduce deep drawdowns and tail losses in volatile periods.
@@ -830,3 +810,22 @@ items:
   max_diff_size: 200
   status: todo
   branch: agent/exp_20260207_000000-dynamic-odds-cap-by-field-size
+- id: EXP-007
+  title: Per-race stake cap as bankroll percentage
+  hypothesis: Adding a per-race stake cap reduces worst-case loss and drawdown with
+    little impact on ROI.
+  change_scope:
+  - config/
+  - py64_analysis/src/keiba/betting/
+  acceptance_criteria:
+  - ROI >= baseline - 0.005
+  - Max drawdown improves by >= 5%
+  - Worst-day loss improves by >= 10%
+  metrics:
+  - backtest.roi
+  - backtest.max_drawdown
+  - backtest.worst_day_loss
+  risk_level: low
+  max_diff_size: 150
+  status: todo
+  branch: agent/exp_20260207_090000-per-race-stake-cap-as-bankroll-percentage
