@@ -1,0 +1,3 @@
+extends: ../config.yaml
+
+# EXP-030: Track x distance conditional jockey/trainer win-rate encodings.

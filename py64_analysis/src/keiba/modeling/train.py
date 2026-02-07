@@ -976,6 +976,8 @@ def prepare_training_data(
         "trainer_starts_365",
         "trainer_win_rate_365",
         "trainer_place_rate_365",
+        "jockey_win_rate_track_dist",
+        "trainer_win_rate_track_dist",
         "horse_jockey_starts_365",
         "horse_jockey_win_rate_365",
     ]

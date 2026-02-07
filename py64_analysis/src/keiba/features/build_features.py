@@ -62,7 +62,7 @@ class FeatureBuilder:
 
     # Option C1: 履歴特徴量を拡張したためバージョン更新
     # Option C4: ペース/通過順特徴量を追加（1.4.0）
-    VERSION = "1.6.1"
+    VERSION = "1.6.2"
 
     def __init__(self, session: Session):
         self.session = session
@@ -96,6 +96,12 @@ class FeatureBuilder:
         pace_history_by_horse, race_expected_pace = self._build_pace_history_features(
             race_info, entries, asof_time
         )
+        # EXP-030: track x distance conditional win-rate encodings (leak-safe: race_dt < asof_time).
+        jockey_td, trainer_td = self._build_jt_track_dist_win_rate_maps(
+            race_info=race_info,
+            entries=entries,
+            asof_time=asof_time,
+        )
 
         results = []
         for entry in entries:
@@ -114,6 +120,14 @@ class FeatureBuilder:
                 target_distance=race_info.get("distance"),
             )
             features.update(history_features)
+            jid = entry.get("jockey_id")
+            tid = entry.get("trainer_id")
+            features["jockey_win_rate_track_dist"] = (
+                jockey_td.get(str(jid)) if jid is not None else None
+            )
+            features["trainer_win_rate_track_dist"] = (
+                trainer_td.get(str(tid)) if tid is not None else None
+            )
 
             pace_history = pace_history_by_horse.get(str(entry["horse_id"]))
             if pace_history:
@@ -415,7 +429,7 @@ class FeatureBuilder:
     def _get_entries(self, race_id: str) -> list[dict]:
         """出走馬リストを取得"""
         query = text("""
-            SELECT horse_id, horse_no, frame_no, jockey_id,
+            SELECT horse_id, horse_no, frame_no, jockey_id, trainer_id,
                    weight_carried, horse_weight
             FROM fact_entry
             WHERE race_id = :race_id
@@ -423,6 +437,72 @@ class FeatureBuilder:
         """)
         results = self.session.execute(query, {"race_id": race_id}).fetchall()
         return [dict(r._mapping) for r in results]
+
+    def _build_jt_track_dist_win_rate_maps(
+        self,
+        *,
+        race_info: dict,
+        entries: list[dict],
+        asof_time: datetime,
+    ) -> tuple[dict[str, float], dict[str, float]]:
+        """
+        EXP-030: Compute per-(jockey|trainer) win rates conditioned on the current race's
+        (track_code, distance_bucket), leak-free w.r.t asof_time.
+        """
+        from .history_features import compute_entity_track_dist_win_rate_map
+
+        track_code = race_info.get("track_code")
+        target_distance = race_info.get("distance")
+        if track_code is None or target_distance is None:
+            return {}, {}
+
+        jockey_ids = sorted({str(e.get("jockey_id")) for e in entries if e.get("jockey_id")})
+        trainer_ids = sorted({str(e.get("trainer_id")) for e in entries if e.get("trainer_id")})
+        if not jockey_ids and not trainer_ids:
+            return {}, {}
+
+        cutoff = asof_time - timedelta(days=365)
+
+        def _fetch(entity_field: str, ids: list[str]) -> pd.DataFrame:
+            if not ids:
+                return pd.DataFrame([])
+            q = text(f"""
+                SELECT
+                    e.{entity_field} AS entity_id,
+                    (r.date::timestamp + r.start_time) AS race_dt,
+                    r.track_code,
+                    r.distance,
+                    res.finish_pos
+                FROM fact_result res
+                JOIN fact_race r ON res.race_id = r.race_id
+                JOIN fact_entry e ON e.race_id = res.race_id AND e.horse_no = res.horse_no
+                WHERE r.start_time IS NOT NULL
+                  AND (r.date::timestamp + r.start_time) >= :cutoff
+                  AND (r.date::timestamp + r.start_time) < :asof_time
+                  AND res.finish_pos IS NOT NULL
+                  AND e.{entity_field} = ANY(:ids)
+            """)
+            rows = self.session.execute(
+                q,
+                {"cutoff": cutoff, "asof_time": asof_time, "ids": list(ids)},
+            ).fetchall()
+            return pd.DataFrame([dict(r._mapping) for r in rows])
+
+        jockey_td = compute_entity_track_dist_win_rate_map(
+            _fetch("jockey_id", jockey_ids),
+            asof_time=asof_time,
+            track_code=str(track_code),
+            target_distance=target_distance,
+            entity_col="entity_id",
+        )
+        trainer_td = compute_entity_track_dist_win_rate_map(
+            _fetch("trainer_id", trainer_ids),
+            asof_time=asof_time,
+            track_code=str(track_code),
+            target_distance=target_distance,
+            entity_col="entity_id",
+        )
+        return jockey_td, trainer_td
 
     def _build_market_features(self, race_id: str, horse_no: int, asof_time: datetime) -> dict:
         """
@@ -889,6 +969,8 @@ class FeatureBuilder:
             "trainer_starts_365": 0,
             "trainer_win_rate_365": None,
             "trainer_place_rate_365": None,
+            "jockey_win_rate_track_dist": None,
+            "trainer_win_rate_track_dist": None,
             "horse_jockey_starts_365": 0,
             "horse_jockey_win_rate_365": None,
         }

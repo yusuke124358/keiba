@@ -43,6 +43,57 @@ def distance_bucket(distance: Optional[float]) -> Optional[int]:
     return distance_bin(distance)
 
 
+def compute_entity_track_dist_win_rate_map(
+    past_results: pd.DataFrame,
+    *,
+    asof_time: datetime,
+    track_code: Optional[str],
+    target_distance: Optional[float],
+    entity_col: str,
+    smoothing_k: float = 20.0,
+) -> dict[str, float]:
+    """Leakage-safe win-rate encoding by (track_code, distance_bucket), shrunk to global."""
+    if (
+        past_results is None
+        or past_results.empty
+        or track_code is None
+        or not entity_col
+        or entity_col not in past_results.columns
+    ):
+        return {}
+    if not {"race_dt", "track_code", "distance", "finish_pos"}.issubset(past_results.columns):
+        return {}
+
+    tgt_bucket = distance_bucket(target_distance)
+    if tgt_bucket is None:
+        return {}
+
+    df = past_results[past_results["race_dt"] < asof_time].copy()
+    if df.empty:
+        return {}
+    df = df[df[entity_col].notna()]
+    if df.empty:
+        return {}
+    df[entity_col] = df[entity_col].astype(str)
+
+    is_win = (pd.to_numeric(df["finish_pos"], errors="coerce") == 1).astype(float)
+    prior_stats = is_win.groupby(df[entity_col]).agg(["sum", "count"])
+    prior = prior_stats["sum"] / prior_stats["count"]
+
+    dist_b = pd.to_numeric(df["distance"], errors="coerce").apply(distance_bucket)
+    mask = (df["track_code"].astype(str) == str(track_code)) & (dist_b == tgt_bucket)
+    td_stats = is_win[mask].groupby(df.loc[mask, entity_col]).agg(["sum", "count"])
+    wins_td = td_stats["sum"].reindex(prior.index).fillna(0.0)
+    starts_td = td_stats["count"].reindex(prior.index).fillna(0.0)
+
+    k = float(smoothing_k)
+    if not np.isfinite(k) or k <= 0:
+        rate = prior
+    else:
+        rate = (wins_td + k * prior) / (starts_td + k)
+    return {str(i): float(v) for i, v in rate.items() if v == v and np.isfinite(v)}
+
+
 def compute_horse_history_features(
     past_results: pd.DataFrame,
     *,
