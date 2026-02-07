@@ -50,6 +50,8 @@
 ## Scientist Loop
 - Seed hypotheses: `experiments/seed_hypotheses.yaml`
 - Runs: `experiments/runs/<run_id>.json` and `docs/experiments/<run_id>.md`
+- Stats artifacts (gitignored; uploaded in Actions): `artifacts/experiments/<run_id>/per_bet_pnl.csv`, `artifacts/experiments/<run_id>/summary_stats.json` (day-block bootstrap CI + paired delta)
+- Baseline cache (gitignored): `artifacts/baselines/<baseline_key>/` (reused across runs when base commit/test period/config match)
 - Checkpoints: every 50 runs: `reports/checkpoints/<checkpoint_id>.md` and `experiments/checkpoints/<checkpoint_id>.json`
 - Loop behavior (one action per run):
   - Stop if any PR has `needs-human`

@@ -21,21 +21,34 @@ jobs:
       - name: Configure Codex
         shell: cmd
         run: powershell -ExecutionPolicy Bypass -Command "New-Item -ItemType Directory -Force -Path \"$env:USERPROFILE\\.codex\" | Out-Null; Copy-Item -Path .github/runner/codex.config.toml -Destination \"$env:USERPROFILE\\.codex\\config.toml\" -Force"
+      - name: Install deps (venv)
+        shell: cmd
+        run: |
+          where py >nul 2>nul
+          if %ERRORLEVEL%==0 (
+            py -3.12 -m venv py64_analysis\\.venv
+          ) else (
+            python -m venv py64_analysis\\.venv
+          )
+          py64_analysis\\.venv\\Scripts\\python.exe -m pip install -U pip
+          py64_analysis\\.venv\\Scripts\\python.exe -m pip install -e "py64_analysis[dev]"
       - name: Run Scientist Loop (one action)
         shell: cmd
-        run: python scripts\agent\loop.py --once
+        run: py64_analysis\\.venv\\Scripts\\python.exe scripts\\agent\\loop.py --once
       - name: Publish If Changes
         shell: cmd
         env:
           AUTO_FIX_PUSH_TOKEN: ${{ secrets.AUTO_FIX_PUSH_TOKEN }}
         run: >
-          powershell -ExecutionPolicy Bypass -Command "$ahead = git rev-list --count origin/main..HEAD; if ($ahead -eq 0) { Write-Host 'No changes to publish.'; exit 0 }; $markerPath = 'artifacts/agent/loop_publish.json'; if (Test-Path $markerPath) { try { $marker = (Get-Content $markerPath -Raw) | ConvertFrom-Json } catch { $marker = $null }; if ($marker -and ($marker.publish -ne $true)) { Write-Host ('Decision gate: publish=false (reason=' + $marker.reason + ', decision=' + $marker.decision + ', run_id=' + $marker.run_id + ')'); exit 0 } }; $title = 'autogen: scientist loop'; $body = 'docs/automation.md'; $labels = 'autogen,auto-fix'; if (Test-Path 'artifacts/agent/loop_pr_body.md') { $body = 'artifacts/agent/loop_pr_body.md' }; if (Test-Path 'artifacts/agent/loop_labels.txt') { $labels = (Get-Content 'artifacts/agent/loop_labels.txt' -Raw).Trim() }; if ($marker -and $marker.labels) { $labels = ($marker.labels).Trim() }; python scripts/publish/publisher.py --base main --title $title --body-file $body --labels $labels"
+          powershell -ExecutionPolicy Bypass -Command "$ahead = git rev-list --count origin/main..HEAD; if ($ahead -eq 0) { Write-Host 'No changes to publish.'; exit 0 }; $markerPath = 'artifacts/agent/loop_publish.json'; if (Test-Path $markerPath) { try { $marker = (Get-Content $markerPath -Raw) | ConvertFrom-Json } catch { $marker = $null }; if ($marker -and ($marker.publish -ne $true)) { Write-Host ('Decision gate: publish=false (reason=' + $marker.reason + ', decision=' + $marker.decision + ', run_id=' + $marker.run_id + ')'); exit 0 } }; $title = 'autogen: scientist loop'; $body = 'docs/automation.md'; $labels = 'autogen,auto-fix'; if (Test-Path 'artifacts/agent/loop_pr_body.md') { $body = 'artifacts/agent/loop_pr_body.md' }; if (Test-Path 'artifacts/agent/loop_labels.txt') { $labels = (Get-Content 'artifacts/agent/loop_labels.txt' -Raw).Trim() }; if ($marker -and $marker.labels) { $labels = ($marker.labels).Trim() }; py64_analysis\\.venv\\Scripts\\python.exe scripts/publish/publisher.py --base main --title $title --body-file $body --labels $labels"
 
       - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: scientist-loop-${{ github.run_id }}
+          name: scientist-loop-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             artifacts/agent/**
             artifacts/experiments/**
+            AGENTS.md
+          if-no-files-found: warn
