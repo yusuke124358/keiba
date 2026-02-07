@@ -1,0 +1,7 @@
+# exp_20260207_090000 / EXP-014
+# Odds movement features: normalized deltas + volatility summaries
+extends: config/config.yaml
+
+features:
+  odds_movement_norm_v1: true
+

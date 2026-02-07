@@ -920,6 +920,42 @@ def prepare_training_data(
         for c in QUINELLA_ODDS_MOVEMENT_COLS:
             if c not in df.columns:
                 df[c] = None
+
+    # Odds movement representation (EXP-014 follow-up).
+    feats_cfg = getattr(cfg, "features", None)
+    odds_move_norm = bool(getattr(feats_cfg, "odds_movement_norm_v1", False)) if feats_cfg else False
+    if odds_move_norm:
+        odds_movement_cols = [
+            "snap_age_min",
+            "odds_delta_log_5m",
+            "odds_delta_log_10m",
+            "odds_delta_log_30m",
+            "odds_delta_log_60m",
+            "p_mkt_delta_logit_5m",
+            "p_mkt_delta_logit_10m",
+            "p_mkt_delta_logit_30m",
+            "p_mkt_delta_logit_60m",
+            "log_odds_diff_std_60m",
+            "log_odds_diff_abs_mean_60m",
+            "p_mkt_std_60m",
+            "log_odds_std_60m",
+            "n_pts_60m",
+        ]
+    else:
+        odds_movement_cols = [
+            "snap_age_min",
+            "odds_chg_5m",
+            "odds_chg_10m",
+            "odds_chg_30m",
+            "odds_chg_60m",
+            "p_mkt_chg_5m",
+            "p_mkt_chg_10m",
+            "p_mkt_chg_30m",
+            "p_mkt_chg_60m",
+            "log_odds_slope_60m",
+            "log_odds_std_60m",
+            "n_pts_60m",
+        ]
     # 特徴量カラム
     feature_cols = [
         "odds",
@@ -928,18 +964,7 @@ def prepare_training_data(
         "odds_rank",
         "is_favorite",
         # 時系列オッズ特徴量（直近）
-        "snap_age_min",
-        "odds_chg_5m",
-        "odds_chg_10m",
-        "odds_chg_30m",
-        "odds_chg_60m",
-        "p_mkt_chg_5m",
-        "p_mkt_chg_10m",
-        "p_mkt_chg_30m",
-        "p_mkt_chg_60m",
-        "log_odds_slope_60m",
-        "log_odds_std_60m",
-        "n_pts_60m",
+        *odds_movement_cols,
         # 0B42: 馬連オッズ（スナップショット + 60分変化）
         *QUINELLA_ODDS_MOVEMENT_COLS,
         "n_races",

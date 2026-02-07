@@ -498,6 +498,8 @@ class FeaturesConfig(BaseModel):
     """Feature selection flags."""
 
     pace_history: PaceHistoryFeatureConfig = Field(default_factory=PaceHistoryFeatureConfig)
+    # EXP-014 follow-up: use normalized (logit/log) odds movement deltas + simple summary stats.
+    odds_movement_norm_v1: bool = False
 
 
 class CVConfig(BaseModel):

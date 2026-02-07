@@ -62,7 +62,8 @@ class FeatureBuilder:
 
     # Option C1: 履歴特徴量を拡張したためバージョン更新
     # Option C4: ペース/通過順特徴量を追加（1.4.0）
-    VERSION = "1.6.1"
+    # EXP-014 follow-up: normalized odds movement deltas + volatility summaries.
+    VERSION = "1.6.2"
 
     def __init__(self, session: Session):
         self.session = session
@@ -558,6 +559,47 @@ class FeatureBuilder:
                 return None
             return float(np.log(float(v)))
 
+        def _clip(v: Optional[float], lo: float, hi: float) -> Optional[float]:
+            if v is None:
+                return None
+            try:
+                x = float(v)
+            except Exception:
+                return None
+            if not np.isfinite(x):
+                return None
+            if x < lo:
+                return lo
+            if x > hi:
+                return hi
+            return x
+
+        def _log_delta(v0: Optional[float], v1: Optional[float]) -> Optional[float]:
+            if v0 is None or v1 is None:
+                return None
+            if v0 <= 0 or v1 <= 0:
+                return None
+            return float(np.log(float(v0)) - np.log(float(v1)))
+
+        def _logit(p: Optional[float], eps: float = 1e-6) -> Optional[float]:
+            if p is None:
+                return None
+            try:
+                x = float(p)
+            except Exception:
+                return None
+            if not np.isfinite(x):
+                return None
+            x = min(max(x, eps), 1.0 - eps)
+            return float(np.log(x / (1.0 - x)))
+
+        def _logit_delta(p0: Optional[float], p1: Optional[float]) -> Optional[float]:
+            l0 = _logit(p0)
+            l1 = _logit(p1)
+            if l0 is None or l1 is None:
+                return None
+            return float(l0 - l1)
+
         def _get_at(
             df: pd.DataFrame, horse: int, t: Optional[datetime], col: str
         ) -> Optional[float]:
@@ -601,30 +643,49 @@ class FeatureBuilder:
             p30 = _get_at(df_ts, hn, t30, "p_mkt_t")
             p60 = _get_at(df_ts, hn, t60, "p_mkt_t")
 
+            # Normalized deltas (log/logit). Clip to keep extreme outliers bounded.
+            odds_delta_log_5m = _clip(_log_delta(odds0, odds5), -2.0, 2.0)
+            odds_delta_log_10m = _clip(_log_delta(odds0, odds10), -2.0, 2.0)
+            odds_delta_log_30m = _clip(_log_delta(odds0, odds30), -2.0, 2.0)
+            odds_delta_log_60m = _clip(_log_delta(odds0, odds60), -2.0, 2.0)
+            p_mkt_delta_logit_5m = _clip(_logit_delta(p_mkt0, p5), -8.0, 8.0)
+            p_mkt_delta_logit_10m = _clip(_logit_delta(p_mkt0, p10), -8.0, 8.0)
+            p_mkt_delta_logit_30m = _clip(_logit_delta(p_mkt0, p30), -8.0, 8.0)
+            p_mkt_delta_logit_60m = _clip(_logit_delta(p_mkt0, p60), -8.0, 8.0)
+
             # 直近60分のlog(odds)の傾き・分散（なければNone）
             slope_60 = None
             std_60 = None
+            log_odds_diff_std_60 = None
+            log_odds_diff_abs_mean_60 = None
+            p_mkt_std_60 = None
             n_pts_60 = 0
             if not df_ts.empty:
                 d = df_ts[df_ts["horse_no"] == hn].sort_values("asof_time")
                 # t0-60min以降の点だけ
                 d60 = d[d["asof_time"] >= (t0 - timedelta(minutes=60))]
-                if len(d60) >= 2:
-                    n_pts_60 = int(len(d60))
-                    x_min = (d60["asof_time"] - t0).dt.total_seconds() / 60.0
-                    y = np.log(d60["odds"].astype(float))
+                d_used = d60 if len(d60) >= 2 else d if len(d) >= 2 else None
+                if d_used is not None:
+                    n_pts_60 = int(len(d_used))
+                    x_min = (d_used["asof_time"] - t0).dt.total_seconds() / 60.0
+                    y = np.log(d_used["odds"].astype(float))
                     # y = a*x + b
                     a, b = np.polyfit(x_min.values.astype(float), y.values.astype(float), 1)
                     slope_60 = float(a)
                     std_60 = float(y.std(ddof=0))
-                elif len(d) >= 2:
-                    # 60分以内が足りない場合は取れる範囲で（保守）
-                    n_pts_60 = int(len(d))
-                    x_min = (d["asof_time"] - t0).dt.total_seconds() / 60.0
-                    y = np.log(d["odds"].astype(float))
-                    a, b = np.polyfit(x_min.values.astype(float), y.values.astype(float), 1)
-                    slope_60 = float(a)
-                    std_60 = float(y.std(ddof=0))
+
+                    dif = y.diff().dropna()
+                    if len(dif) >= 1:
+                        log_odds_diff_std_60 = float(dif.std(ddof=0))
+                        log_odds_diff_abs_mean_60 = float(dif.abs().mean())
+
+                    p_ser = pd.to_numeric(d_used.get("p_mkt_t"), errors="coerce").dropna()
+                    if len(p_ser) >= 2:
+                        p_mkt_std_60 = float(p_ser.std(ddof=0))
+
+            log_odds_diff_std_60 = _clip(log_odds_diff_std_60, 0.0, 2.0)
+            log_odds_diff_abs_mean_60 = _clip(log_odds_diff_abs_mean_60, 0.0, 2.0)
+            p_mkt_std_60 = _clip(p_mkt_std_60, 0.0, 0.5)
 
             out[hn] = {
                 # 基本（t0）
@@ -644,6 +705,10 @@ class FeatureBuilder:
                 "odds_chg_10m": _ratio_change(odds0, odds10),
                 "odds_chg_30m": _ratio_change(odds0, odds30),
                 "odds_chg_60m": _ratio_change(odds0, odds60),
+                "odds_delta_log_5m": odds_delta_log_5m,
+                "odds_delta_log_10m": odds_delta_log_10m,
+                "odds_delta_log_30m": odds_delta_log_30m,
+                "odds_delta_log_60m": odds_delta_log_60m,
                 "p_mkt_chg_5m": (p_mkt0 - p5) if (p_mkt0 is not None and p5 is not None) else None,
                 "p_mkt_chg_10m": (p_mkt0 - p10)
                 if (p_mkt0 is not None and p10 is not None)
@@ -654,8 +719,15 @@ class FeatureBuilder:
                 "p_mkt_chg_60m": (p_mkt0 - p60)
                 if (p_mkt0 is not None and p60 is not None)
                 else None,
+                "p_mkt_delta_logit_5m": p_mkt_delta_logit_5m,
+                "p_mkt_delta_logit_10m": p_mkt_delta_logit_10m,
+                "p_mkt_delta_logit_30m": p_mkt_delta_logit_30m,
+                "p_mkt_delta_logit_60m": p_mkt_delta_logit_60m,
                 "log_odds_slope_60m": slope_60,
                 "log_odds_std_60m": std_60,
+                "log_odds_diff_std_60m": log_odds_diff_std_60,
+                "log_odds_diff_abs_mean_60m": log_odds_diff_abs_mean_60,
+                "p_mkt_std_60m": p_mkt_std_60,
                 "n_pts_60m": n_pts_60,
             }
 
