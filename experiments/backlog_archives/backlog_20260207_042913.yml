@@ -15,7 +15,9 @@ items:
   - backtest.max_drawdown
   risk_level: medium
   max_diff_size: 200
-  status: todo
+  status: done
+  branch: agent/exp_20260205_081041-odds-cap-tightening-for-win-bets
+  picked_at: '2026-02-05T08:10:41Z'
 - id: EXP-002
   title: Feature coverage audit for new speed signal
   hypothesis: Adding a coverage/dispersion audit prevents no-op feature releases.
@@ -30,7 +32,9 @@ items:
   - feature.stddev
   risk_level: low
   max_diff_size: 150
-  status: todo
+  status: done
+  branch: agent/exp_20260205_085742-feature-coverage-audit-for-new-speed-signal
+  picked_at: '2026-02-05T08:57:43Z'
 - id: EXP-003
   title: Selector threshold change for high takeout races
   hypothesis: Tightening selector thresholds reduces negative ROI windows.
@@ -45,7 +49,9 @@ items:
   - rolling.neg_roi_window_rate
   risk_level: high
   max_diff_size: 120
-  status: todo
+  status: done
+  picked_at: '2026-02-04T21:53:10Z'
+  branch: agent/exp_20260204_215310-selector-threshold-change-for-high-takeout-races
 - id: EXP-004
   title: Dynamic odds cap by field size
   hypothesis: Tightening max-odds caps more aggressively in large fields reduces tail
@@ -63,7 +69,9 @@ items:
   - backtest.n_bets
   risk_level: medium
   max_diff_size: 200
-  status: todo
+  status: done
+  picked_at: '2026-02-04T22:05:18Z'
+  branch: agent/exp_20260204_220518-dynamic-odds-cap-by-field-size
 - id: EXP-005
   title: EV margin schedule by odds bucket
   hypothesis: Requiring a higher EV margin for high-odds bets increases realized ROI
@@ -81,7 +89,9 @@ items:
   - backtest.n_bets
   risk_level: medium
   max_diff_size: 200
-  status: todo
+  status: done
+  picked_at: '2026-02-04T22:13:35Z'
+  branch: agent/exp_20260204_221334-ev-margin-schedule-by-odds-bucket
 - id: EXP-006
   title: Adaptive fractional Kelly under drawdown
   hypothesis: Lowering Kelly fraction during drawdowns reduces max drawdown with minimal
@@ -97,7 +107,9 @@ items:
   - backtest.max_drawdown
   risk_level: low
   max_diff_size: 150
-  status: todo
+  status: done
+  picked_at: '2026-02-04T22:34:30Z'
+  branch: agent/exp_20260204_223430-adaptive-fractional-kelly-under-drawdown
 - id: EXP-007
   title: Per-race stake cap as bankroll percentage
   hypothesis: Adding a per-race stake cap reduces worst-case loss and drawdown with
@@ -115,7 +127,9 @@ items:
   - backtest.worst_day_loss
   risk_level: low
   max_diff_size: 150
-  status: todo
+  status: done
+  picked_at: '2026-02-04T22:43:12Z'
+  branch: agent/exp_20260204_224312-per-race-stake-cap-as-bankroll-percentage
 - id: EXP-008
   title: Daily stop-loss / stop-win guardrails
   hypothesis: Daily stop rules reduce deep drawdowns and tail losses in volatile periods.
@@ -133,7 +147,9 @@ items:
   - backtest.daily_loss_p95
   risk_level: medium
   max_diff_size: 200
-  status: todo
+  status: done
+  branch: agent/exp_20260205_100429-daily-stop-loss-stop-win-guardrails
+  picked_at: '2026-02-05T10:04:29Z'
 - id: EXP-009
   title: Skip low-field-size races
   hypothesis: Avoiding small fields reduces slippage/selection noise and improves
@@ -151,7 +167,9 @@ items:
   - backtest.n_bets
   risk_level: low
   max_diff_size: 120
-  status: todo
+  status: done
+  picked_at: '2026-02-05T10:42:20Z'
+  branch: agent/exp_20260205_104220-skip-low-field-size-races
 - id: EXP-010
   title: Minimum odds floor for win bets
   hypothesis: Skipping extremely low odds improves ROI after takeout and reduces opportunity
@@ -169,7 +187,9 @@ items:
   - backtest.n_bets
   risk_level: low
   max_diff_size: 120
-  status: todo
+  status: done
+  picked_at: '2026-02-05T11:16:48Z'
+  branch: agent/exp_20260205_111648-minimum-odds-floor-for-win-bets
 - id: EXP-011
   title: Odds drift robustness filter
   hypothesis: Betting only when EV remains positive under a conservative odds-drop
@@ -186,7 +206,9 @@ items:
   - backtest.roi_slippage_stress
   risk_level: medium
   max_diff_size: 200
-  status: todo
+  status: done
+  picked_at: '2026-02-05T11:43:12Z'
+  branch: agent/exp_20260205_114312-odds-drift-robustness-filter
 - id: EXP-012
   title: Tune closing_odds_multiplier quantile
   hypothesis: Using a more conservative closing-mult quantile improves realized ROI
@@ -203,7 +225,9 @@ items:
   - odds.ev_overestimation_rate
   risk_level: medium
   max_diff_size: 200
-  status: todo
+  status: done
+  picked_at: '2026-02-05T12:19:04Z'
+  branch: agent/exp_20260205_121904-tune-closing-odds-multiplier-quantile
 - id: EXP-013
   title: Closing multiplier by odds bucket
   hypothesis: Estimating closing-mult per odds bucket reduces EV error and improves
@@ -220,7 +244,9 @@ items:
   - odds.closing_mult_mae
   risk_level: medium
   max_diff_size: 200
-  status: todo
+  status: failed
+  branch: agent/exp_20260206_030537-closing-multiplier-by-odds-bucket
+  picked_at: '2026-02-06T03:05:37Z'
 - id: EXP-014
   title: Odds time-series movement features (0B41/0B42)
   hypothesis: Incorporating odds movement features improves calibration and ROI versus
@@ -237,7 +263,9 @@ items:
   - model.logloss
   risk_level: high
   max_diff_size: 200
-  status: todo
+  status: done
+  picked_at: '2026-02-06T04:31:16Z'
+  branch: agent/exp_20260206_043116-odds-time-series-movement-features-0b41-0b42
 - id: EXP-015
   title: Calibration method sweep (isotonic vs temperature)
   hypothesis: Better probability calibration improves EV-based selection and realized
@@ -253,7 +281,9 @@ items:
   - backtest.roi
   risk_level: medium
   max_diff_size: 180
-  status: todo
+  status: done
+  picked_at: '2026-02-06T05:19:33Z'
+  branch: agent/exp_20260206_051933-exp-015-temperature-scaling-calibration-for-ev-based-selection
 - id: EXP-016
   title: Shrink model probs toward market implied
   hypothesis: Blending toward market implied probability reduces overconfidence and
@@ -272,7 +302,9 @@ items:
   - backtest.roi
   risk_level: medium
   max_diff_size: 200
-  status: todo
+  status: done
+  picked_at: '2026-02-06T05:59:07Z'
+  branch: agent/exp_20260206_055907-blend-model-probabilities-toward-market-implied-to-reduce-overconfidence
 - id: EXP-017
   title: Separate models by surface (turf vs dirt)
   hypothesis: Surface-specialized models improve predictive performance and ROI.
@@ -287,7 +319,9 @@ items:
   - backtest.roi
   risk_level: high
   max_diff_size: 200
-  status: todo
+  status: done
+  branch: agent/exp_20260206_080929-separate-models-by-surface-turf-vs-dirt
+  picked_at: '2026-02-06T08:09:29Z'
 - id: EXP-018
   title: Distance bucket models
   hypothesis: Training per-distance buckets improves fit vs a single global model.
@@ -302,7 +336,9 @@ items:
   - backtest.roi
   risk_level: high
   max_diff_size: 200
-  status: todo
+  status: done
+  branch: agent/exp_20260206_103540-distance-bucket-models-per-distance-training-routing
+  picked_at: '2026-02-06T10:35:40Z'
 - id: EXP-019
   title: Recency-weighted training
   hypothesis: Recency weighting improves out-of-sample stability under regime shifts.
@@ -317,7 +353,9 @@ items:
   - backtest.roi
   risk_level: medium
   max_diff_size: 160
-  status: todo
+  status: done
+  branch: agent/exp_20260206_131759-recency-weighted-training-exponential-time-decay-sample-weights
+  picked_at: '2026-02-06T13:17:59Z'
 - id: EXP-020
   title: Multi-task top1 + top3 probabilities
   hypothesis: Learning top1 and top3 jointly yields better calibrated win probabilities
@@ -333,7 +371,9 @@ items:
   - backtest.roi
   risk_level: high
   max_diff_size: 200
-  status: todo
+  status: done
+  picked_at: '2026-02-06T14:08:54Z'
+  branch: agent/exp_20260206_070001-exp-020-multi-task-top1-top3-probabilities-aux-head
 - id: EXP-022
   title: Hyperparameter tuning via rolling CV
   hypothesis: Lightweight tuning over rolling CV improves robustness vs fixed params.
@@ -348,7 +388,9 @@ items:
   - rolling.roi_mean
   risk_level: medium
   max_diff_size: 200
-  status: todo
+  status: failed
+  picked_at: '2026-02-06T16:53:49Z'
+  branch: agent/exp_20260206_130000-exp-022-lightweight-hyperparameter-tuning-via-rolling-cv
 - id: EXP-026
   title: Pace pressure features
   hypothesis: Pace scenario features (early speed vs closers) improve win probability
@@ -364,7 +406,9 @@ items:
   - backtest.roi
   risk_level: medium
   max_diff_size: 200
-  status: todo
+  status: failed
+  picked_at: '2026-02-06T22:19:38Z'
+  branch: agent/exp_20260206_131500-pace-pressure-features
 - id: EXP-028
   title: Layoff and freshness features
   hypothesis: Layoff-related features improve calibration and reduce bad bets after
@@ -380,7 +424,9 @@ items:
   - backtest.roi
   risk_level: low
   max_diff_size: 160
-  status: todo
+  status: done
+  picked_at: '2026-02-07T00:01:29Z'
+  branch: agent/exp_20260206_133000-layoff-and-freshness-features
 - id: EXP-029
   title: Weight carried and weight-change interactions
   hypothesis: Modeling weight and weight changes improves predictions especially across
@@ -396,7 +442,9 @@ items:
   - backtest.roi
   risk_level: low
   max_diff_size: 160
-  status: todo
+  status: failed
+  picked_at: '2026-02-07T01:07:22Z'
+  branch: agent/exp_20260207_000000-exp-029-weight-carried-and-weight-change-interactions
 - id: EXP-030
   title: Jockey/trainer conditional win rates
   hypothesis: Track- and distance-conditional jockey/trainer stats add signal beyond
@@ -412,7 +460,9 @@ items:
   - backtest.roi
   risk_level: medium
   max_diff_size: 200
-  status: todo
+  status: done
+  picked_at: '2026-02-07T01:17:55Z'
+  branch: agent/exp_20260206_120000-track-x-distance-conditional-jockey-trainer-win-rate-encoding
 - id: EXP-031
   title: Jockey-horse synergy feature
   hypothesis: Explicit synergy features improve selection among similarly rated horses.
@@ -427,7 +477,9 @@ items:
   - backtest.roi
   risk_level: medium
   max_diff_size: 180
-  status: todo
+  status: failed
+  picked_at: '2026-02-07T02:08:00Z'
+  branch: agent/exp_20260207_020800-jockey-horse-synergy-feature
 - id: EXP-032
   title: Gate/draw bias interactions by course
   hypothesis: Modeling gate bias per course improves predictions and avoids systematically
@@ -443,7 +495,9 @@ items:
   - backtest.max_drawdown
   risk_level: medium
   max_diff_size: 200
-  status: todo
+  status: done
+  picked_at: '2026-02-07T02:32:31Z'
+  branch: agent/exp_20260207_101500-exp-032-course-specific-gate-draw-bias-feature
 - id: EXP-033
   title: Course record features (horse/trainer)
   hypothesis: Course/distance history features improve prediction where specialization
@@ -459,7 +513,9 @@ items:
   - backtest.roi
   risk_level: medium
   max_diff_size: 200
-  status: todo
+  status: in_progress
+  picked_at: '2026-02-07T03:52:03Z'
+  branch: agent/exp_20260207_120000-course-distance-record-features-for-horse-and-trainer
 - id: EXP-034
   title: Distance change suitability
   hypothesis: Capturing distance-up/down suitability improves predictions for tactical
@@ -750,6 +806,7 @@ items:
   risk_level: high
   max_diff_size: 200
   status: todo
+  branch: agent/exp_20260206_130000-plackett-luce-style-finish-order-model-loss-swap
 - id: EXP-023
   title: Uncertainty-aware staking (ensemble variance)
   hypothesis: Scaling stakes down when prediction uncertainty is high reduces drawdown
@@ -767,6 +824,7 @@ items:
   risk_level: high
   max_diff_size: 200
   status: todo
+  branch: agent/exp_20260206_120000-uncertainty-aware-staking-via-ensemble-variance
 - id: EXP-024
   title: Odds feature transforms (log-odds, clipped odds)
   hypothesis: Better odds transforms reduce model brittleness and improve calibration.
@@ -782,6 +840,7 @@ items:
   risk_level: low
   max_diff_size: 150
   status: todo
+  branch: agent/exp_20260206_120000-exp-024-odds-feature-transforms-clipped-log
 - id: EXP-025
   title: Speed figure normalized by course/distance/going
   hypothesis: A normalized speed figure adds predictive signal beyond raw times/positions.
@@ -797,6 +856,7 @@ items:
   risk_level: medium
   max_diff_size: 200
   status: todo
+  branch: agent/exp_20260206_120000-speed-figure-normalized-by-course-distance-going
 - id: EXP-027
   title: Form-cycle features (improving/declining)
   hypothesis: Detecting form cycles improves prediction for non-favorites and increases
@@ -813,3 +873,4 @@ items:
   risk_level: medium
   max_diff_size: 180
   status: todo
+  branch: agent/exp_20260206_130000-exp-027-add-minimal-form-cycle-improving-declining-features
