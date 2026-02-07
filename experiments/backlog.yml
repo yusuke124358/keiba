@@ -460,7 +460,9 @@ items:
   - backtest.roi
   risk_level: medium
   max_diff_size: 200
-  status: todo
+  status: in_progress
+  picked_at: '2026-02-07T01:17:55Z'
+  branch: agent/exp_20260206_120000-track-x-distance-conditional-jockey-trainer-win-rate-encoding
 - id: EXP-031
   title: Jockey-horse synergy feature
   hypothesis: Explicit synergy features improve selection among similarly rated horses.
