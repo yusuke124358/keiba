@@ -34,9 +34,11 @@ items:
   - feature.stddev
   risk_level: low
   max_diff_size: 150
-  status: in_progress
+  status: done
   picked_at: '2026-02-07T05:25:41Z'
   branch: agent/exp_20260207_120000-feature-coverage-audit-for-new-speed-signal
+  run_id: exp_20260207_120000
+  decision: needs-human
 - id: EXP-003
   title: Selector threshold change for high takeout races
   hypothesis: Tightening selector thresholds reduces negative ROI windows.
