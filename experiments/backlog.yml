@@ -495,7 +495,7 @@ items:
   - backtest.max_drawdown
   risk_level: medium
   max_diff_size: 200
-  status: in_progress
+  status: done
   picked_at: '2026-02-07T02:32:31Z'
   branch: agent/exp_20260207_101500-exp-032-course-specific-gate-draw-bias-feature
 - id: EXP-033
