@@ -32,4 +32,3 @@ def audit_numeric_signal(
     }
     ok = (coverage >= min_coverage) and (stddev > 0.0)
     return metrics, ok
-
