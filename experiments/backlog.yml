@@ -278,7 +278,7 @@ items:
   - backtest.roi
   risk_level: high
   max_diff_size: 200
-  status: in_progress
+  status: failed
   picked_at: '2026-02-07T23:21:39Z'
   branch: agent/exp_20260207_120000-exp-017-v2-surface-specific-models-with-global-fallback-per-surface-diagnostics
 - id: EXP-018
