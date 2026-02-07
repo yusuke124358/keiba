@@ -16,6 +16,30 @@ from state_worktree import ensure_git_identity, ensure_state_worktree, run
 STATE_BRANCH = "scientist-state"
 
 
+class LeaseAlreadyHeldError(RuntimeError):
+    pass
+
+
+def _ensure_existing_lease_is_idempotent(
+    *, existing: dict[str, Any], new_event: dict[str, Any], out_path: Path
+) -> None:
+    """
+    When a lease event file already exists, only allow idempotent re-append by the same owner/run_id.
+    """
+    existing_owner = str(existing.get("owner") or "").strip()
+    existing_run_id = str(existing.get("run_id") or "").strip()
+    new_owner = str(new_event.get("owner") or "").strip()
+    new_run_id = str(new_event.get("run_id") or "").strip()
+
+    if existing_owner == new_owner and existing_run_id == new_run_id:
+        return
+    raise LeaseAlreadyHeldError(
+        "Lease already held by another owner/run_id. "
+        f"path={out_path} existing_owner={existing_owner!r} existing_run_id={existing_run_id!r} "
+        f"new_owner={new_owner!r} new_run_id={new_run_id!r}"
+    )
+
+
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -128,6 +152,17 @@ def append_event(
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"{event_id}.json"
     if out_path.exists():
+        event_type = str(event.get("event_type") or "").strip()
+        if event_type == "lease_acquired":
+            try:
+                existing = json.loads(out_path.read_text(encoding="utf-8-sig"))
+            except Exception:
+                raise LeaseAlreadyHeldError(
+                    f"Lease already held (unable to read existing lease file): {out_path}"
+                )
+            _ensure_existing_lease_is_idempotent(
+                existing=existing, new_event=event, out_path=out_path
+            )
         return out_path
 
     out_path.write_text(

@@ -32,6 +32,7 @@ except Exception as exc:  # pragma: no cover
 from scientist_campaign import CampaignConfig, StageRules, load_campaign_by_id
 from shard import assigned_shard, parse_shard
 from state_ledger import (
+    LeaseAlreadyHeldError,
     append_event,
     compute_event_id,
     load_events,
@@ -141,7 +142,7 @@ def build_holdout_command(
     test_end: str,
 ) -> str:
     return (
-        "python py64_analysis/scripts/run_holdout.py"
+        "py64_analysis/scripts/run_holdout.py"
         f" --train-start {splits['train_start']} --train-end {splits['train_end']}"
         f" --valid-start {splits['valid_start']} --valid-end {splits['valid_end']}"
         f" --test-start {test_start} --test-end {test_end}"
@@ -548,7 +549,7 @@ def append_lease_event(
     run_id: str,
     owner: str,
     base_commit: str,
-) -> None:
+) -> bool:
     identity = {
         "schema_version": 1,
         "event_type": "lease_acquired",
@@ -557,8 +558,6 @@ def append_lease_event(
         "stage": stage,
         "attempt": int(attempt),
         "period_key": period_key,
-        "run_id": run_id,
-        "base_commit": base_commit,
     }
     event = {
         **_event_common(campaign_id=campaign_id, seed_id=seed_id, owner=owner),
@@ -571,14 +570,18 @@ def append_lease_event(
         "base_commit": base_commit,
         "started_at": utc_now_iso(),
     }
-    append_event(
-        repo_root=repo_root,
-        state_repo_dir=state_repo_dir,
-        campaign_id=campaign_id,
-        event=event,
-        schema_path=state_schema_path(repo_root),
-        commit_message=f"state: lease {campaign_id} {stage} {seed_id} a{attempt}",
-    )
+    try:
+        append_event(
+            repo_root=repo_root,
+            state_repo_dir=state_repo_dir,
+            campaign_id=campaign_id,
+            event=event,
+            schema_path=state_schema_path(repo_root),
+            commit_message=f"state: lease {campaign_id} {stage} {seed_id} a{attempt}",
+        )
+    except LeaseAlreadyHeldError:
+        return False
+    return True
 
 
 def append_heartbeat_event(
@@ -914,7 +917,7 @@ def run_stage_job(
     upstream_run_id: str = "",
     upstream_patch_ref: dict[str, str] | None = None,
     upstream_base_commit: str = "",
-) -> None:
+) -> bool:
     """
     Execute one seed at a given stage, write results-only artifacts, and append ledger events.
     """
@@ -971,7 +974,7 @@ def run_stage_job(
 
         base_commit = current_commit(repo_root)
 
-        append_lease_event(
+        lease_ok = append_lease_event(
             repo_root=repo_root,
             state_repo_dir=state_repo_dir,
             campaign_id=cfg.campaign_id,
@@ -983,6 +986,12 @@ def run_stage_job(
             owner=owner,
             base_commit=base_commit,
         )
+        if not lease_ok:
+            print(
+                f"[skip] lease already held: campaign={cfg.campaign_id} stage={stage} "
+                f"seed={seed.seed_id} attempt={int(attempt)}"
+            )
+            return False
 
         patch_path: Path | None = None
         patch_ref: dict[str, str] | None = None
@@ -1065,6 +1074,7 @@ def run_stage_job(
             artifacts_ref=artifacts_ref,
             patch_ref=patch_ref,
         )
+        return True
 
     except Exception as exc:
         # Best-effort: record failure for this attempt.
@@ -1267,7 +1277,17 @@ def main() -> int:
     )
 
     processed = 0
-    for _ in range(max(int(args.max_jobs), 0)):
+    max_jobs = max(int(args.max_jobs), 0)
+    spins = 0
+    max_spins = max_jobs * 10 if max_jobs else 0
+    while processed < max_jobs:
+        spins += 1
+        if max_spins and spins > max_spins:
+            print(
+                f"[warn] too many iterations without progress; stopping "
+                f"(processed={processed} spins={spins} max_jobs={max_jobs})"
+            )
+            break
         events = load_events(state_repo_dir=state_repo_dir, campaign_id=cfg.campaign_id)
         idx = LedgerIndex(events)
 
@@ -1282,7 +1302,7 @@ def main() -> int:
             if not pick:
                 break
             seed, attempt = pick
-            run_stage_job(
+            ran = run_stage_job(
                 cfg=cfg,
                 seed=seed,
                 stage="stage1",
@@ -1296,7 +1316,10 @@ def main() -> int:
                 profile=str(args.profile),
                 max_tries=int(args.max_tries),
             )
-            processed += 1
+            if ran:
+                processed += 1
+            else:
+                time.sleep(1)
             continue
 
         if args.stage == "stage2":
@@ -1315,7 +1338,7 @@ def main() -> int:
                 raise RuntimeError(
                     f"stage1 lease not found for upstream run: {src.run_id}"
                 )
-            run_stage_job(
+            ran = run_stage_job(
                 cfg=cfg,
                 seed=seed,
                 stage="stage2",
@@ -1332,7 +1355,10 @@ def main() -> int:
                 upstream_patch_ref=src.patch_ref,
                 upstream_base_commit=lease.base_commit,
             )
-            processed += 1
+            if ran:
+                processed += 1
+            else:
+                time.sleep(1)
             continue
 
         if args.stage == "holdout":
@@ -1351,7 +1377,7 @@ def main() -> int:
                 raise RuntimeError(
                     f"stage2 lease not found for upstream run: {src.run_id}"
                 )
-            run_stage_job(
+            ran = run_stage_job(
                 cfg=cfg,
                 seed=seed,
                 stage="holdout",
@@ -1368,7 +1394,10 @@ def main() -> int:
                 upstream_patch_ref=src.patch_ref,
                 upstream_base_commit=lease.base_commit,
             )
-            processed += 1
+            if ran:
+                processed += 1
+            else:
+                time.sleep(1)
             continue
 
         raise RuntimeError(f"Unhandled stage: {args.stage}")

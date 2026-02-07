@@ -17,7 +17,7 @@ on:
         default: "5"
 
 concurrency:
-  group: scientist-v2-${{ inputs.campaign_id }}-${{ inputs.shard }}
+  group: scientist-v2-${{ github.event.inputs.campaign_id }}-${{ replace(github.event.inputs.shard, '/', '-') }}
   cancel-in-progress: false
 
 jobs:
@@ -60,9 +60,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: scientist-v2-${{ inputs.campaign_id }}-stage2-${{ inputs.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          name: scientist-v2-${{ github.event.inputs.campaign_id }}-stage2-${{ replace(github.event.inputs.shard, '/', '-') }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             ${{ env.KEIBA_ARTIFACT_DIR }}/${{ inputs.campaign_id }}/experiments/**
             ${{ env.KEIBA_ARTIFACT_DIR }}/${{ inputs.campaign_id }}/plans/**
           if-no-files-found: warn
-
