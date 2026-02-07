@@ -18,6 +18,7 @@ def _load_module():
     module_path = root / "scripts" / "agent" / "promote_v2.py"
     spec = importlib.util.spec_from_file_location("promote_v2", module_path)
     module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
     assert spec.loader is not None
     spec.loader.exec_module(module)
     return module
