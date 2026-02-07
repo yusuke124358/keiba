@@ -297,6 +297,23 @@ def _bundle_experiment_artifacts(
     if metrics_path.exists():
         shutil.copy2(metrics_path, out_dir / "metrics.json")
 
+    agents_path = root / "AGENTS.md"
+    if agents_path.exists():
+        shutil.copy2(agents_path, out_dir / "AGENTS.md")
+
+    config_used_path = metrics_path.parent / "config_used.yaml"
+    if not config_used_path.exists():
+        metrics_json = (
+            _read_json_or_none(metrics_path) if metrics_path.exists() else None
+        )
+        config_used_rel = (
+            str(metrics_json.get("config_used_path") or "") if metrics_json else ""
+        ).strip()
+        if config_used_rel:
+            config_used_path = root / config_used_rel
+    if config_used_path.exists():
+        shutil.copy2(config_used_path, out_dir / "config_used.yaml")
+
     if comparison_path is not None and comparison_path.exists():
         shutil.copy2(comparison_path, out_dir / "comparison.json")
 

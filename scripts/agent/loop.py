@@ -80,7 +80,20 @@ def load_experiment_decision(root: Path, run_id: str) -> str:
         if isinstance(decision, dict):
             decision = decision.get("decision")
         decision = str(decision or "").strip().lower()
-        return decision
+        if decision:
+            return decision
+
+        # Backward-compat for legacy results that only have status.
+        status = str(data.get("status") or "").strip().lower()
+        if status == "pass":
+            return "accept"
+        if status == "fail":
+            return "reject"
+        if status in {"needs-human", "needs_human"}:
+            return "needs-human"
+        if status == "inconclusive":
+            return "iterate"
+        return ""
     except Exception:
         return ""
 
