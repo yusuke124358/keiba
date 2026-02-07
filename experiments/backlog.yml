@@ -236,9 +236,11 @@ items:
   - backtest.roi
   risk_level: medium
   max_diff_size: 180
-  status: in_progress
+  status: done
   picked_at: '2026-02-07T21:06:41Z'
   branch: agent/exp_20260207_000001-exp-015-isotonic-regression-calibration-for-ev-based-selection
+  run_id: exp_20260207_000001
+  decision: iterate
 - id: EXP-016
   title: Shrink model probs toward market implied
   hypothesis: Blending toward market implied probability reduces overconfidence and
