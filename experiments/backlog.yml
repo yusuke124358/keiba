@@ -259,7 +259,9 @@ items:
   - backtest.roi
   risk_level: medium
   max_diff_size: 200
-  status: todo
+  status: in_progress
+  picked_at: '2026-02-07T22:04:21Z'
+  branch: agent/exp_20260207_120000-exp-016b-configurable-market-implied-probability-shrinkage-alpha-0-25
 - id: EXP-017
   title: Separate models by surface (turf vs dirt)
   hypothesis: Surface-specialized models improve predictive performance and ROI.
