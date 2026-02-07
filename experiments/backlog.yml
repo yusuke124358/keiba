@@ -513,7 +513,9 @@ items:
   - backtest.roi
   risk_level: low
   max_diff_size: 160
-  status: todo
+  status: in_progress
+  picked_at: '2026-02-07T04:30:06Z'
+  branch: agent/exp_20260207_090000-exp-034-distance-change-suitability
 - id: EXP-035
   title: Surface-switch features (turf<->dirt)
   hypothesis: Explicit surface-switch indicators improve calibration and reduce mispriced
