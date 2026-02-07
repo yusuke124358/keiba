@@ -37,6 +37,7 @@ dev = [
     "pytest-cov>=4.0",
     "ruff>=0.1",
     "mypy>=1.0",
+    "jsonschema>=4.0",
 ]
 
 dashboard = [
@@ -67,3 +68,4 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
 norecursedirs = ["tmp*"]
+addopts = ["--basetemp=.pytest_tmp"]

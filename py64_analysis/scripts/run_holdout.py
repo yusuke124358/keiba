@@ -1489,6 +1489,17 @@ def main() -> None:
 
     # ベット明細をCSV出力（勝ち筋探索用）
     bets_csv = run_dir / "bets.csv"
+    per_bet_pnl_csv = run_dir / "per_bet_pnl.csv"
+    per_bet_pnl_fields = [
+        "date",  # YYYY-MM-DD
+        "race_id",
+        "stake",
+        "return",
+        "profit",
+        "odds",
+        "selection_prob",
+        "implied_prob",
+    ]
     fieldnames = [
         "race_id",
         "horse_no",
@@ -1623,9 +1634,14 @@ def main() -> None:
         "cap_value",
         "p_hat_capped",
     ]
-    with open(bets_csv, "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=fieldnames)
+    with (
+        open(bets_csv, "w", newline="", encoding="utf-8") as f_bets,
+        open(per_bet_pnl_csv, "w", newline="", encoding="utf-8") as f_pnl,
+    ):
+        w = csv.DictWriter(f_bets, fieldnames=fieldnames)
+        w_pnl = csv.DictWriter(f_pnl, fieldnames=per_bet_pnl_fields)
         w.writeheader()
+        w_pnl.writeheader()
         for br in bt.bets:
             b = br.bet
             odds_final = getattr(br, "odds_final", None)
@@ -1766,6 +1782,22 @@ def main() -> None:
                 "snap_age_min": extra.get("snap_age_min"),
             }
             w.writerow(row)
+
+            implied_prob = extra.get("p_mkt")
+            if implied_prob is None and b.odds_at_buy and b.odds_at_buy > 0:
+                implied_prob = 1.0 / float(b.odds_at_buy)
+            w_pnl.writerow(
+                {
+                    "date": b.asof_time.date().isoformat(),
+                    "race_id": b.race_id,
+                    "stake": b.stake,
+                    "return": br.payout,
+                    "profit": br.profit,
+                    "odds": b.odds_at_buy,
+                    "selection_prob": b.p_hat,
+                    "implied_prob": implied_prob,
+                }
+            )
 
     # 確率品質（test）
     pq, _, rel = compute_prediction_quality(session, args.test_start, args.test_end, model)

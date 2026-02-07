@@ -100,3 +100,12 @@ jobs:
           --requeue-on-timeout
           --auto-stash
           --base-branch main
+      - name: Upload experiment artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: experiment-artifacts-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            artifacts/experiments/**
+            AGENTS.md
+          if-no-files-found: ignore
