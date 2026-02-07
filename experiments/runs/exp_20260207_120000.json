@@ -1,0 +1,237 @@
+{
+  "run_id": "exp_20260207_120000",
+  "seed_id": "EXP-002",
+  "title": "Feature coverage audit for new speed signal",
+  "status": "inconclusive",
+  "metrics": {
+    "roi": -0.32752808988764043,
+    "total_stake": 71200.0,
+    "total_return": 47880.0,
+    "n_bets": 172,
+    "n_races": 172,
+    "n_days": 82,
+    "max_drawdown": 0.12946666666666667,
+    "test_period": "2024-01-01 to 2024-12-31",
+    "frac_days_candidates_ge_n": 0.7735849056603774,
+    "frac_days_any_bet": 0.7735849056603774,
+    "rolling": "no",
+    "design_window": "N/A",
+    "eval_window": "N/A",
+    "paired_delta": "0.000000",
+    "pooled_vs_step14_mismatch": "no",
+    "preferred_roi": "pooled"
+  },
+  "baseline_metrics": {
+    "roi": -0.32752808988764043,
+    "total_stake": 71200.0,
+    "total_return": 47880.0,
+    "n_bets": 172,
+    "n_races": 172,
+    "n_days": 82,
+    "max_drawdown": 0.12946666666666667,
+    "test_period": "2024-01-01 to 2024-12-31",
+    "frac_days_candidates_ge_n": 0.7735849056603774,
+    "frac_days_any_bet": 0.7735849056603774
+  },
+  "deltas": {
+    "delta_roi": 0.0,
+    "delta_max_drawdown": 0.0
+  },
+  "stats": {
+    "roi_ci95": [
+      -0.8936217773642666,
+      0.438149769585253
+    ],
+    "baseline_roi_ci95": [
+      -0.8936217773642666,
+      0.438149769585253
+    ],
+    "delta_roi_ci95": [
+      0.0,
+      0.0
+    ],
+    "p_one_sided_delta_le_0": 1.0,
+    "bootstrap": {
+      "B": 2000,
+      "seed": 311112018,
+      "block_unit": "day"
+    },
+    "resampling_unit": "day-block (YYYY-MM-DD)"
+  },
+  "breakdowns": {
+    "odds_bucket": [
+      {
+        "odds_bucket": "10-20",
+        "roi": -1.0,
+        "stake": 17600.0,
+        "bets": 33,
+        "baseline_roi": -1.0,
+        "baseline_stake": 17600.0,
+        "baseline_bets": 33
+      },
+      {
+        "odds_bucket": "20-30",
+        "roi": 1.2265895953757227,
+        "stake": 17300.0,
+        "bets": 27,
+        "baseline_roi": 1.2265895953757227,
+        "baseline_stake": 17300.0,
+        "baseline_bets": 27
+      },
+      {
+        "odds_bucket": "30+",
+        "roi": -0.7421487603305785,
+        "stake": 36300.0,
+        "bets": 112,
+        "baseline_roi": -0.7421487603305785,
+        "baseline_stake": 36300.0,
+        "baseline_bets": 112
+      }
+    ],
+    "month": [
+      {
+        "month": "2024-01",
+        "roi": -1.0,
+        "stake": 12600.0,
+        "bets": 27,
+        "baseline_roi": -1.0,
+        "baseline_stake": 12600.0,
+        "baseline_bets": 27
+      },
+      {
+        "month": "2024-02",
+        "roi": -1.0,
+        "stake": 4100.0,
+        "bets": 15,
+        "baseline_roi": -1.0,
+        "baseline_stake": 4100.0,
+        "baseline_bets": 15
+      },
+      {
+        "month": "2024-03",
+        "roi": -1.0,
+        "stake": 6800.0,
+        "bets": 18,
+        "baseline_roi": -1.0,
+        "baseline_stake": 6800.0,
+        "baseline_bets": 18
+      },
+      {
+        "month": "2024-04",
+        "roi": 0.8,
+        "stake": 5200.0,
+        "bets": 14,
+        "baseline_roi": 0.8,
+        "baseline_stake": 5200.0,
+        "baseline_bets": 14
+      },
+      {
+        "month": "2024-05",
+        "roi": -1.0,
+        "stake": 5600.0,
+        "bets": 13,
+        "baseline_roi": -1.0,
+        "baseline_stake": 5600.0,
+        "baseline_bets": 13
+      },
+      {
+        "month": "2024-06",
+        "roi": -1.0,
+        "stake": 3000.0,
+        "bets": 14,
+        "baseline_roi": -1.0,
+        "baseline_stake": 3000.0,
+        "baseline_bets": 14
+      },
+      {
+        "month": "2024-07",
+        "roi": -1.0,
+        "stake": 5100.0,
+        "bets": 12,
+        "baseline_roi": -1.0,
+        "baseline_stake": 5100.0,
+        "baseline_bets": 12
+      },
+      {
+        "month": "2024-08",
+        "roi": -1.0,
+        "stake": 5800.0,
+        "bets": 10,
+        "baseline_roi": -1.0,
+        "baseline_stake": 5800.0,
+        "baseline_bets": 10
+      },
+      {
+        "month": "2024-09",
+        "roi": 3.709090909090909,
+        "stake": 6600.0,
+        "bets": 16,
+        "baseline_roi": 3.709090909090909,
+        "baseline_stake": 6600.0,
+        "baseline_bets": 16
+      },
+      {
+        "month": "2024-10",
+        "roi": -1.0,
+        "stake": 6700.0,
+        "bets": 9,
+        "baseline_roi": -1.0,
+        "baseline_stake": 6700.0,
+        "baseline_bets": 9
+      },
+      {
+        "month": "2024-11",
+        "roi": 1.4800000000000002,
+        "stake": 3000.0,
+        "bets": 9,
+        "baseline_roi": 1.4800000000000002,
+        "baseline_stake": 3000.0,
+        "baseline_bets": 9
+      },
+      {
+        "month": "2024-12",
+        "roi": -1.0,
+        "stake": 6700.0,
+        "bets": 15,
+        "baseline_roi": -1.0,
+        "baseline_stake": 6700.0,
+        "baseline_bets": 15
+      }
+    ]
+  },
+  "reproducibility": {
+    "base_commit": "631d8882c4a544cbdd9c16d9547d9a5e797b60f7",
+    "head_commit": "a269a40112af84943532f29a3c7682baa86727f8",
+    "config_hash": "e5710c123a3c9a1d9e96f2dd7645c9d8ac68ce3c68c7aa517e44fbf241e62aca",
+    "eval_command": "C:/Users/yyosh/actions-runner/keiba/keiba/keiba/py64_analysis/.venv/Scripts/python.exe py64_analysis/scripts/run_holdout.py --train-start 2020-01-01 --train-end 2022-12-31 --valid-start 2023-01-01 --valid-end 2023-12-31 --test-start 2024-01-01 --test-end 2024-12-31 --name exp_20260207_120000 --out-dir data/holdout_runs/exp_20260207_120000",
+    "python_executable": "C:\\Users\\yyosh\\actions-runner\\keiba\\keiba\\keiba\\py64_analysis\\.venv\\Scripts\\python.exe",
+    "environment_summary": {
+      "platform": "Windows-11-10.0.26200-SP0",
+      "python_version": "3.12.7",
+      "runner_os": "Windows"
+    },
+    "bootstrap_seed": 311112018
+  },
+  "decision": {
+    "decision": "needs-human",
+    "rationale": "Leakage safety check did not pass (heuristic).",
+    "flags": [
+      "CI_crosses_0",
+      "leakage_check_failed_or_unknown"
+    ],
+    "leakage_pre_race_only": "no"
+  },
+  "artifacts": {
+    "metrics_json": "data/holdout_runs/exp_20260207_120000/metrics.json",
+    "baseline_metrics_json": "artifacts/baselines/29efff43dfb22aa9de3fb94344f0ca6f7c6e4ffb124394854177a24b060dc6ab/metrics.json",
+    "per_bet_pnl": "artifacts/experiments/exp_20260207_120000/per_bet_pnl.csv",
+    "baseline_per_bet_pnl": "artifacts/baselines/29efff43dfb22aa9de3fb94344f0ca6f7c6e4ffb124394854177a24b060dc6ab/per_bet_pnl.csv",
+    "summary_stats_json": "artifacts/experiments/exp_20260207_120000/summary_stats.json",
+    "report": "data/holdout_runs/exp_20260207_120000/report/backtest.md",
+    "config_used_variant": "data/holdout_runs/exp_20260207_120000/config_used.yaml",
+    "config_used_baseline": "artifacts/baselines/29efff43dfb22aa9de3fb94344f0ca6f7c6e4ffb124394854177a24b060dc6ab/config_used.yaml",
+    "changed_files": [
+      "py64_analysis/src/keiba/features/signal_audit.py"
+    ]
+  }
+}
