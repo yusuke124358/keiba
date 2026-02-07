@@ -1,0 +1,57 @@
+campaign_id: camp_20260207
+campaign_end_date: "2026-02-07"
+
+sharding:
+  total_shards: 2
+
+periods:
+  # Non-overlapping 3 windows are derived from campaign_end_date:
+  # stage1_test: [end-24mo, end-9mo)
+  # stage2_test: [end-9mo, end-3mo)
+  # holdout_test: [end-3mo, end]
+  stage1_start_months: -24
+  stage2_start_months: -9
+  holdout_start_months: -3
+
+splits:
+  # Derived from each stage's test_start.
+  train_days: 1095
+  valid_days: 365
+
+heartbeat:
+  # Coarse central heartbeat to avoid event explosion; local heartbeat can be more frequent.
+  central_bucket_sec: 1800
+
+evaluation:
+  stage1:
+    bootstrap_B: 300
+    ttl_sec: 7200
+    min_bets: 60
+    min_days: 10
+    promote_rule:
+      delta_roi_ci95_lower_gt: -0.002
+      p_one_sided_delta_le_0_max: 0.40
+  stage2:
+    bootstrap_B: 2000
+    ttl_sec: 7200
+    min_bets: 120
+    min_days: 20
+    accept_rule:
+      delta_roi_ci95_lower_gt: 0.0
+      p_one_sided_delta_le_0_max: 0.20
+  holdout:
+    bootstrap_B: 2000
+    ttl_sec: 7200
+    min_bets: 120
+    min_days: 20
+    accept_rule:
+      delta_roi_ci95_lower_gt: 0.0
+      p_one_sided_delta_le_0_max: 0.20
+
+promotion:
+  batch_size: 10
+  pr_labels:
+    - autogen
+    - promotion
+    - auto-fix
+

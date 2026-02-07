@@ -58,6 +58,21 @@
   - If checkpoint due, generate summary and stop (publisher adds `needs-human`)
   - Otherwise generate and run one experiment
 
+## Scientist Loop V2 (Results-Only)
+- Script: `scripts/agent/scientist_v2.py`
+- Campaign config: `config/scientist_campaigns/<campaign_id>.yml` (fixed `campaign_end_date`, non-overlapping `stage1/stage2/holdout` test windows, sharding, TTL rules)
+- Central ledger (append-only): branch `scientist-state`
+  - Events: `state/campaigns/<campaign_id>/events/<event_id>.json`
+  - Stored patches: `state/campaigns/<campaign_id>/patches/<seed_id>/<sha256>.diff`
+- Outputs (no git commits for experiment results):
+  - Results-only bundles: `$KEIBA_ARTIFACT_DIR/<campaign_id>/experiments/<run_id>/` (`experiment_result.json`, `experiment.md`, `per_bet_pnl.csv`, `summary_stats.json`, `patch.diff`, etc.)
+  - Plans: `$KEIBA_ARTIFACT_DIR/<campaign_id>/plans/<stage>/<run_id>.json`
+- Workflows (self-hosted runner):
+  - `.github/workflows/agent_scientist_v2_screening.yml` (Stage1: Codex implementation + screening)
+  - `.github/workflows/agent_scientist_v2_confirmation.yml` (Stage2: apply stored patch + confirmation)
+  - `.github/workflows/agent_scientist_v2_holdout.yml` (Holdout: apply stored patch + final holdout)
+- Concurrency: serialized per `<campaign_id>-<shard>` across V2 workflows (stage is not part of the key).
+
 ## Backlog Batch Runner
 - Backlog file: `experiments/backlog.yml` (status: `todo`, `in_progress`, `done`, `failed`).
 - Script: `scripts/agent/run_backlog_batch.py`.

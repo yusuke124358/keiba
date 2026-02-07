@@ -255,6 +255,58 @@ def slugify(text: str) -> str:
     return text.strip("-") or "experiment"
 
 
+def _resolve_out_root(root: Path, out_dir: str, *, results_only: bool) -> Path:
+    if not results_only:
+        return root
+
+    out = (out_dir or os.environ.get("KEIBA_ARTIFACT_DIR") or "").strip()
+    if not out:
+        raise RuntimeError(
+            "results-only mode requires --out-dir or $KEIBA_ARTIFACT_DIR to be set."
+        )
+    p = Path(out)
+    if not p.is_absolute():
+        p = (root / p).resolve()
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def apply_patch_file(root: Path, patch_path: Path) -> None:
+    if not patch_path.exists():
+        raise RuntimeError(f"Patch file not found: {patch_path}")
+    result = subprocess.run(
+        ["git", "apply", "--whitespace=nowarn", str(patch_path)],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        stderr = (result.stderr or "").strip()
+        raise RuntimeError(
+            f"git apply failed ({result.returncode}): {patch_path}\n{stderr}"
+        )
+
+
+def write_patch_bundle(
+    *, root: Path, base_commit: str, head_commit: str, out_dir: Path
+) -> tuple[Path, str]:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    patch_path = out_dir / "patch.diff"
+    diff = subprocess.run(
+        ["git", "diff", "--binary", f"{base_commit}..{head_commit}"],
+        cwd=root,
+        capture_output=True,
+        check=False,
+    )
+    if diff.returncode != 0:
+        raise RuntimeError(f"git diff failed ({diff.returncode}) for patch bundle.")
+    patch_path.write_bytes(diff.stdout or b"")
+    patch_sha256 = _sha256_bytes(patch_path.read_bytes())
+    (out_dir / "patch.sha256").write_text(patch_sha256 + "\n", encoding="utf-8")
+    return patch_path, patch_sha256
+
+
 def _sha256_bytes(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
 
@@ -1112,6 +1164,31 @@ def main() -> int:
     p.add_argument("--profile", default="agent_loop")
     p.add_argument("--prompt", default="prompts/agent/fixer_implement.md")
     p.add_argument(
+        "--apply-patch",
+        default="",
+        help="Apply an existing patch.diff instead of running codex implementation.",
+    )
+    p.add_argument(
+        "--no-checkout-branch",
+        action="store_true",
+        help="Operate on the current branch instead of creating a new agent/* branch.",
+    )
+    p.add_argument(
+        "--results-only",
+        action="store_true",
+        help="Write results to out-dir and do not commit experiment logs/results to git.",
+    )
+    p.add_argument(
+        "--out-dir",
+        default="",
+        help="Base output directory for results-only artifacts/caches (defaults to $KEIBA_ARTIFACT_DIR).",
+    )
+    p.add_argument(
+        "--emit-patch",
+        action="store_true",
+        help="Write patch.diff + patch.sha256 into the experiment output bundle.",
+    )
+    p.add_argument(
         "--metrics-schema", default="schemas/agent/experiment_result.schema.json"
     )
     p.add_argument("--bootstrap-b", type=int, default=2000)
@@ -1119,6 +1196,9 @@ def main() -> int:
 
     root = repo_root()
     ensure_clean(root)
+    out_root = _resolve_out_root(
+        root, args.out_dir, results_only=bool(args.results_only)
+    )
 
     plan_path = Path(args.plan)
     plan = json.loads(plan_path.read_text(encoding="utf-8"))
@@ -1134,8 +1214,21 @@ def main() -> int:
     if not run_id:
         raise RuntimeError("plan.run_id is required.")
 
-    branch = f"agent/{run_id}-{slugify(plan['title'])}"
-    run(["git", "checkout", "-b", branch], cwd=root)
+    if args.no_checkout_branch:
+        branch = subprocess.run(
+            ["git", "branch", "--show-current"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=False,
+        ).stdout.strip()
+        if not branch:
+            raise RuntimeError(
+                "Unable to determine current branch (no-checkout-branch)."
+            )
+    else:
+        branch = f"agent/{run_id}-{slugify(plan['title'])}"
+        run(["git", "checkout", "-b", branch], cwd=root)
 
     base_commit = subprocess.run(
         ["git", "rev-parse", "HEAD"],
@@ -1158,7 +1251,11 @@ def main() -> int:
     baseline_key = compute_baseline_key(
         base_commit, test_start, test_end, baseline_cfg_hash
     )
-    baseline_dir = root / "artifacts" / "baselines" / baseline_key
+    baseline_dir = (
+        (out_root / "baselines" / baseline_key)
+        if args.results_only
+        else (root / "artifacts" / "baselines" / baseline_key)
+    )
     baseline_metrics_path = baseline_dir / "metrics.json"
     baseline_pnl_path = baseline_dir / "per_bet_pnl.csv"
 
@@ -1177,11 +1274,28 @@ def main() -> int:
 
     baseline_extracted = extract_metrics_for_log(load_json(baseline_metrics_path))
 
-    log_dir = root / "artifacts" / "agent"
-    log_dir.mkdir(parents=True, exist_ok=True)
-    codex_log = log_dir / f"{plan['run_id']}_implement.log"
-    run_codex(root, root / args.prompt, plan, args.profile, codex_log)
-    ensure_codex_writable(codex_log)
+    exp_art_dir = (
+        (out_root / "experiments" / run_id)
+        if args.results_only
+        else (root / "artifacts" / "experiments" / run_id)
+    )
+    exp_art_dir.mkdir(parents=True, exist_ok=True)
+
+    codex_log = (
+        (exp_art_dir / f"{plan['run_id']}_implement.log")
+        if args.results_only
+        else ((root / "artifacts" / "agent") / f"{plan['run_id']}_implement.log")
+    )
+    codex_log.parent.mkdir(parents=True, exist_ok=True)
+
+    patch_path = str(args.apply_patch or "").strip()
+    if patch_path:
+        print(f"[implement] applying patch: {patch_path}")
+        apply_patch_file(root, Path(patch_path))
+        codex_log.write_text(f"applied patch: {patch_path}\n", encoding="utf-8")
+    else:
+        run_codex(root, root / args.prompt, plan, args.profile, codex_log)
+        ensure_codex_writable(codex_log)
     ensure_impl_changes(root)
     ensure_no_disallowed_changes(root)
     ensure_substantive_changes(root)
@@ -1206,8 +1320,20 @@ def main() -> int:
     ).stdout.splitlines()
     changed_files = [p.strip() for p in changed_files if p.strip()]
 
+    if args.emit_patch or args.results_only:
+        write_patch_bundle(
+            root=root,
+            base_commit=base_commit,
+            head_commit=head_commit,
+            out_dir=exp_art_dir,
+        )
+
     # Variant evaluation (uses experiment config if one was modified).
-    run_dir = root / "data" / "holdout_runs" / run_id
+    run_dir = (
+        (out_root / "holdout_runs" / run_id)
+        if args.results_only
+        else (root / "data" / "holdout_runs" / run_id)
+    )
     print(f"[variant] running eval into {run_dir}")
     run_holdout(
         root,
@@ -1233,10 +1359,15 @@ def main() -> int:
     baseline_extracted["frac_days_candidates_ge_n"] = b_frac_ge_n
     baseline_extracted["frac_days_any_bet"] = b_frac_any_bet
 
-    exp_art_dir = root / "artifacts" / "experiments" / run_id
-    exp_art_dir.mkdir(parents=True, exist_ok=True)
+    # exp_art_dir is selected earlier (repo artifacts for legacy; out_root bundle for results-only).
+    variant_metrics_art = exp_art_dir / "metrics.json"
+    variant_metrics_art.write_bytes(variant_metrics_path.read_bytes())
     variant_pnl_art = exp_art_dir / "per_bet_pnl.csv"
     variant_pnl_art.write_bytes(variant_pnl_path.read_bytes())
+    baseline_metrics_art = exp_art_dir / "baseline_metrics.json"
+    baseline_metrics_art.write_bytes(baseline_metrics_path.read_bytes())
+    baseline_pnl_art = exp_art_dir / "baseline_per_bet_pnl.csv"
+    baseline_pnl_art.write_bytes(baseline_pnl_path.read_bytes())
 
     # Ensure the experiment artifact bundle is self-contained for audits/repro.
     agents_path = root / "AGENTS.md"
@@ -1248,6 +1379,11 @@ def main() -> int:
     baseline_config_used = baseline_dir / "config_used.yaml"
     if baseline_config_used.exists():
         shutil.copy2(baseline_config_used, exp_art_dir / "config_used_baseline.yaml")
+    variant_report_src = run_dir / "report" / "backtest.md"
+    variant_report_art = exp_art_dir / "report" / "backtest.md"
+    if variant_report_src.exists():
+        variant_report_art.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(variant_report_src, variant_report_art)
 
     bootstrap_seed = int(_sha256_bytes(run_id.encode("utf-8"))[:8], 16)
     summary_stats_path = exp_art_dir / "summary_stats.json"
@@ -1258,7 +1394,7 @@ def main() -> int:
             "--variant",
             str(variant_pnl_art),
             "--baseline",
-            str(baseline_pnl_path),
+            str(baseline_pnl_art),
             "--out",
             str(summary_stats_path),
             "--B",
@@ -1304,19 +1440,19 @@ def main() -> int:
         status = "fail"
 
     artifacts = {
-        "metrics_json": _rel(root, variant_metrics_path),
-        "baseline_metrics_json": _rel(root, baseline_metrics_path),
+        "metrics_json": _rel(root, variant_metrics_art),
+        "baseline_metrics_json": _rel(root, baseline_metrics_art),
         "per_bet_pnl": _rel(root, variant_pnl_art),
-        "baseline_per_bet_pnl": _rel(root, baseline_pnl_path),
+        "baseline_per_bet_pnl": _rel(root, baseline_pnl_art),
         "summary_stats_json": _rel(root, summary_stats_path),
-        "report": _rel(root, run_dir / "report" / "backtest.md")
-        if (run_dir / "report" / "backtest.md").exists()
+        "report": _rel(root, variant_report_art)
+        if variant_report_art.exists()
         else "N/A",
-        "config_used_variant": _rel(root, run_dir / "config_used.yaml")
-        if (run_dir / "config_used.yaml").exists()
+        "config_used_variant": _rel(root, exp_art_dir / "config_used_variant.yaml")
+        if (exp_art_dir / "config_used_variant.yaml").exists()
         else "N/A",
-        "config_used_baseline": _rel(root, baseline_dir / "config_used.yaml")
-        if (baseline_dir / "config_used.yaml").exists()
+        "config_used_baseline": _rel(root, exp_art_dir / "config_used_baseline.yaml")
+        if (exp_art_dir / "config_used_baseline.yaml").exists()
         else "N/A",
         "changed_files": changed_files,
     }
@@ -1394,7 +1530,10 @@ def main() -> int:
         "artifacts": artifacts,
     }
 
-    result_path = root / "experiments" / "runs" / f"{plan['run_id']}.json"
+    if args.results_only:
+        result_path = exp_art_dir / "experiment_result.json"
+    else:
+        result_path = root / "experiments" / "runs" / f"{plan['run_id']}.json"
     result_path.write_text(
         json.dumps(result, ensure_ascii=True, indent=2), encoding="utf-8"
     )
@@ -1422,10 +1561,19 @@ def main() -> int:
     )
     ensure_no_placeholders(md_text)
 
-    log_path = root / "docs" / "experiments" / f"{plan['run_id']}.md"
+    if args.results_only:
+        log_path = exp_art_dir / "experiment.md"
+    else:
+        log_path = root / "docs" / "experiments" / f"{plan['run_id']}.md"
     log_path.write_text(md_text, encoding="utf-8")
 
     validate_schema(result, root / args.metrics_schema)
+
+    if args.results_only:
+        # Keep an audit-friendly bundle without creating git commits/PRs.
+        shutil.copy2(plan_path, exp_art_dir / "plan.json")
+        print(f"[results-only] wrote bundle: {exp_art_dir}")
+        return 0
 
     run(["git", "add", str(result_path), str(log_path)], cwd=root)
     run(["git", "commit", "-m", f"agent: {plan['run_id']} results"], cwd=root)

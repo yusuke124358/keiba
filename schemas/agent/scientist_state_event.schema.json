@@ -1,0 +1,239 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ScientistStateEvent",
+  "type": "object",
+  "oneOf": [
+    {
+      "title": "LeaseAcquired",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "event_id",
+        "event_type",
+        "campaign_id",
+        "seed_id",
+        "stage",
+        "attempt",
+        "period_key",
+        "run_id",
+        "owner",
+        "base_commit",
+        "started_at"
+      ],
+      "properties": {
+        "schema_version": { "type": "integer", "enum": [1] },
+        "event_id": { "type": "string" },
+        "event_type": { "type": "string", "const": "lease_acquired" },
+        "campaign_id": { "type": "string" },
+        "seed_id": { "type": "string" },
+        "stage": { "type": "string", "enum": ["stage1", "stage2", "holdout", "promotion"] },
+        "attempt": { "type": "integer", "minimum": 1 },
+        "period_key": { "type": "string", "enum": ["stage1_test", "stage2_test", "holdout_test"] },
+        "run_id": { "type": "string" },
+        "owner": { "type": "string" },
+        "base_commit": { "type": "string" },
+        "started_at": { "type": "string" }
+      }
+    },
+    {
+      "title": "Heartbeat",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "event_id",
+        "event_type",
+        "campaign_id",
+        "seed_id",
+        "stage",
+        "attempt",
+        "owner",
+        "heartbeat_bucket",
+        "last_heartbeat_at"
+      ],
+      "properties": {
+        "schema_version": { "type": "integer", "enum": [1] },
+        "event_id": { "type": "string" },
+        "event_type": { "type": "string", "const": "heartbeat" },
+        "campaign_id": { "type": "string" },
+        "seed_id": { "type": "string" },
+        "stage": { "type": "string", "enum": ["stage1", "stage2", "holdout", "promotion"] },
+        "attempt": { "type": "integer", "minimum": 1 },
+        "owner": { "type": "string" },
+        "heartbeat_bucket": { "type": "integer", "minimum": 0 },
+        "last_heartbeat_at": { "type": "string" }
+      }
+    },
+    {
+      "title": "Finished",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "event_id",
+        "event_type",
+        "campaign_id",
+        "seed_id",
+        "stage",
+        "attempt",
+        "period_key",
+        "run_id",
+        "owner",
+        "result",
+        "decision",
+        "finished_at",
+        "metrics_summary",
+        "artifacts_ref"
+      ],
+      "properties": {
+        "schema_version": { "type": "integer", "enum": [1] },
+        "event_id": { "type": "string" },
+        "event_type": { "type": "string", "const": "finished" },
+        "campaign_id": { "type": "string" },
+        "seed_id": { "type": "string" },
+        "stage": { "type": "string", "enum": ["stage1", "stage2", "holdout", "promotion"] },
+        "attempt": { "type": "integer", "minimum": 1 },
+        "period_key": { "type": "string", "enum": ["stage1_test", "stage2_test", "holdout_test"] },
+        "run_id": { "type": "string" },
+        "owner": { "type": "string" },
+        "result": { "type": "string", "enum": ["success", "failure", "skipped"] },
+        "decision": {
+          "type": "string",
+          "enum": ["candidate", "accept", "reject", "iterate", "needs-human"]
+        },
+        "finished_at": { "type": "string" },
+        "last_error": { "type": "string" },
+        "patch_ref": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sha256", "path"],
+          "properties": {
+            "sha256": { "type": "string" },
+            "path": { "type": "string" }
+          }
+        },
+        "metrics_summary": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "delta_roi",
+            "delta_roi_ci95",
+            "p_one_sided_delta_le_0",
+            "n_bets",
+            "n_days",
+            "test_period"
+          ],
+          "properties": {
+            "delta_roi": { "type": ["number", "null"] },
+            "delta_roi_ci95": {
+              "type": "array",
+              "items": { "type": "number" },
+              "minItems": 2,
+              "maxItems": 2
+            },
+            "p_one_sided_delta_le_0": { "type": ["number", "null"] },
+            "n_bets": { "type": ["integer", "null"] },
+            "n_days": { "type": ["integer", "null"] },
+            "test_period": { "type": "string" },
+            "delta_max_drawdown": { "type": ["number", "null"] }
+          }
+        },
+        "artifacts_ref": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    },
+    {
+      "title": "Reconciled",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "event_id",
+        "event_type",
+        "campaign_id",
+        "seed_id",
+        "stage",
+        "attempt",
+        "owner",
+        "reconcile_action",
+        "reconciled_at",
+        "reason"
+      ],
+      "properties": {
+        "schema_version": { "type": "integer", "enum": [1] },
+        "event_id": { "type": "string" },
+        "event_type": { "type": "string", "const": "reconciled" },
+        "campaign_id": { "type": "string" },
+        "seed_id": { "type": "string" },
+        "stage": { "type": "string", "enum": ["stage1", "stage2", "holdout", "promotion"] },
+        "attempt": { "type": "integer", "minimum": 1 },
+        "owner": { "type": "string" },
+        "reconcile_action": { "type": "string", "enum": ["requeue", "fail_permanent", "skip"] },
+        "reconciled_at": { "type": "string" },
+        "reason": { "type": "string" }
+      }
+    },
+    {
+      "title": "CandidateSelected",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "event_id",
+        "event_type",
+        "campaign_id",
+        "seed_id",
+        "owner",
+        "from_run_id",
+        "selected_at"
+      ],
+      "properties": {
+        "schema_version": { "type": "integer", "enum": [1] },
+        "event_id": { "type": "string" },
+        "event_type": { "type": "string", "const": "candidate_selected" },
+        "campaign_id": { "type": "string" },
+        "seed_id": { "type": "string" },
+        "owner": { "type": "string" },
+        "from_run_id": { "type": "string" },
+        "selected_at": { "type": "string" }
+      }
+    },
+    {
+      "title": "PromotionEvent",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "event_id",
+        "event_type",
+        "campaign_id",
+        "seed_id",
+        "owner",
+        "promotion_at"
+      ],
+      "properties": {
+        "schema_version": { "type": "integer", "enum": [1] },
+        "event_id": { "type": "string" },
+        "event_type": {
+          "type": "string",
+          "enum": [
+            "promotion_applied",
+            "promotion_skipped_conflict",
+            "promotion_skipped_apply_fail",
+            "promotion_skipped_recheck_fail"
+          ]
+        },
+        "campaign_id": { "type": "string" },
+        "seed_id": { "type": "string" },
+        "owner": { "type": "string" },
+        "promotion_at": { "type": "string" },
+        "run_id": { "type": "string" },
+        "reason": { "type": "string" }
+      }
+    }
+  ]
+}
+
