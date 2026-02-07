@@ -424,7 +424,9 @@ items:
   - backtest.roi
   risk_level: low
   max_diff_size: 160
-  status: todo
+  status: in_progress
+  picked_at: '2026-02-07T00:01:29Z'
+  branch: agent/exp_20260206_133000-layoff-and-freshness-features
 - id: EXP-029
   title: Weight carried and weight-change interactions
   hypothesis: Modeling weight and weight changes improves predictions especially across
