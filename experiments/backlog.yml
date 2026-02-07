@@ -91,7 +91,7 @@ items:
   - backtest.max_drawdown
   risk_level: low
   max_diff_size: 150
-  status: in_progress
+  status: failed
   picked_at: '2026-02-07T09:25:50Z'
   branch: agent/exp_20260207_090000-adaptive-fractional-kelly-under-drawdown
 - id: EXP-007
