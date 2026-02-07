@@ -477,7 +477,7 @@ items:
   - backtest.roi
   risk_level: medium
   max_diff_size: 180
-  status: in_progress
+  status: failed
   picked_at: '2026-02-07T02:08:00Z'
   branch: agent/exp_20260207_020800-jockey-horse-synergy-feature
 - id: EXP-032
