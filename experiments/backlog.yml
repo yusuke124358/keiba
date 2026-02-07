@@ -53,7 +53,9 @@ items:
   - rolling.neg_roi_window_rate
   risk_level: high
   max_diff_size: 120
-  status: todo
+  status: in_progress
+  picked_at: '2026-02-07T05:52:29Z'
+  branch: agent/exp_20260207_090000-exp-003-tighten-selector-thresholds-only-for-high-takeout-contexts
 - id: EXP-004
   title: Dynamic odds cap by field size
   hypothesis: Tightening max-odds caps more aggressively in large fields reduces tail
