@@ -94,6 +94,15 @@ def compute_horse_history_features(
             "horse_last2_finish": None,
             "horse_last3_finish": None,
             "horse_days_since_last": None,
+            "horse_days_since_last_log1p": None,
+            "horse_days_since_last_sqrt": None,
+            "horse_layoff_ge_60": None,
+            "horse_layoff_ge_120": None,
+            "horse_starts_30": 0,
+            "horse_starts_90": 0,
+            "horse_days_between_last2": None,
+            "horse_gap_mean_last3": None,
+            "horse_layoff_minus_gap_mean3": None,
             "horse_win_rate_last5": None,
             "horse_starts_dist_bin": 0,
             "horse_win_rate_dist_bin": None,
@@ -134,6 +143,15 @@ def compute_horse_history_features(
             "horse_last2_finish": None,
             "horse_last3_finish": None,
             "horse_days_since_last": None,
+            "horse_days_since_last_log1p": None,
+            "horse_days_since_last_sqrt": None,
+            "horse_layoff_ge_60": None,
+            "horse_layoff_ge_120": None,
+            "horse_starts_30": 0,
+            "horse_starts_90": 0,
+            "horse_days_between_last2": None,
+            "horse_gap_mean_last3": None,
+            "horse_layoff_minus_gap_mean3": None,
             "horse_win_rate_last5": None,
             "horse_starts_dist_bin": 0,
             "horse_win_rate_dist_bin": None,
@@ -192,6 +210,41 @@ def compute_horse_history_features(
 
     last_dt = df["race_dt"].iloc[0]
     days_since_last = int((asof_time - last_dt).days) if pd.notna(last_dt) else None
+    days_since_last_log1p = (
+        float(np.log1p(days_since_last))
+        if (days_since_last is not None and days_since_last >= 0)
+        else None
+    )
+    days_since_last_sqrt = (
+        float(np.sqrt(days_since_last))
+        if (days_since_last is not None and days_since_last >= 0)
+        else None
+    )
+    layoff_ge_60 = 1 if (days_since_last is not None and days_since_last >= 60) else None
+    layoff_ge_120 = 1 if (days_since_last is not None and days_since_last >= 120) else None
+
+    cutoff30 = asof_time - timedelta(days=30)
+    cutoff90 = asof_time - timedelta(days=90)
+    starts_30 = int((df["race_dt"] >= cutoff30).sum())
+    starts_90 = int((df["race_dt"] >= cutoff90).sum())
+
+    gap_last2 = None
+    gap_mean_last3 = None
+    if len(df) >= 2 and pd.notna(df["race_dt"].iloc[0]) and pd.notna(df["race_dt"].iloc[1]):
+        gap_last2 = int((df["race_dt"].iloc[0] - df["race_dt"].iloc[1]).days)
+    gaps = []
+    for i in range(min(len(df) - 1, 3)):
+        a = df["race_dt"].iloc[i]
+        b = df["race_dt"].iloc[i + 1]
+        if pd.notna(a) and pd.notna(b):
+            gaps.append(int((a - b).days))
+    if gaps:
+        gap_mean_last3 = float(np.mean(gaps))
+    layoff_minus_gap_mean3 = (
+        float(days_since_last - gap_mean_last3)
+        if (days_since_last is not None and gap_mean_last3 is not None)
+        else None
+    )
 
     last_finish = int(df["finish_pos"].iloc[0]) if pd.notna(df["finish_pos"].iloc[0]) else None
     last2_finish = (
@@ -302,6 +355,15 @@ def compute_horse_history_features(
         "horse_last2_finish": last2_finish,
         "horse_last3_finish": last3_finish,
         "horse_days_since_last": days_since_last,
+        "horse_days_since_last_log1p": days_since_last_log1p,
+        "horse_days_since_last_sqrt": days_since_last_sqrt,
+        "horse_layoff_ge_60": layoff_ge_60,
+        "horse_layoff_ge_120": layoff_ge_120,
+        "horse_starts_30": starts_30,
+        "horse_starts_90": starts_90,
+        "horse_days_between_last2": gap_last2,
+        "horse_gap_mean_last3": gap_mean_last3,
+        "horse_layoff_minus_gap_mean3": layoff_minus_gap_mean3,
         "horse_win_rate_last5": win_rate_last5,
         "horse_starts_dist_bin": starts_dist_bin,
         "horse_win_rate_dist_bin": win_rate_dist_bin,

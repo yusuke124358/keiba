@@ -920,6 +920,38 @@ def prepare_training_data(
         for c in QUINELLA_ODDS_MOVEMENT_COLS:
             if c not in df.columns:
                 df[c] = None
+
+    # Layoff/freshness features (leak-safe): derive from existing history columns so
+    # we don't require rebuilding the full features table for experiments.
+    ds_raw = None
+    if "horse_days_since_last" in df.columns:
+        ds_raw = df["horse_days_since_last"]
+    elif "days_since_last" in df.columns:
+        ds_raw = df["days_since_last"]
+    ds = (
+        pd.to_numeric(ds_raw, errors="coerce")
+        if ds_raw is not None
+        else pd.Series([np.nan] * len(df), index=df.index)
+    )
+    ds_clip = ds.clip(lower=0)
+    df["horse_days_since_last_log1p"] = np.log1p(ds_clip)
+    df["horse_days_since_last_sqrt"] = np.sqrt(ds_clip)
+    df["horse_layoff_ge_60"] = (ds_clip >= 60).astype(int)
+    df["horse_layoff_ge_120"] = (ds_clip >= 120).astype(int)
+
+    # Fallbacks when these are absent from the feature payload (keeps experiments cheap).
+    if "horse_starts_30" not in df.columns:
+        df["horse_starts_30"] = (ds_clip <= 30).astype(int)
+    if "horse_starts_90" not in df.columns:
+        df["horse_starts_90"] = (ds_clip <= 90).astype(int)
+    starts365 = pd.to_numeric(df.get("horse_starts_365"), errors="coerce").fillna(0.0)
+    typical_gap = 365.0 / starts365.clip(lower=1.0)
+    if "horse_days_between_last2" not in df.columns:
+        df["horse_days_between_last2"] = typical_gap
+    if "horse_gap_mean_last3" not in df.columns:
+        df["horse_gap_mean_last3"] = typical_gap
+    if "horse_layoff_minus_gap_mean3" not in df.columns:
+        df["horse_layoff_minus_gap_mean3"] = ds_clip - typical_gap
     # 特徴量カラム
     feature_cols = [
         "odds",
@@ -967,6 +999,15 @@ def prepare_training_data(
         "horse_last2_finish",
         "horse_last3_finish",
         "horse_days_since_last",
+        "horse_days_since_last_log1p",
+        "horse_days_since_last_sqrt",
+        "horse_layoff_ge_60",
+        "horse_layoff_ge_120",
+        "horse_starts_30",
+        "horse_starts_90",
+        "horse_days_between_last2",
+        "horse_gap_mean_last3",
+        "horse_layoff_minus_gap_mean3",
         "horse_win_rate_last5",
         "horse_starts_dist_bin",
         "horse_win_rate_dist_bin",
