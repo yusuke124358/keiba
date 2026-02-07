@@ -5,7 +5,6 @@ import json
 import os
 import subprocess
 import time
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -92,7 +91,11 @@ def git_push_state_branch(state_root: Path, *, retries: int = 6) -> None:
         run(["git", "rebase", f"origin/{STATE_BRANCH}"], cwd=state_root, check=False)
         time.sleep(delay)
         delay = min(delay * 2.0, 15.0)
-    stderr = (result.stderr or "").strip() if isinstance(result, subprocess.CompletedProcess) else ""
+    stderr = (
+        (result.stderr or "").strip()
+        if isinstance(result, subprocess.CompletedProcess)
+        else ""
+    )
     raise RuntimeError(f"Failed to push state branch after retries.\n{stderr}")
 
 
@@ -127,7 +130,9 @@ def append_event(
     if out_path.exists():
         return out_path
 
-    out_path.write_text(json.dumps(event, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
+    out_path.write_text(
+        json.dumps(event, ensure_ascii=True, indent=2) + "\n", encoding="utf-8"
+    )
     run(["git", "add", str(out_path)], cwd=state_repo_dir)
     run(["git", "commit", "-m", commit_message], cwd=state_repo_dir)
     git_push_state_branch(state_repo_dir)

@@ -22,10 +22,14 @@ def _assert_canonical(obj: Any, path: str = "$") -> None:
     if isinstance(obj, dict):
         for k, v in obj.items():
             if not isinstance(k, str):
-                raise TypeError(f"non-string key is not allowed in canonical payload: {path}")
+                raise TypeError(
+                    f"non-string key is not allowed in canonical payload: {path}"
+                )
             _assert_canonical(v, f"{path}.{k}")
         return
-    raise TypeError(f"unsupported type in canonical payload: {path} ({type(obj).__name__})")
+    raise TypeError(
+        f"unsupported type in canonical payload: {path} ({type(obj).__name__})"
+    )
 
 
 def canonical_dumps(obj: Any) -> str:
@@ -46,4 +50,3 @@ def canonical_dumps(obj: Any) -> str:
 
 def sha256_hex(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
-

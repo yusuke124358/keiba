@@ -283,7 +283,9 @@ def apply_patch_file(root: Path, patch_path: Path) -> None:
     )
     if result.returncode != 0:
         stderr = (result.stderr or "").strip()
-        raise RuntimeError(f"git apply failed ({result.returncode}): {patch_path}\n{stderr}")
+        raise RuntimeError(
+            f"git apply failed ({result.returncode}): {patch_path}\n{stderr}"
+        )
 
 
 def write_patch_bundle(
@@ -1194,7 +1196,9 @@ def main() -> int:
 
     root = repo_root()
     ensure_clean(root)
-    out_root = _resolve_out_root(root, args.out_dir, results_only=bool(args.results_only))
+    out_root = _resolve_out_root(
+        root, args.out_dir, results_only=bool(args.results_only)
+    )
 
     plan_path = Path(args.plan)
     plan = json.loads(plan_path.read_text(encoding="utf-8"))
@@ -1219,7 +1223,9 @@ def main() -> int:
             check=False,
         ).stdout.strip()
         if not branch:
-            raise RuntimeError("Unable to determine current branch (no-checkout-branch).")
+            raise RuntimeError(
+                "Unable to determine current branch (no-checkout-branch)."
+            )
     else:
         branch = f"agent/{run_id}-{slugify(plan['title'])}"
         run(["git", "checkout", "-b", branch], cwd=root)

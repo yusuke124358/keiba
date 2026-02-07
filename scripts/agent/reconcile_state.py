@@ -22,7 +22,9 @@ def main() -> int:
     args = p.parse_args()
 
     state = load_state()
-    items: dict[str, Any] = state.get("items") if isinstance(state.get("items"), dict) else {}
+    items: dict[str, Any] = (
+        state.get("items") if isinstance(state.get("items"), dict) else {}
+    )
 
     now = datetime.now(timezone.utc)
     changed = 0

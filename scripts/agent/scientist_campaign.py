@@ -115,7 +115,7 @@ def _relativedelta_months(d: date, months: int) -> date:
     # Avoid extra dependency surprises: dateutil is already a pandas dependency.
     from dateutil.relativedelta import relativedelta  # type: ignore[import-not-found]
 
-    return (d + relativedelta(months=months))
+    return d + relativedelta(months=months)
 
 
 def load_campaign_config(path: Path) -> CampaignConfig:
@@ -190,7 +190,9 @@ def load_campaign_config(path: Path) -> CampaignConfig:
             min_bets=_get_int(node, "min_bets", int(defaults["min_bets"])),
             min_days=_get_int(node, "min_days", int(defaults["min_days"])),
             delta_roi_ci95_lower_gt=_get_float(
-                rule, "delta_roi_ci95_lower_gt", float(defaults["delta_roi_ci95_lower_gt"])
+                rule,
+                "delta_roi_ci95_lower_gt",
+                float(defaults["delta_roi_ci95_lower_gt"]),
             ),
             p_one_sided_delta_le_0_max=_get_float(
                 rule,
@@ -260,4 +262,3 @@ def load_campaign_by_id(repo_root: Path, campaign_id: str) -> CampaignConfig:
 
 def asdict(cfg: CampaignConfig) -> dict[str, Any]:
     return dataclasses.asdict(cfg)
-

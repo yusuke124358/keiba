@@ -17,7 +17,9 @@ def utc_now_iso() -> str:
 def atomic_write_json(path: Path, data: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
+    tmp.write_text(
+        json.dumps(data, ensure_ascii=True, indent=2) + "\n", encoding="utf-8"
+    )
     os.replace(tmp, path)
 
 
@@ -90,4 +92,3 @@ def save_state(data: dict[str, Any]) -> None:
     data["schema_version"] = 1
     data["updated_at"] = utc_now_iso()
     atomic_write_json(state_path, data)
-

@@ -7,7 +7,9 @@ import subprocess
 from pathlib import Path
 
 
-def run(cmd: list[str], *, cwd: Path, check: bool = True) -> subprocess.CompletedProcess:
+def run(
+    cmd: list[str], *, cwd: Path, check: bool = True
+) -> subprocess.CompletedProcess:
     result = subprocess.run(
         cmd,
         cwd=cwd,
@@ -17,7 +19,9 @@ def run(cmd: list[str], *, cwd: Path, check: bool = True) -> subprocess.Complete
     )
     if check and result.returncode != 0:
         stderr = (result.stderr or "").strip()
-        raise RuntimeError(f"Command failed ({result.returncode}): {' '.join(cmd)}\n{stderr}")
+        raise RuntimeError(
+            f"Command failed ({result.returncode}): {' '.join(cmd)}\n{stderr}"
+        )
     return result
 
 
@@ -36,7 +40,9 @@ def _remote_branch_exists(root: Path, branch: str) -> bool:
 
 
 def ensure_git_identity(root: Path) -> None:
-    name = run(["git", "config", "--get", "user.name"], cwd=root, check=False).stdout.strip()
+    name = run(
+        ["git", "config", "--get", "user.name"], cwd=root, check=False
+    ).stdout.strip()
     email = run(
         ["git", "config", "--get", "user.email"], cwd=root, check=False
     ).stdout.strip()

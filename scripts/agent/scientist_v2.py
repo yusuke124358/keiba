@@ -61,7 +61,9 @@ def run(
     )
     if check and result.returncode != 0:
         stderr = (result.stderr or "").strip()
-        raise RuntimeError(f"Command failed ({result.returncode}): {' '.join(cmd)}\n{stderr}")
+        raise RuntimeError(
+            f"Command failed ({result.returncode}): {' '.join(cmd)}\n{stderr}"
+        )
     return result
 
 
@@ -76,7 +78,9 @@ def repo_root() -> Path:
 
 def parse_utc(s: str) -> datetime:
     # All ledger timestamps are written in UTC with a Z suffix.
-    return datetime.strptime(str(s).strip(), "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    return datetime.strptime(str(s).strip(), "%Y-%m-%dT%H:%M:%SZ").replace(
+        tzinfo=timezone.utc
+    )
 
 
 @dataclass(frozen=True)
@@ -108,7 +112,9 @@ def load_seeds(path: Path) -> list[Seed]:
                 title=str(item.get("title") or "").strip(),
                 hypothesis=str(item.get("hypothesis") or "").strip(),
                 change_scope=str(item.get("change_scope") or "").strip(),
-                acceptance_criteria=[str(x) for x in (item.get("acceptance_criteria") or [])],
+                acceptance_criteria=[
+                    str(x) for x in (item.get("acceptance_criteria") or [])
+                ],
                 metrics=[str(x) for x in (item.get("metrics") or [])],
                 risk_level=str(item.get("risk_level") or "medium").strip(),
                 max_diff_size=int(item.get("max_diff_size") or 1),
@@ -216,7 +222,9 @@ def metrics_summary_from_result(result: dict[str, Any]) -> dict[str, Any]:
         return _null_metrics_summary()
 
 
-def evaluate_stage_decision(*, stage: str, rules: StageRules, result: dict[str, Any]) -> str:
+def evaluate_stage_decision(
+    *, stage: str, rules: StageRules, result: dict[str, Any]
+) -> str:
     """
     Decide candidate/accept/reject/iterate/needs-human for the central ledger.
 
@@ -404,13 +412,13 @@ class LedgerIndex:
 
     def max_attempt(self, seed_id: str, stage: str) -> int:
         m = 0
-        for (sid, st, att) in self.leases.keys():
+        for sid, st, att in self.leases.keys():
             if sid == seed_id and st == stage:
                 m = max(m, att)
-        for (sid, st, att) in self.finished.keys():
+        for sid, st, att in self.finished.keys():
             if sid == seed_id and st == stage:
                 m = max(m, att)
-        for (sid, st, att) in self.reconciled.keys():
+        for sid, st, att in self.reconciled.keys():
             if sid == seed_id and st == stage:
                 m = max(m, att)
         return m
@@ -424,7 +432,9 @@ class LedgerIndex:
                 return True
         return False
 
-    def latest_success(self, seed_id: str, stage: str, *, decision: str | None = None) -> Finished | None:
+    def latest_success(
+        self, seed_id: str, stage: str, *, decision: str | None = None
+    ) -> Finished | None:
         best: Finished | None = None
         for (sid, st, _), fin in self.finished.items():
             if sid != seed_id or st != stage:
@@ -725,7 +735,11 @@ def reconcile_stale_leases(
     events = load_events(state_repo_dir=state_repo_dir, campaign_id=cfg.campaign_id)
     idx = LedgerIndex(events)
 
-    allowed = {s.seed_id for s in seeds if assigned_shard(s.seed_id, cfg.total_shards) == shard_i}
+    allowed = {
+        s.seed_id
+        for s in seeds
+        if assigned_shard(s.seed_id, cfg.total_shards) == shard_i
+    }
     reconciled_count = 0
     for lease in list(idx.leases.values()):
         if lease.seed_id not in allowed:
@@ -868,7 +882,9 @@ def maybe_store_patch_to_ledger(
 
 
 def current_branch(root: Path) -> str:
-    return run(["git", "branch", "--show-current"], cwd=root, check=False).stdout.strip()
+    return run(
+        ["git", "branch", "--show-current"], cwd=root, check=False
+    ).stdout.strip()
 
 
 def delete_branch(root: Path, branch: str) -> None:
@@ -930,7 +946,9 @@ def run_stage_job(
 
     plans_dir = ensure_dir(out_root / "plans" / stage)
     plan_path = plans_dir / f"{run_id}.json"
-    plan_path.write_text(json.dumps(plan, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
+    plan_path.write_text(
+        json.dumps(plan, ensure_ascii=True, indent=2) + "\n", encoding="utf-8"
+    )
 
     branch_before = current_branch(repo_root)
     branch_after = ""
@@ -942,9 +960,13 @@ def run_stage_job(
             checkout_ref(repo_root, base_ref)
         else:
             if not upstream_patch_ref or not upstream_patch_ref.get("path"):
-                raise RuntimeError(f"Missing upstream_patch_ref for {stage} ({seed.seed_id}).")
+                raise RuntimeError(
+                    f"Missing upstream_patch_ref for {stage} ({seed.seed_id})."
+                )
             if not upstream_base_commit:
-                raise RuntimeError(f"Missing upstream_base_commit for {stage} ({seed.seed_id}).")
+                raise RuntimeError(
+                    f"Missing upstream_base_commit for {stage} ({seed.seed_id})."
+                )
             checkout_ref(repo_root, upstream_base_commit)
 
         base_commit = current_commit(repo_root)
@@ -997,7 +1019,9 @@ def run_stage_job(
         if stage == "stage1":
             bundle = patch_bundle_paths(exp_dir)
             if not bundle:
-                raise RuntimeError(f"patch bundle not found in experiment dir: {exp_dir}")
+                raise RuntimeError(
+                    f"patch bundle not found in experiment dir: {exp_dir}"
+                )
             diff_path, patch_sha = bundle
             patch_ref = maybe_store_patch_to_ledger(
                 repo_root=repo_root,
@@ -1087,7 +1111,12 @@ def run_stage_job(
 
 
 def select_next_stage1(
-    *, seeds: list[Seed], idx: LedgerIndex, cfg: CampaignConfig, shard_i: int, max_tries: int
+    *,
+    seeds: list[Seed],
+    idx: LedgerIndex,
+    cfg: CampaignConfig,
+    shard_i: int,
+    max_tries: int,
 ) -> tuple[Seed, int] | None:
     for seed in seeds:
         if assigned_shard(seed.seed_id, cfg.total_shards) != shard_i:
@@ -1104,7 +1133,12 @@ def select_next_stage1(
 
 
 def select_next_stage2(
-    *, seeds: list[Seed], idx: LedgerIndex, cfg: CampaignConfig, shard_i: int, max_tries: int
+    *,
+    seeds: list[Seed],
+    idx: LedgerIndex,
+    cfg: CampaignConfig,
+    shard_i: int,
+    max_tries: int,
 ) -> tuple[Seed, int, Finished] | None:
     for seed in seeds:
         if assigned_shard(seed.seed_id, cfg.total_shards) != shard_i:
@@ -1124,7 +1158,12 @@ def select_next_stage2(
 
 
 def select_next_holdout(
-    *, seeds: list[Seed], idx: LedgerIndex, cfg: CampaignConfig, shard_i: int, max_tries: int
+    *,
+    seeds: list[Seed],
+    idx: LedgerIndex,
+    cfg: CampaignConfig,
+    shard_i: int,
+    max_tries: int,
 ) -> tuple[Seed, int, Finished] | None:
     for seed in seeds:
         if assigned_shard(seed.seed_id, cfg.total_shards) != shard_i:
@@ -1145,17 +1184,38 @@ def select_next_holdout(
 
 def main() -> int:
     p = argparse.ArgumentParser()
-    p.add_argument("--campaign", required=True, help="Campaign ID (config/scientist_campaigns/<id>.yml)")
+    p.add_argument(
+        "--campaign",
+        required=True,
+        help="Campaign ID (config/scientist_campaigns/<id>.yml)",
+    )
     p.add_argument("--stage", required=True, choices=["stage1", "stage2", "holdout"])
     p.add_argument("--shard", default="0/1", help="Shard in i/n form (e.g. 0/2)")
-    p.add_argument("--max-jobs", type=int, default=5, help="Max seeds to process in this invocation")
+    p.add_argument(
+        "--max-jobs",
+        type=int,
+        default=5,
+        help="Max seeds to process in this invocation",
+    )
     p.add_argument("--max-tries", type=int, default=3)
     p.add_argument("--seed-path", default="experiments/seed_hypotheses.yaml")
-    p.add_argument("--base-ref", default="origin/main", help="Git ref to reset to between runs (stage1 base)")
+    p.add_argument(
+        "--base-ref",
+        default="origin/main",
+        help="Git ref to reset to between runs (stage1 base)",
+    )
     p.add_argument("--prompt", default="prompts/agent/fixer_implement.md")
     p.add_argument("--profile", default="agent_loop")
-    p.add_argument("--artifact-root", default="", help="Base artifact dir (defaults to $KEIBA_ARTIFACT_DIR)")
-    p.add_argument("--state-repo-dir", default="", help="State worktree dir (defaults to $KEIBA_STATE_REPO_DIR)")
+    p.add_argument(
+        "--artifact-root",
+        default="",
+        help="Base artifact dir (defaults to $KEIBA_ARTIFACT_DIR)",
+    )
+    p.add_argument(
+        "--state-repo-dir",
+        default="",
+        help="State worktree dir (defaults to $KEIBA_STATE_REPO_DIR)",
+    )
     p.add_argument("--only-seed", default="", help="If set, only process this seed_id")
     args = p.parse_args()
 
@@ -1175,13 +1235,17 @@ def main() -> int:
         if not seeds:
             raise RuntimeError(f"--only-seed not found in seed list: {args.only_seed}")
 
-    state_repo_dir_raw = (str(args.state_repo_dir) or os.environ.get("KEIBA_STATE_REPO_DIR") or "").strip()
+    state_repo_dir_raw = (
+        str(args.state_repo_dir) or os.environ.get("KEIBA_STATE_REPO_DIR") or ""
+    ).strip()
     if not state_repo_dir_raw:
         raise RuntimeError("Set --state-repo-dir or $KEIBA_STATE_REPO_DIR")
     state_repo_dir = Path(state_repo_dir_raw)
     ensure_state_worktree(root=root, worktree_dir=state_repo_dir)
 
-    artifact_root_raw = (str(args.artifact_root) or os.environ.get("KEIBA_ARTIFACT_DIR") or "").strip()
+    artifact_root_raw = (
+        str(args.artifact_root) or os.environ.get("KEIBA_ARTIFACT_DIR") or ""
+    ).strip()
     if not artifact_root_raw:
         raise RuntimeError("Set --artifact-root or $KEIBA_ARTIFACT_DIR")
     artifact_root = Path(artifact_root_raw)
@@ -1209,7 +1273,11 @@ def main() -> int:
 
         if args.stage == "stage1":
             pick = select_next_stage1(
-                seeds=seeds, idx=idx, cfg=cfg, shard_i=shard_i, max_tries=int(args.max_tries)
+                seeds=seeds,
+                idx=idx,
+                cfg=cfg,
+                shard_i=shard_i,
+                max_tries=int(args.max_tries),
             )
             if not pick:
                 break
@@ -1233,14 +1301,20 @@ def main() -> int:
 
         if args.stage == "stage2":
             pick2 = select_next_stage2(
-                seeds=seeds, idx=idx, cfg=cfg, shard_i=shard_i, max_tries=int(args.max_tries)
+                seeds=seeds,
+                idx=idx,
+                cfg=cfg,
+                shard_i=shard_i,
+                max_tries=int(args.max_tries),
             )
             if not pick2:
                 break
             seed, attempt, src = pick2
             lease = idx.lease_for_run(src.run_id)
             if lease is None:
-                raise RuntimeError(f"stage1 lease not found for upstream run: {src.run_id}")
+                raise RuntimeError(
+                    f"stage1 lease not found for upstream run: {src.run_id}"
+                )
             run_stage_job(
                 cfg=cfg,
                 seed=seed,
@@ -1263,14 +1337,20 @@ def main() -> int:
 
         if args.stage == "holdout":
             pick3 = select_next_holdout(
-                seeds=seeds, idx=idx, cfg=cfg, shard_i=shard_i, max_tries=int(args.max_tries)
+                seeds=seeds,
+                idx=idx,
+                cfg=cfg,
+                shard_i=shard_i,
+                max_tries=int(args.max_tries),
             )
             if not pick3:
                 break
             seed, attempt, src = pick3
             lease = idx.lease_for_run(src.run_id)
             if lease is None:
-                raise RuntimeError(f"stage2 lease not found for upstream run: {src.run_id}")
+                raise RuntimeError(
+                    f"stage2 lease not found for upstream run: {src.run_id}"
+                )
             run_stage_job(
                 cfg=cfg,
                 seed=seed,

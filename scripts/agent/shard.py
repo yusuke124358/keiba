@@ -24,4 +24,3 @@ def assigned_shard(seed_id: str, total_shards: int) -> int:
     sid = str(seed_id).encode("utf-8")
     h = hashlib.sha1(sid).hexdigest()
     return int(h, 16) % int(total_shards)
-
