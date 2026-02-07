@@ -54,7 +54,11 @@ def test_select_holdout_tokens_defaults_when_missing():
 def test_select_holdout_tokens_strips_python_prefix():
     run_id = "exp_20260207_000000"
     eval_cmds = [
-        f"python py64_analysis/scripts/run_holdout.py --test-start 2024-01-01 --test-end 2024-12-31 --name {run_id}"
+        (
+            "python py64_analysis/scripts/run_holdout.py "
+            "--test-start 2024-01-01 --test-end 2024-12-31 "
+            f"--name {run_id}"
+        )
     ]
     tokens = MODULE.select_holdout_tokens(eval_cmds, run_id)
     assert tokens[0].endswith("run_holdout.py")
@@ -65,4 +69,3 @@ def test_parse_arg_space_and_equals():
     tokens = ["--foo", "bar", "--baz=qux"]
     assert MODULE._parse_arg(tokens, "--foo") == "bar"
     assert MODULE._parse_arg(tokens, "--baz") == "qux"
-

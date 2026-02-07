@@ -293,7 +293,9 @@ def _set_arg(tokens: list[str], flag: str, value: str) -> None:
     tokens.extend([flag, value])
 
 
-def resolve_holdout_config_path(root: Path, holdout_tokens: list[str], run_id: str) -> Path:
+def resolve_holdout_config_path(
+    root: Path, holdout_tokens: list[str], run_id: str
+) -> Path:
     """
     Resolve the effective config file for `run_holdout.py` given our execution model.
 
@@ -839,7 +841,9 @@ def render_experiment_md(
     lines.append(f"- Total stake: {_format_float(variant_metrics.get('total_stake'))}")
     lines.append(f"- n_bets: {_format_int(variant_metrics.get('n_bets'))}")
     lines.append(f"- Test period: {test_period}")
-    lines.append(f"- Max drawdown: {_format_float(variant_metrics.get('max_drawdown'))}")
+    lines.append(
+        f"- Max drawdown: {_format_float(variant_metrics.get('max_drawdown'))}"
+    )
     lines.append(
         f"- frac_days_any_bet: {_format_float(variant_metrics.get('frac_days_any_bet'))}"
     )
@@ -884,9 +888,7 @@ def render_experiment_md(
     lines.append("")
     lines.append("## Uncertainty (day-block bootstrap)")
     lines.append(f"- ROI_variant_CI95: {_format_ci95(stats.get('roi_ci95'))}")
-    lines.append(
-        f"- ROI_baseline_CI95: {_format_ci95(stats.get('baseline_roi_ci95'))}"
-    )
+    lines.append(f"- ROI_baseline_CI95: {_format_ci95(stats.get('baseline_roi_ci95'))}")
     lines.append(f"- delta_ROI_CI95: {_format_ci95(stats.get('delta_roi_ci95'))}")
     lines.append(
         f"- p_one_sided (P(delta<=0)): {_format_float(stats.get('p_one_sided_delta_le_0'))}"
@@ -1220,7 +1222,9 @@ def main() -> int:
             "n_days": summary_stats["variant"]["n_days"],
             "max_drawdown": variant_extracted["max_drawdown"],
             "test_period": variant_extracted["test_period"],
-            "frac_days_candidates_ge_n": variant_extracted.get("frac_days_candidates_ge_n"),
+            "frac_days_candidates_ge_n": variant_extracted.get(
+                "frac_days_candidates_ge_n"
+            ),
             "frac_days_any_bet": variant_extracted.get("frac_days_any_bet"),
             "rolling": variant_extracted["rolling"],
             "design_window": variant_extracted["design_window"],
@@ -1238,7 +1242,9 @@ def main() -> int:
             "n_days": summary_stats["baseline"]["n_days"],
             "max_drawdown": baseline_extracted["max_drawdown"],
             "test_period": baseline_extracted["test_period"],
-            "frac_days_candidates_ge_n": baseline_extracted.get("frac_days_candidates_ge_n"),
+            "frac_days_candidates_ge_n": baseline_extracted.get(
+                "frac_days_candidates_ge_n"
+            ),
             "frac_days_any_bet": baseline_extracted.get("frac_days_any_bet"),
         },
         "deltas": {"delta_roi": delta_roi, "delta_max_drawdown": delta_dd},
