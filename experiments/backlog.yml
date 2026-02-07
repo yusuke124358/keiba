@@ -460,7 +460,7 @@ items:
   - backtest.roi
   risk_level: medium
   max_diff_size: 200
-  status: in_progress
+  status: done
   picked_at: '2026-02-07T01:17:55Z'
   branch: agent/exp_20260206_120000-track-x-distance-conditional-jockey-trainer-win-rate-encoding
 - id: EXP-031
