@@ -200,25 +200,6 @@ items:
   status: failed
   picked_at: '2026-02-07T17:35:51Z'
   branch: agent/exp_20260207_090000-exp-012-closing-odds-multiplier-quantile-0-25-more-conservative
-- id: EXP-013
-  title: Closing multiplier by odds bucket
-  hypothesis: Estimating closing-mult per odds bucket reduces EV error and improves
-    selection quality.
-  change_scope:
-  - py64_analysis/scripts/
-  - py64_analysis/src/keiba/backtest/
-  - py64_analysis/src/keiba/betting/
-  acceptance_criteria:
-  - ROI >= baseline + 0.005
-  - Closing-mult MAE improves by >= 5%
-  metrics:
-  - backtest.roi
-  - odds.closing_mult_mae
-  risk_level: medium
-  max_diff_size: 200
-  status: in_progress
-  picked_at: '2026-02-07T18:29:47Z'
-  branch: agent/exp_20260207_090000-closing-multiplier-by-odds-bucket
 - id: EXP-014
   title: Odds time-series movement features (0B41/0B42)
   hypothesis: Incorporating odds movement features improves calibration and ROI versus
@@ -849,3 +830,21 @@ items:
   max_diff_size: 150
   status: todo
   branch: agent/exp_20260207_090000-per-race-stake-cap-as-bankroll-percentage
+- id: EXP-013
+  title: Closing multiplier by odds bucket
+  hypothesis: Estimating closing-mult per odds bucket reduces EV error and improves
+    selection quality.
+  change_scope:
+  - py64_analysis/scripts/
+  - py64_analysis/src/keiba/backtest/
+  - py64_analysis/src/keiba/betting/
+  acceptance_criteria:
+  - ROI >= baseline + 0.005
+  - Closing-mult MAE improves by >= 5%
+  metrics:
+  - backtest.roi
+  - odds.closing_mult_mae
+  risk_level: medium
+  max_diff_size: 200
+  status: todo
+  branch: agent/exp_20260207_090000-closing-multiplier-by-odds-bucket
