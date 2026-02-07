@@ -91,7 +91,9 @@ items:
   - backtest.max_drawdown
   risk_level: low
   max_diff_size: 150
-  status: todo
+  status: in_progress
+  picked_at: '2026-02-07T09:25:50Z'
+  branch: agent/exp_20260207_090000-adaptive-fractional-kelly-under-drawdown
 - id: EXP-007
   title: Per-race stake cap as bankroll percentage
   hypothesis: Adding a per-race stake cap reduces worst-case loss and drawdown with
