@@ -1,0 +1,8 @@
+# exp_20260207_101500 / EXP-032
+# Enable leakage-safe course x gate (frame_no) bias feature.
+extends: ../config.yaml
+
+features:
+  course_gate_bias:
+    enabled: true
+

@@ -494,10 +494,19 @@ class PaceHistoryFeatureConfig(BaseModel):
     enabled: bool = False
 
 
+class CourseGateBiasFeatureConfig(BaseModel):
+    """Course x gate bias feature flags."""
+
+    enabled: bool = False
+
+
 class FeaturesConfig(BaseModel):
     """Feature selection flags."""
 
     pace_history: PaceHistoryFeatureConfig = Field(default_factory=PaceHistoryFeatureConfig)
+    course_gate_bias: CourseGateBiasFeatureConfig = Field(
+        default_factory=CourseGateBiasFeatureConfig
+    )
 
 
 class CVConfig(BaseModel):

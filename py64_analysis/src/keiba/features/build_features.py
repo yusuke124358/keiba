@@ -62,7 +62,7 @@ class FeatureBuilder:
 
     # Option C1: 履歴特徴量を拡張したためバージョン更新
     # Option C4: ペース/通過順特徴量を追加（1.4.0）
-    VERSION = "1.6.1"
+    VERSION = "1.6.2"
 
     def __init__(self, session: Session):
         self.session = session
@@ -97,6 +97,16 @@ class FeatureBuilder:
             race_info, entries, asof_time
         )
 
+        gate_bias_cfg = getattr(getattr(self.config, "features", None), "course_gate_bias", None)
+        gate_bias_enabled = (
+            bool(getattr(gate_bias_cfg, "enabled", False)) if gate_bias_cfg is not None else False
+        )
+        course_gate_bias_by_frame = (
+            self._build_course_gate_bias_by_frame(race_info=race_info, asof_time=asof_time)
+            if gate_bias_enabled
+            else {}
+        )
+
         results = []
         for entry in entries:
             features = {}
@@ -122,6 +132,14 @@ class FeatureBuilder:
             # 構造特徴量
             struct_features = self._build_struct_features(race_info, entry)
             features.update(struct_features)
+
+            if gate_bias_enabled:
+                frame_no = entry.get("frame_no")
+                try:
+                    frame_no_i = int(frame_no) if frame_no is not None else None
+                except Exception:
+                    frame_no_i = None
+                features["course_x_gate_bias"] = float(course_gate_bias_by_frame.get(frame_no_i, 0.0))
 
             # C4: レースレベルの予測ペース特徴量（全馬共通）
             if race_expected_pace:
@@ -893,6 +911,141 @@ class FeatureBuilder:
             "horse_jockey_win_rate_365": None,
         }
 
+    def _build_course_gate_bias_by_frame(
+        self, *, race_info: dict, asof_time: datetime
+    ) -> dict[int, float]:
+        """
+        Leakage-safe course x gate bias feature (course=(track_code,surface,distance), gate=frame_no).
+
+        Returns a per-frame shrunk delta of (frame win rate - course win rate) using only past races:
+        (race_dt < asof_time). Missing/unseen frames should be treated as 0.0 downstream.
+        """
+        track_code = str(race_info.get("track_code") or "").strip()
+        surface = str(race_info.get("surface") or "").strip()
+        distance_raw = race_info.get("distance")
+        try:
+            distance = int(distance_raw) if distance_raw is not None else None
+        except Exception:
+            try:
+                distance = int(float(distance_raw)) if distance_raw is not None else None
+            except Exception:
+                distance = None
+
+        if not track_code or not surface or distance is None:
+            return {}
+
+        cutoff = asof_time - timedelta(days=365 * 5)
+        rows = self.session.execute(
+            text(
+                """
+                SELECT
+                    e.frame_no AS frame_no,
+                    COUNT(*) AS starts,
+                    SUM(CASE WHEN res.finish_pos = 1 THEN 1 ELSE 0 END) AS wins
+                FROM fact_result res
+                JOIN fact_race r ON res.race_id = r.race_id
+                JOIN fact_entry e ON e.race_id = res.race_id AND e.horse_no = res.horse_no
+                WHERE r.start_time IS NOT NULL
+                  AND (r.date::timestamp + r.start_time) >= :cutoff
+                  AND (r.date::timestamp + r.start_time) < :asof_time
+                  AND r.track_code = :track_code
+                  AND r.surface = :surface
+                  AND r.distance = :distance
+                  AND res.finish_pos IS NOT NULL
+                  AND e.frame_no IS NOT NULL
+                GROUP BY e.frame_no
+                """
+            ),
+            {
+                "cutoff": cutoff,
+                "asof_time": asof_time,
+                "track_code": track_code,
+                "surface": surface,
+                "distance": distance,
+            },
+        ).fetchall()
+
+        if not rows:
+            return {}
+
+        by_frame: dict[int, tuple[int, int]] = {}
+        total_starts = 0
+        total_wins = 0
+        for frame_no, starts, wins in rows:
+            try:
+                frame_no_i = int(frame_no)
+            except Exception:
+                continue
+            starts_i = int(starts or 0)
+            wins_i = int(wins or 0)
+            if starts_i <= 0:
+                continue
+            by_frame[frame_no_i] = (starts_i, wins_i)
+            total_starts += starts_i
+            total_wins += wins_i
+
+        if total_starts <= 0:
+            return {}
+
+        # Laplace smoothing + shrink-to-zero for small counts.
+        alpha = 1.0
+        beta = 1.0
+        n0 = 200.0
+        p_all = (float(total_wins) + alpha) / (float(total_starts) + alpha + beta)
+
+        out: dict[int, float] = {}
+        for frame_no_i, (starts_i, wins_i) in by_frame.items():
+            p_gate = (float(wins_i) + alpha) / (float(starts_i) + alpha + beta)
+            shrink = float(starts_i) / (float(starts_i) + n0)
+            out[int(frame_no_i)] = float((p_gate - p_all) * shrink)
+        return out
+
+    def _patch_course_gate_bias_existing_features(self, *, race_id: str, asof_time: datetime) -> int:
+        """
+        Patch `course_x_gate_bias` into existing features rows for (race_id, asof_time, VERSION).
+
+        This avoids recomputing all features when only this new field is added.
+        """
+        race_info = self._get_race_info(race_id)
+        if not race_info:
+            return 0
+
+        bias_by_frame = self._build_course_gate_bias_by_frame(race_info=race_info, asof_time=asof_time)
+        params: dict = {"race_id": race_id, "asof_time": asof_time, "version": self.VERSION}
+        if bias_by_frame:
+            whens: list[str] = []
+            for i, (frame_no, bias) in enumerate(sorted(bias_by_frame.items())):
+                key = f"b{i}"
+                whens.append(f"WHEN {int(frame_no)} THEN :{key}")
+                params[key] = float(bias)
+            bias_expr = "CASE e.frame_no " + " ".join(whens) + " ELSE 0.0 END"
+        else:
+            bias_expr = "0.0"
+
+        stmt_sql = (
+            """
+            UPDATE features f
+               SET payload = jsonb_set(
+                    COALESCE(f.payload, '{}'::jsonb),
+                    '{course_x_gate_bias}',
+                    to_jsonb("""
+            + bias_expr
+            + """),
+                    true
+               )
+              FROM fact_entry e
+             WHERE f.race_id = :race_id
+               AND f.feature_version = :version
+               AND f.asof_time = :asof_time
+               AND e.race_id = f.race_id
+               AND e.horse_id = f.horse_id
+               AND (f.payload IS NULL OR NOT (f.payload ? 'course_x_gate_bias'))
+            """
+        )
+        res = self.session.execute(text(stmt_sql), params)
+        self.session.commit()
+        return int(res.rowcount or 0)
+
     def _build_struct_features(self, race_info: dict, entry: dict) -> dict:
         """構造特徴量（レース条件・枠番等 + C4: レースレベルのペース）"""
         field_size = race_info.get("field_size") or 18
@@ -981,6 +1134,11 @@ def build_features(
 
     builder = FeatureBuilder(session)
 
+    gate_bias_cfg = getattr(getattr(builder.config, "features", None), "course_gate_bias", None)
+    patch_course_gate_bias = (
+        bool(getattr(gate_bias_cfg, "enabled", False)) if gate_bias_cfg is not None else False
+    )
+
     total = 0
     if not race_ids:
         return 0
@@ -1064,7 +1222,21 @@ def build_features(
     built_races = 0
     for race_id in race_ids:
         if race_id in existing_race_ids:
-            skipped += 1
+            if not patch_course_gate_bias:
+                skipped += 1
+                continue
+            asof = buy_time_map.get(race_id)
+            if not asof:
+                logger.warning(f"Could not determine asof_time for {race_id}, skipping")
+                continue
+            count = builder._patch_course_gate_bias_existing_features(
+                race_id=race_id, asof_time=asof
+            )
+            total += count
+            if count:
+                built_races += 1
+            else:
+                skipped += 1
             continue
 
         asof = buy_time_map.get(race_id)

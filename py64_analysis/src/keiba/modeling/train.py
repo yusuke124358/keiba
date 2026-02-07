@@ -1001,6 +1001,14 @@ def prepare_training_data(
     if not pace_enabled:
         feature_cols = [c for c in feature_cols if c not in pace_feature_cols]
 
+    gate_bias_enabled = False
+    if pace_cfg is not None:
+        gate_cfg = getattr(pace_cfg, "course_gate_bias", None)
+        if gate_cfg is not None:
+            gate_bias_enabled = bool(getattr(gate_cfg, "enabled", False))
+    if gate_bias_enabled:
+        feature_cols.append("course_x_gate_bias")
+
     # 存在するカラムのみ
     available_cols = [c for c in feature_cols if c in df.columns]
 
