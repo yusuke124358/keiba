@@ -176,7 +176,9 @@ items:
   - backtest.roi_slippage_stress
   risk_level: medium
   max_diff_size: 200
-  status: todo
+  status: in_progress
+  picked_at: '2026-02-07T16:41:30Z'
+  branch: agent/exp_20260207_120000-exp-011-odds-drift-robustness-filter
 - id: EXP-012
   title: Tune closing_odds_multiplier quantile
   hypothesis: Using a more conservative closing-mult quantile improves realized ROI
