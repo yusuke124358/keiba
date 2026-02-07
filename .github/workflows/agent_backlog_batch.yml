@@ -53,6 +53,21 @@ on:
         required: false
         default: ""
         type: string
+      repeat_until_empty:
+        description: "Re-dispatch this workflow until the backlog has no todo items."
+        required: false
+        default: "false"
+        type: string
+      repeat_limit:
+        description: "Max chained runs when repeat_until_empty=true."
+        required: false
+        default: "20"
+        type: string
+      repeat_index:
+        description: "Internal chain index (do not set manually)."
+        required: false
+        default: "0"
+        type: string
 
 concurrency:
   group: agent-backlog-batch
@@ -188,3 +203,89 @@ jobs:
             artifacts/experiments/**
             AGENTS.md
           if-no-files-found: warn
+
+      - name: Re-dispatch if backlog has remaining todo items (Windows)
+        if: runner.os == 'Windows' && success() && inputs.repeat_until_empty == 'true'
+        shell: cmd
+        env:
+          GH_TOKEN: ${{ secrets.AUTO_FIX_PUSH_TOKEN }}
+          COUNT: ${{ inputs.count || '5' }}
+          CONTINUE_ON_FAILURE: ${{ inputs.continue_on_failure || 'false' }}
+          PUBLISH: ${{ inputs.publish || 'true' }}
+          PUBLISH_ON: ${{ inputs.publish_on || 'accept_or_needs_human' }}
+          PUSH_BASE: ${{ inputs.push_base || 'true' }}
+          STALE_HOURS: ${{ inputs.stale_in_progress_hours || '0' }}
+          ITEM_TIMEOUT_MINUTES: ${{ inputs.item_timeout_minutes || '0' }}
+          REQUEUE_ON_TIMEOUT: ${{ inputs.requeue_on_timeout || 'true' }}
+          AUTO_STASH: ${{ inputs.auto_stash || 'false' }}
+          BASE_BRANCH: ${{ inputs.base_branch || '' }}
+          REPEAT_LIMIT: ${{ inputs.repeat_limit || '20' }}
+          REPEAT_INDEX: ${{ inputs.repeat_index || '0' }}
+          REPO: ${{ github.repository }}
+          REF_NAME: ${{ github.ref_name }}
+        run: >
+          powershell -ExecutionPolicy Bypass -Command "$todo = & py64_analysis\.venv\Scripts\python.exe -c \"import yaml; d=yaml.safe_load(open('experiments/backlog.yml', encoding='utf-8')); print(sum(1 for i in (d.get('items') or []) if str((i or {}).get('status','')).lower()=='todo'))\"; $todo = [int]($todo.Trim()); $limit = [int]($env:REPEAT_LIMIT); $idx = [int]($env:REPEAT_INDEX); if ($todo -le 0) { Write-Host ('Backlog empty; stopping chain (repeat_index=' + $idx + ').'); exit 0 }; if ($idx -ge ($limit - 1)) { Write-Host ('repeat_limit reached; stopping chain (repeat_index=' + $idx + ', limit=' + $limit + ', todo=' + $todo + ').'); exit 0 }; $next = $idx + 1; Write-Host ('Backlog has todo=' + $todo + '; dispatching next run (repeat_index=' + $next + ').'); $uri = ('https://api.github.com/repos/' + $env:REPO + '/actions/workflows/agent_backlog_batch.yml/dispatches'); $headers = @{ Authorization = ('Bearer ' + $env:GH_TOKEN); Accept = 'application/vnd.github+json'; 'X-GitHub-Api-Version' = '2022-11-28' }; $body = @{ ref = $env:REF_NAME; inputs = @{ count = $env:COUNT; continue_on_failure = $env:CONTINUE_ON_FAILURE; publish = $env:PUBLISH; publish_on = $env:PUBLISH_ON; push_base = $env:PUSH_BASE; stale_in_progress_hours = $env:STALE_HOURS; item_timeout_minutes = $env:ITEM_TIMEOUT_MINUTES; requeue_on_timeout = $env:REQUEUE_ON_TIMEOUT; auto_stash = $env:AUTO_STASH; base_branch = $env:BASE_BRANCH; repeat_until_empty = 'true'; repeat_limit = $env:REPEAT_LIMIT; repeat_index = [string]$next } } | ConvertTo-Json -Depth 6; Invoke-RestMethod -Method Post -Uri $uri -Headers $headers -Body $body | Out-Null"
+
+      - name: Re-dispatch if backlog has remaining todo items (Linux/macOS)
+        if: runner.os != 'Windows' && success() && inputs.repeat_until_empty == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.AUTO_FIX_PUSH_TOKEN }}
+          COUNT: ${{ inputs.count || '5' }}
+          CONTINUE_ON_FAILURE: ${{ inputs.continue_on_failure || 'false' }}
+          PUBLISH: ${{ inputs.publish || 'true' }}
+          PUBLISH_ON: ${{ inputs.publish_on || 'accept_or_needs_human' }}
+          PUSH_BASE: ${{ inputs.push_base || 'true' }}
+          STALE_HOURS: ${{ inputs.stale_in_progress_hours || '0' }}
+          ITEM_TIMEOUT_MINUTES: ${{ inputs.item_timeout_minutes || '0' }}
+          REQUEUE_ON_TIMEOUT: ${{ inputs.requeue_on_timeout || 'true' }}
+          AUTO_STASH: ${{ inputs.auto_stash || 'false' }}
+          BASE_BRANCH: ${{ inputs.base_branch || '' }}
+          REPEAT_LIMIT: ${{ inputs.repeat_limit || '20' }}
+          REPEAT_INDEX: ${{ inputs.repeat_index || '0' }}
+          REPO: ${{ github.repository }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          todo="$(
+            py64_analysis/.venv/bin/python -c "import yaml; d=yaml.safe_load(open('experiments/backlog.yml', encoding='utf-8')); print(sum(1 for i in (d.get('items') or []) if str((i or {}).get('status','')).lower()=='todo'))"
+          )"
+          limit="${REPEAT_LIMIT}"
+          idx="${REPEAT_INDEX}"
+          if [ "${todo}" -le 0 ]; then
+            echo "Backlog empty; stopping chain (repeat_index=${idx})."
+            exit 0
+          fi
+          if [ "${idx}" -ge "$((limit - 1))" ]; then
+            echo "repeat_limit reached; stopping chain (repeat_index=${idx}, limit=${limit}, todo=${todo})."
+            exit 0
+          fi
+          next="$((idx + 1))"
+          echo "Backlog has todo=${todo}; dispatching next run (repeat_index=${next})."
+          curl -sSf -X POST \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${REPO}/actions/workflows/agent_backlog_batch.yml/dispatches" \
+            -d "$(py64_analysis/.venv/bin/python - <<PY
+          import json, os
+          body = {
+            'ref': os.environ['REF_NAME'],
+            'inputs': {
+              'count': os.environ['COUNT'],
+              'continue_on_failure': os.environ['CONTINUE_ON_FAILURE'],
+              'publish': os.environ['PUBLISH'],
+              'publish_on': os.environ['PUBLISH_ON'],
+              'push_base': os.environ['PUSH_BASE'],
+              'stale_in_progress_hours': os.environ['STALE_HOURS'],
+              'item_timeout_minutes': os.environ['ITEM_TIMEOUT_MINUTES'],
+              'requeue_on_timeout': os.environ['REQUEUE_ON_TIMEOUT'],
+              'auto_stash': os.environ['AUTO_STASH'],
+              'base_branch': os.environ['BASE_BRANCH'],
+              'repeat_until_empty': 'true',
+              'repeat_limit': os.environ['REPEAT_LIMIT'],
+              'repeat_index': str(int(os.environ['REPEAT_INDEX']) + 1),
+            },
+          }
+          print(json.dumps(body))
+          PY
+          )"
