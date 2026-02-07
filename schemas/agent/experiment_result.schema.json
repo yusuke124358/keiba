@@ -34,6 +34,8 @@
         "n_days",
         "test_period",
         "max_drawdown",
+        "frac_days_candidates_ge_n",
+        "frac_days_any_bet",
         "rolling",
         "design_window",
         "eval_window",
@@ -50,6 +52,8 @@
         "n_days": {"type": "integer"},
         "test_period": {"type": "string"},
         "max_drawdown": {"type": ["number", "null"]},
+        "frac_days_candidates_ge_n": {"type": ["number", "null"]},
+        "frac_days_any_bet": {"type": ["number", "null"]},
         "rolling": {"type": "string", "enum": ["yes", "no"]},
         "design_window": {"type": "string"},
         "eval_window": {"type": "string"},
@@ -69,7 +73,9 @@
         "n_races",
         "n_days",
         "test_period",
-        "max_drawdown"
+        "max_drawdown",
+        "frac_days_candidates_ge_n",
+        "frac_days_any_bet"
       ],
       "properties": {
         "roi": {"type": ["number", "null"]},
@@ -79,7 +85,9 @@
         "n_races": {"type": "integer"},
         "n_days": {"type": "integer"},
         "test_period": {"type": "string"},
-        "max_drawdown": {"type": ["number", "null"]}
+        "max_drawdown": {"type": ["number", "null"]},
+        "frac_days_candidates_ge_n": {"type": ["number", "null"]},
+        "frac_days_any_bet": {"type": ["number", "null"]}
       }
     },
     "deltas": {
@@ -256,4 +264,3 @@
     }
   }
 }
-

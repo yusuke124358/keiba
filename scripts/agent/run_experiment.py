@@ -293,11 +293,59 @@ def _set_arg(tokens: list[str], flag: str, value: str) -> None:
     tokens.extend([flag, value])
 
 
+def resolve_holdout_config_path(root: Path, holdout_tokens: list[str], run_id: str) -> Path:
+    """
+    Resolve the effective config file for `run_holdout.py` given our execution model.
+
+    `run_holdout.py` resolves config in this order:
+    - explicit `--config` (or `$env:KEIBA_CONFIG_PATH`)
+    - else auto: `config/experiments/{--name}.yaml|yml` when KEIBA_CONFIG_PATH is unset/empty
+    - else default `config/config.yaml`
+
+    In this agent runner we intentionally override `KEIBA_CONFIG_PATH` to avoid
+    leaking runner-wide env into evaluations. So config resolution is
+    deterministic from repo files + CLI args.
+    """
+
+    cli_cfg = _parse_arg(holdout_tokens, "--config")
+    if cli_cfg:
+        p = Path(cli_cfg)
+        return p if p.is_absolute() else (root / p)
+
+    cand = root / "config" / "experiments" / f"{run_id}.yaml"
+    if cand.exists():
+        return cand
+    cand = root / "config" / "experiments" / f"{run_id}.yml"
+    if cand.exists():
+        return cand
+
+    return root / "config" / "config.yaml"
+
+
 def _format_float(x: Any) -> str:
+    if x is None:
+        return "(missing)"
     try:
         return f"{float(x):.6f}"
     except Exception:
-        return str(x)
+        s = str(x)
+        return "(missing)" if s == "None" else s
+
+
+def _format_int(x: Any) -> str:
+    if x is None:
+        return "(missing)"
+    try:
+        return str(int(x))
+    except Exception:
+        s = str(x)
+        return "(missing)" if s == "None" else s
+
+
+def _format_ci95(x: Any) -> str:
+    if not isinstance(x, (list, tuple)) or len(x) != 2:
+        return "(missing)"
+    return f"[{_format_float(x[0])}, {_format_float(x[1])}]"
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -368,6 +416,81 @@ def extract_metrics_for_log(metrics_json: dict[str, Any]) -> dict[str, Any]:
         "data_cutoff": metrics_json.get("data_cutoff") or {},
         "run_kind": run_kind,
     }
+
+
+def compute_candidate_scarcity(
+    run_dir: Path,
+    *,
+    candidate_threshold: int = 1,
+) -> tuple[float | None, float | None]:
+    """
+    Compute simple candidate scarcity indicators from run artifacts.
+
+    We define "day" as a race day present in `race_ids_test.txt` (not calendar days).
+    Since we do not persist full candidate lists, we treat "candidates" as
+    executed bets (stake > 0) for the purpose of `frac_days_candidates_ge_n`.
+    """
+
+    def _race_id_to_day(s: str) -> str | None:
+        s = (s or "").strip()
+        if len(s) >= 8 and s[:8].isdigit():
+            return s[:8]
+        return None
+
+    total_days: int | None = None
+    race_ids_path = run_dir / "race_ids_test.txt"
+    if race_ids_path.exists():
+        days: set[str] = set()
+        for line in race_ids_path.read_text(encoding="utf-8").splitlines():
+            day = _race_id_to_day(line)
+            if day:
+                days.add(day)
+        total_days = len(days)
+
+    bets_csv = run_dir / "bets.csv"
+    if not bets_csv.exists():
+        return None, None
+
+    try:
+        import pandas as pd
+
+        df = pd.read_csv(bets_csv)
+        if df.empty or "race_id" not in df.columns:
+            if total_days is None or total_days <= 0:
+                return None, None
+            return 0.0, 0.0
+
+        df["_day"] = df["race_id"].astype(str).str.slice(0, 8)
+        stake = pd.to_numeric(df.get("stake"), errors="coerce").fillna(0.0)
+        df["_has_bet"] = stake > 0
+
+        bet_counts = df[df["_has_bet"]].groupby("_day").size()
+        n_days_any_bet = int(len(bet_counts))
+
+        threshold_n = int(candidate_threshold)
+        if "daily_top_n_n" in df.columns:
+            vals = pd.to_numeric(df["daily_top_n_n"], errors="coerce").dropna().unique()
+            if len(vals) == 1:
+                try:
+                    n_val = int(vals[0])
+                    if n_val > 0:
+                        threshold_n = n_val
+                except Exception:
+                    pass
+
+        n_days_ge_n = int((bet_counts >= threshold_n).sum()) if threshold_n > 0 else 0
+
+        denom = total_days if total_days is not None and total_days > 0 else None
+        if denom is None:
+            denom = int(df["_day"].nunique())
+        if denom <= 0:
+            return None, None
+
+        frac_days_any_bet = float(n_days_any_bet / denom)
+        frac_days_candidates_ge_n = float(n_days_ge_n / denom)
+        return frac_days_candidates_ge_n, frac_days_any_bet
+    except Exception:
+        return None, None
 
 
 def propose_decision(
@@ -712,41 +835,63 @@ def render_experiment_md(
     lines.append(f"- max_diff_size: {max_diff_size}")
     lines.append("")
     lines.append("## Metrics (required)")
-    lines.append(f"- ROI: {variant_metrics.get('roi')}")
-    lines.append(f"- Total stake: {variant_metrics.get('total_stake')}")
-    lines.append(f"- n_bets: {variant_metrics.get('n_bets')}")
+    lines.append(f"- ROI: {_format_float(variant_metrics.get('roi'))}")
+    lines.append(f"- Total stake: {_format_float(variant_metrics.get('total_stake'))}")
+    lines.append(f"- n_bets: {_format_int(variant_metrics.get('n_bets'))}")
     lines.append(f"- Test period: {test_period}")
-    lines.append(f"- Max drawdown: {variant_metrics.get('max_drawdown')}")
+    lines.append(f"- Max drawdown: {_format_float(variant_metrics.get('max_drawdown'))}")
+    lines.append(
+        f"- frac_days_any_bet: {_format_float(variant_metrics.get('frac_days_any_bet'))}"
+    )
+    lines.append(
+        f"- frac_days_candidates_ge_n: {_format_float(variant_metrics.get('frac_days_candidates_ge_n'))}"
+    )
     lines.append("- ROI definition: ROI = profit / stake, profit = return - stake.")
-    lines.append(f"- Rolling: {variant_metrics.get('rolling')}")
-    lines.append(f"- Design window: {variant_metrics.get('design_window', 'N/A')}")
-    lines.append(f"- Eval window: {variant_metrics.get('eval_window', 'N/A')}")
+    lines.append(f"- Rolling: {variant_metrics.get('rolling') or 'no'}")
+    lines.append(f"- Design window: {variant_metrics.get('design_window') or 'N/A'}")
+    lines.append(f"- Eval window: {variant_metrics.get('eval_window') or 'N/A'}")
     lines.append(
-        f"- Paired delta vs baseline: {variant_metrics.get('paired_delta', 'N/A')}"
+        f"- Paired delta vs baseline: {variant_metrics.get('paired_delta') or 'N/A'}"
     )
     lines.append(
-        f"- Pooled vs step14 sign mismatch: {variant_metrics.get('pooled_vs_step14_mismatch')}"
+        f"- Pooled vs step14 sign mismatch: {variant_metrics.get('pooled_vs_step14_mismatch') or 'no'}"
     )
     lines.append(
-        f"- Preferred ROI for decisions: {variant_metrics.get('preferred_roi')}"
+        f"- Preferred ROI for decisions: {variant_metrics.get('preferred_roi') or 'pooled'}"
     )
     lines.append("")
     lines.append("## Baseline (point estimates)")
-    lines.append(f"- baseline_ROI: {baseline_metrics.get('roi')}")
-    lines.append(f"- baseline_total_stake: {baseline_metrics.get('total_stake')}")
-    lines.append(f"- baseline_n_bets: {baseline_metrics.get('n_bets')}")
-    lines.append(f"- baseline_max_drawdown: {baseline_metrics.get('max_drawdown')}")
+    lines.append(f"- baseline_ROI: {_format_float(baseline_metrics.get('roi'))}")
+    lines.append(
+        f"- baseline_total_stake: {_format_float(baseline_metrics.get('total_stake'))}"
+    )
+    lines.append(f"- baseline_n_bets: {_format_int(baseline_metrics.get('n_bets'))}")
+    lines.append(
+        f"- baseline_max_drawdown: {_format_float(baseline_metrics.get('max_drawdown'))}"
+    )
+    lines.append(
+        f"- baseline_frac_days_any_bet: {_format_float(baseline_metrics.get('frac_days_any_bet'))}"
+    )
+    lines.append(
+        f"- baseline_frac_days_candidates_ge_n: {_format_float(baseline_metrics.get('frac_days_candidates_ge_n'))}"
+    )
     lines.append("")
     lines.append("## Paired Delta vs Baseline")
-    lines.append(f"- delta_ROI: {decision.get('delta_roi')}")
-    lines.append(f"- delta_max_drawdown: {decision.get('delta_max_drawdown')}")
+    lines.append(f"- delta_ROI: {_format_float(decision.get('delta_roi'))}")
+    lines.append(
+        f"- delta_max_drawdown: {_format_float(decision.get('delta_max_drawdown'))}"
+    )
     lines.append("")
     lines.append("## Uncertainty (day-block bootstrap)")
-    lines.append(f"- ROI_variant_CI95: {stats.get('roi_ci95')}")
-    lines.append(f"- ROI_baseline_CI95: {stats.get('baseline_roi_ci95')}")
-    lines.append(f"- delta_ROI_CI95: {stats.get('delta_roi_ci95')}")
-    lines.append(f"- p_one_sided (P(delta<=0)): {stats.get('p_one_sided_delta_le_0')}")
-    lines.append(f"- bootstrap: {stats.get('bootstrap')}")
+    lines.append(f"- ROI_variant_CI95: {_format_ci95(stats.get('roi_ci95'))}")
+    lines.append(
+        f"- ROI_baseline_CI95: {_format_ci95(stats.get('baseline_roi_ci95'))}"
+    )
+    lines.append(f"- delta_ROI_CI95: {_format_ci95(stats.get('delta_roi_ci95'))}")
+    lines.append(
+        f"- p_one_sided (P(delta<=0)): {_format_float(stats.get('p_one_sided_delta_le_0'))}"
+    )
+    lines.append(f"- bootstrap: {stats.get('bootstrap') or {}}")
     lines.append("")
     lines.append("## Robustness")
     lines.append("### ROI by odds bucket")
@@ -762,13 +907,13 @@ def render_experiment_md(
         lines.append(f"- {k}: {v}")
     lines.append("")
     lines.append("## Decision")
-    lines.append(f"- decision: {decision.get('decision')}")
-    lines.append(f"- rationale: {decision.get('rationale')}")
+    lines.append(f"- decision: {decision.get('decision') or '(missing)'}")
+    lines.append(f"- rationale: {decision.get('rationale') or '(missing)'}")
     lines.append(f"- flags: {', '.join(decision.get('flags') or []) or '(none)'}")
     lines.append("")
     lines.append("## Notes")
     lines.append(
-        f"- leakage_check_pre_race_only: {decision.get('leakage_pre_race_only', 'unknown')}"
+        f"- leakage_check_pre_race_only: {decision.get('leakage_pre_race_only') or 'unknown'}"
     )
 
     return "\n".join(lines).rstrip() + "\n"
@@ -903,10 +1048,8 @@ def main() -> int:
     if not test_start or not test_end:
         raise RuntimeError("eval_command must include --test-start and --test-end.")
 
-    cli_cfg = _parse_arg(holdout_tokens, "--config")
-    cfg_path = Path(cli_cfg) if cli_cfg else (root / "config" / "config.yaml")
-    cfg_path_abs = cfg_path if cfg_path.is_absolute() else (root / cfg_path)
-    baseline_cfg_hash = _sha256_file(cfg_path_abs)
+    baseline_cfg_path = resolve_holdout_config_path(root, holdout_tokens, run_id)
+    baseline_cfg_hash = _sha256_file(baseline_cfg_path)
     baseline_key = compute_baseline_key(
         base_commit, test_start, test_end, baseline_cfg_hash
     )
@@ -919,7 +1062,8 @@ def main() -> int:
         run_holdout(
             root,
             holdout_tokens,
-            name=f"baseline_{baseline_key[:8]}",
+            # Keep `--name` aligned with variant so run_holdout.py auto-config stays consistent.
+            name=run_id,
             out_dir=baseline_dir,
             config_path=None,
         )
@@ -978,6 +1122,13 @@ def main() -> int:
 
     variant_extracted = extract_metrics_for_log(load_json(variant_metrics_path))
 
+    v_frac_ge_n, v_frac_any_bet = compute_candidate_scarcity(run_dir)
+    b_frac_ge_n, b_frac_any_bet = compute_candidate_scarcity(baseline_dir)
+    variant_extracted["frac_days_candidates_ge_n"] = v_frac_ge_n
+    variant_extracted["frac_days_any_bet"] = v_frac_any_bet
+    baseline_extracted["frac_days_candidates_ge_n"] = b_frac_ge_n
+    baseline_extracted["frac_days_any_bet"] = b_frac_any_bet
+
     exp_art_dir = root / "artifacts" / "experiments" / run_id
     exp_art_dir.mkdir(parents=True, exist_ok=True)
     variant_pnl_art = exp_art_dir / "per_bet_pnl.csv"
@@ -1018,7 +1169,7 @@ def main() -> int:
             baseline_extracted["max_drawdown"]
         )
 
-    if delta_roi is not None and variant_extracted.get("rolling") == "no":
+    if delta_roi is not None:
         variant_extracted["paired_delta"] = _format_float(delta_roi)
 
     leakage_pre_race_only = "yes"
@@ -1069,6 +1220,8 @@ def main() -> int:
             "n_days": summary_stats["variant"]["n_days"],
             "max_drawdown": variant_extracted["max_drawdown"],
             "test_period": variant_extracted["test_period"],
+            "frac_days_candidates_ge_n": variant_extracted.get("frac_days_candidates_ge_n"),
+            "frac_days_any_bet": variant_extracted.get("frac_days_any_bet"),
             "rolling": variant_extracted["rolling"],
             "design_window": variant_extracted["design_window"],
             "eval_window": variant_extracted["eval_window"],
@@ -1085,6 +1238,8 @@ def main() -> int:
             "n_days": summary_stats["baseline"]["n_days"],
             "max_drawdown": baseline_extracted["max_drawdown"],
             "test_period": baseline_extracted["test_period"],
+            "frac_days_candidates_ge_n": baseline_extracted.get("frac_days_candidates_ge_n"),
+            "frac_days_any_bet": baseline_extracted.get("frac_days_any_bet"),
         },
         "deltas": {"delta_roi": delta_roi, "delta_max_drawdown": delta_dd},
         "stats": {
