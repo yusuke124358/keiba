@@ -15,9 +15,11 @@ items:
   - backtest.max_drawdown
   risk_level: medium
   max_diff_size: 200
-  status: in_progress
+  status: done
   picked_at: '2026-02-07T04:39:09Z'
   branch: agent/exp_20260207_090000-exp-001-tighten-win-bet-max-odds-cap-to-30-paired-baseline
+  run_id: exp_20260207_090000
+  decision: iterate
 - id: EXP-002
   title: Feature coverage audit for new speed signal
   hypothesis: Adding a coverage/dispersion audit prevents no-op feature releases.
