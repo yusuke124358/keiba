@@ -1,0 +1,418 @@
+diff --git a/config/experiments/camp_20260207-stage1-EXP-011-a1.yaml b/config/experiments/camp_20260207-stage1-EXP-011-a1.yaml
+new file mode 100644
+index 0000000..335e1dc
+--- /dev/null
++++ b/config/experiments/camp_20260207-stage1-EXP-011-a1.yaml
+@@ -0,0 +1,9 @@
++extends: ../config.yaml
++
++# EXP-011: Odds drift robustness filter
++# Bet only when EV remains positive even if odds drop by this multiplier.
++betting:
++  odds_drift_robust_filter:
++    enabled: true
++    odds_multiplier: 0.95
++    min_ev: 0.10
+diff --git a/py64_analysis/scripts/run_holdout.py b/py64_analysis/scripts/run_holdout.py
+index f32d5ba..eccbd9a 100644
+--- a/py64_analysis/scripts/run_holdout.py
++++ b/py64_analysis/scripts/run_holdout.py
+@@ -2020,6 +2020,7 @@ def main() -> None:
+             "total_payout": bt.total_payout,
+             "total_profit": bt.total_profit,
+             "roi": bt.roi,
++            "roi_slippage_stress": getattr(bt, "roi_slippage_stress", None),
+             "max_drawdown": bt.max_drawdown,
+             "ending_bankroll": bt.final_bankroll,
+             "log_growth": bt.log_growth,
+diff --git a/py64_analysis/src/keiba/analysis/slippage_table.py b/py64_analysis/src/keiba/analysis/slippage_table.py
+index e4858ed..5eafc9d 100644
+--- a/py64_analysis/src/keiba/analysis/slippage_table.py
++++ b/py64_analysis/src/keiba/analysis/slippage_table.py
+@@ -14,10 +14,10 @@ TicketB: 馬別スリッページ推定（テーブル型）
+ from __future__ import annotations
+ 
+ from dataclasses import dataclass
+-from typing import Optional, Any
++from typing import Any, Optional
+ 
+ import numpy as np
+-import pandas as pd
++import pandas as pd  # type: ignore[import-untyped]
+ from sqlalchemy import text
+ from sqlalchemy.orm import Session
+ 
+@@ -99,7 +99,9 @@ class SlippageTable:
+     odds_vol_age_r_hat: dict[tuple[int, int, int], float]
+     odds_vol_age_r_n: dict[tuple[int, int, int], int]
+ 
+-    def effective_odds(self, odds_buy: float, ts_vol: Optional[float] = None, snap_age_min: Optional[float] = None) -> tuple[float, dict]:
++    def effective_odds(
++        self, odds_buy: float, ts_vol: Optional[float] = None, snap_age_min: Optional[float] = None
++    ) -> tuple[float, dict]:
+         """
+         odds_effective を返す（meta付き）。
+         フォールバック順: 3D -> 2D -> 1D -> overall
+@@ -196,10 +198,16 @@ class SlippageTable:
+             "overall_r_hat": float(self.overall_r_hat),
+             "odds_r_hat": {str(k): float(v) for k, v in self.odds_r_hat.items()},
+             "odds_r_n": {str(k): int(v) for k, v in self.odds_r_n.items()},
+-            "odds_vol_r_hat": {f"{k0},{k1}": float(v) for (k0, k1), v in self.odds_vol_r_hat.items()},
++            "odds_vol_r_hat": {
++                f"{k0},{k1}": float(v) for (k0, k1), v in self.odds_vol_r_hat.items()
++            },
+             "odds_vol_r_n": {f"{k0},{k1}": int(v) for (k0, k1), v in self.odds_vol_r_n.items()},
+-            "odds_vol_age_r_hat": {f"{k0},{k1},{k2}": float(v) for (k0, k1, k2), v in self.odds_vol_age_r_hat.items()},
+-            "odds_vol_age_r_n": {f"{k0},{k1},{k2}": int(v) for (k0, k1, k2), v in self.odds_vol_age_r_n.items()},
++            "odds_vol_age_r_hat": {
++                f"{k0},{k1},{k2}": float(v) for (k0, k1, k2), v in self.odds_vol_age_r_hat.items()
++            },
++            "odds_vol_age_r_n": {
++                f"{k0},{k1},{k2}": int(v) for (k0, k1, k2), v in self.odds_vol_age_r_n.items()
++            },
+         }
+ 
+ 
+@@ -282,7 +290,10 @@ def fit_slippage_table(
+ 
+     # bin列を作る
+     work["odds_bin"] = work["odds"].apply(lambda x: _bin_index(x, odds_edges))
+-    work["vol_bin"] = work["vol"].apply(lambda x: None if pd.isna(x) else _bin_index(x, [-float("inf")] + ts_cut + [float("inf")]))
++    work["vol_bin"] = work["vol"].apply(
++        lambda x: None if pd.isna(x) else _bin_index(x, [-float("inf")] + ts_cut + [float("inf")])
++    )
++
+     # vol_binは _bin_index が edges前提なので、ここは手抜き: ts_cut を使って自前分類
+     def _vol_bin(v):
+         if v is None or pd.isna(v):
+@@ -294,6 +305,7 @@ def fit_slippage_table(
+             if vv < c:
+                 return i
+         return len(ts_cut)
++
+     work["vol_bin"] = work["vol"].apply(_vol_bin)
+ 
+     if use_snap_age:
+@@ -333,10 +345,10 @@ def fit_slippage_table(
+         g3 = work.dropna(subset=["odds_bin", "vol_bin", "age_bin"])
+         if not g3.empty:
+             for (ob, vb, ab), gg in g3.groupby(["odds_bin", "vol_bin", "age_bin"]):
+-                key = (int(ob), int(vb), int(ab))
++                key3 = (int(ob), int(vb), int(ab))
+                 n = int(len(gg))
+-                odds_vol_age_r_n[key] = n
+-                odds_vol_age_r_hat[key] = float(gg["ratio"].quantile(q)) if n else float("nan")
++                odds_vol_age_r_n[key3] = n
++                odds_vol_age_r_hat[key3] = float(gg["ratio"].quantile(q)) if n else float("nan")
+ 
+     return SlippageTable(
+         quantile=q,
+@@ -419,5 +431,3 @@ def fetch_slippage_feature_snapshot(
+     # 重複がある場合は潰す（念のため）
+     df = df.dropna(subset=["race_id", "horse_no"]).drop_duplicates(subset=["race_id", "horse_no"])
+     return df
+-
+-
+diff --git a/py64_analysis/src/keiba/backtest/engine.py b/py64_analysis/src/keiba/backtest/engine.py
+index 888edf3..0889f5a 100644
+--- a/py64_analysis/src/keiba/backtest/engine.py
++++ b/py64_analysis/src/keiba/backtest/engine.py
+@@ -97,6 +97,7 @@ class BacktestResult:
+     n_bets: int = 0
+     n_wins: int = 0
+     roi: float = 0
++    roi_slippage_stress: float = 0.0
+     max_drawdown: float = 0
+     log_growth: float | None = None
+     max_drawdown_bankroll: float = 0
+@@ -437,6 +438,34 @@ class BacktestEngine:
+         result.min_bankroll = min_bankroll
+ 
+         self._apply_odds_floor_postprocess(result)
++        # Slippage stress ROI: cap settlement odds by (odds_at_buy * mult) to stress odds drift.
++        stress_cfg = getattr(self.config.betting, "odds_drift_robust_filter", None)
++        try:
++            stress_mult = (
++                float(getattr(stress_cfg, "odds_multiplier", 1.0))
++                if stress_cfg is not None
++                else 1.0
++            )
++        except Exception:
++            stress_mult = 1.0
++        if not np.isfinite(stress_mult) or stress_mult <= 0:
++            stress_mult = 1.0
++        stress_mult = min(stress_mult, 1.0)
++        if result.total_stake > 0 and stress_mult < 1.0:
++            stress_payout = 0.0
++            for br in result.bets:
++                if not br.is_win:
++                    continue
++                stake = float(br.bet.stake)
++                odds_buy = float(br.bet.odds_at_buy)
++                odds_settle = float(br.odds_final or odds_buy)
++                odds_stress = min(odds_settle, odds_buy * stress_mult)
++                odds_stress = max(1.0, odds_stress)
++                stress_payout += stake * odds_stress
++            stress_profit = stress_payout - float(result.total_stake)
++            result.roi_slippage_stress = stress_profit / float(result.total_stake)
++        else:
++            result.roi_slippage_stress = float(result.roi)
+         result.odds_floor_min_odds = float(self._odds_floor_min_odds or 0.0)
+         result.odds_floor_filtered_bets = int(self._odds_floor_filtered_bets)
+         result.odds_floor_filtered_stake = float(self._odds_floor_filtered_stake)
+@@ -1795,6 +1824,20 @@ class BacktestEngine:
+         use_new_stake = stake_enabled or uncert_enabled
+         min_yen = int(getattr(stake_cfg, "min_yen", 100)) if stake_cfg is not None else 100
+ 
++        drift_cfg = getattr(self.config.betting, "odds_drift_robust_filter", None)
++        drift_enabled = bool(drift_cfg and getattr(drift_cfg, "enabled", False))
++        try:
++            drift_mult = float(getattr(drift_cfg, "odds_multiplier", 1.0)) if drift_cfg else 1.0
++        except Exception:
++            drift_mult = 1.0
++        if not np.isfinite(drift_mult) or drift_mult <= 0:
++            drift_mult = 1.0
++        drift_mult = min(drift_mult, 1.0)
++        try:
++            drift_min_ev = float(getattr(drift_cfg, "min_ev", 0.0)) if drift_cfg else 0.0
++        except Exception:
++            drift_min_ev = 0.0
++
+         ev_cap_q = getattr(self.config.betting, "ev_cap_quantile", None)
+         ov_cap_q = getattr(self.config.betting, "overlay_abs_cap_quantile", None)
+         reject_overlay_missing = bool(
+@@ -1923,6 +1966,14 @@ class BacktestEngine:
+                 if ev < min_ev_eff:
+                     continue
+ 
++            ev_drift = None
++            passed_drift = None
++            if drift_enabled and drift_mult < 1.0:
++                ev_drift = p_hat * odds_at_buy * drift_mult - 1.0
++                passed_drift = ev_drift >= float(drift_min_ev)
++                if not passed_drift:
++                    continue
++
+             if self.ev_upper_cap is not None and ev > self.ev_upper_cap:
+                 continue
+ 
+@@ -2024,6 +2075,12 @@ class BacktestEngine:
+                     "ov_cap_thr": float(ov_cap_thr) if ov_cap_thr is not None else None,
+                     "ov_cap_passed": ov_cap_passed,
+                     "closing_odds_multiplier": closing_mult,
++                    "odds_drift_odds_multiplier": float(drift_mult) if drift_enabled else None,
++                    "odds_drift_min_ev": float(drift_min_ev) if drift_enabled else None,
++                    "ev_odds_drift_stress": float(ev_drift) if ev_drift is not None else None,
++                    "passed_odds_drift_robust_filter": bool(passed_drift)
++                    if passed_drift is not None
++                    else None,
+                     "slippage_meta": slippage_meta,
+                     "p_hat_raw": float(p_hat_raw),
+                     "p_hat_shrunk": float(p_hat_shrunk) if p_hat_shrunk is not None else None,
+@@ -2205,6 +2262,19 @@ class BacktestEngine:
+         ts_vol_cap = self.config.betting.log_odds_std_60m_max
+         reject_ts_missing = bool(self.config.betting.reject_if_log_odds_std_60m_missing)
+         stake_cfg = getattr(self.config.betting, "stake", None)
++        drift_cfg = getattr(self.config.betting, "odds_drift_robust_filter", None)
++        drift_enabled = bool(drift_cfg and getattr(drift_cfg, "enabled", False))
++        try:
++            drift_mult = float(getattr(drift_cfg, "odds_multiplier", 1.0)) if drift_cfg else 1.0
++        except Exception:
++            drift_mult = 1.0
++        if not np.isfinite(drift_mult) or drift_mult <= 0:
++            drift_mult = 1.0
++        drift_mult = min(drift_mult, 1.0)
++        try:
++            drift_min_ev = float(getattr(drift_cfg, "min_ev", 0.0)) if drift_cfg else 0.0
++        except Exception:
++            drift_min_ev = 0.0
+         stake_enabled = bool(stake_cfg and getattr(stake_cfg, "enabled", False))
+         uncert_cfg = getattr(self.config.betting, "uncertainty", None)
+         uncert_enabled = bool(
+@@ -2548,6 +2618,14 @@ class BacktestEngine:
+             if ev < min_ev_eff:
+                 continue
+ 
++            ev_drift = None
++            passed_drift = None
++            if drift_enabled and drift_mult < 1.0:
++                ev_drift = p_hat * odds_at_buy * drift_mult - 1.0
++                passed_drift = ev_drift >= float(drift_min_ev)
++                if not passed_drift:
++                    continue
++
+             # Ticket G2: EV?????????EV????
+             if self.ev_upper_cap is not None and ev > self.ev_upper_cap:
+                 continue
+@@ -2671,6 +2749,12 @@ class BacktestEngine:
+                     "resid_cap": pred.get("resid_cap"),
+                     "cap_value": pred.get("cap_value"),
+                     "p_hat_capped": pred.get("p_hat_capped"),
++                    "odds_drift_odds_multiplier": float(drift_mult) if drift_enabled else None,
++                    "odds_drift_min_ev": float(drift_min_ev) if drift_enabled else None,
++                    "ev_odds_drift_stress": float(ev_drift) if ev_drift is not None else None,
++                    "passed_odds_drift_robust_filter": bool(passed_drift)
++                    if passed_drift is not None
++                    else None,
+                 },
+             )
+             bet.extra["stake_raw"] = int(stake_raw)
+diff --git a/py64_analysis/src/keiba/betting/market_blend.py b/py64_analysis/src/keiba/betting/market_blend.py
+index 41f02ed..c9b8d14 100644
+--- a/py64_analysis/src/keiba/betting/market_blend.py
++++ b/py64_analysis/src/keiba/betting/market_blend.py
+@@ -1,8 +1,7 @@
+ from __future__ import annotations
+ 
+-from dataclasses import dataclass
+ import math
+-from typing import Iterable, Sequence
++from dataclasses import dataclass
+ 
+ import numpy as np
+ 
+@@ -18,7 +17,7 @@ def _to_float(val: object) -> float | None:
+     if val is None:
+         return None
+     try:
+-        out = float(val)
++        out = float(val)  # type: ignore[arg-type]
+     except Exception:
+         return None
+     if not math.isfinite(out):
+@@ -78,7 +77,9 @@ def logit_blend_prob(
+     p_mkt_arr = np.asarray(p_mkt, dtype=float)
+     p_model_c = _clip_prob_array(p_model_arr, clip_eps)
+     p_mkt_c = _clip_prob_array(p_mkt_arr, clip_eps)
+-    logits = blend_w * np.log(p_model_c / (1.0 - p_model_c)) + (1.0 - blend_w) * np.log(p_mkt_c / (1.0 - p_mkt_c))
++    logits = blend_w * np.log(p_model_c / (1.0 - p_model_c)) + (1.0 - blend_w) * np.log(
++        p_mkt_c / (1.0 - p_mkt_c)
++    )
+     out = 1.0 / (1.0 + np.exp(-logits))
+     if np.isscalar(p_model) and np.isscalar(p_mkt):
+         return float(out)
+@@ -106,4 +107,6 @@ def compute_market_blend(
+     if not isinstance(p_blend, float):
+         p_blend = float(p_blend)
+     ev_blend = p_blend * odds_f - 1.0
+-    return MarketBlendResult(p_blend=float(p_blend), ev_blend=float(ev_blend), odds_band=odds_band(odds_f))
++    return MarketBlendResult(
++        p_blend=float(p_blend), ev_blend=float(ev_blend), odds_band=odds_band(odds_f)
++    )
+diff --git a/py64_analysis/src/keiba/betting/odds_band_bias.py b/py64_analysis/src/keiba/betting/odds_band_bias.py
+index 89d1ceb..b5fc097 100644
+--- a/py64_analysis/src/keiba/betting/odds_band_bias.py
++++ b/py64_analysis/src/keiba/betting/odds_band_bias.py
+@@ -17,7 +17,7 @@ from dataclasses import dataclass
+ from typing import Any, Optional
+ 
+ import numpy as np
+-import pandas as pd
++import pandas as pd  # type: ignore[import-untyped]
+ 
+ 
+ def _extend_edges(bins: list[float]) -> list[float]:
+@@ -243,5 +243,3 @@ class OddsBandBias:
+             k_by_band=k_by,
+             n_by_band=n_by,
+         )
+-
+-
+diff --git a/py64_analysis/src/keiba/betting/uncertainty_shrink.py b/py64_analysis/src/keiba/betting/uncertainty_shrink.py
+index 3a78155..5f20e1e 100644
+--- a/py64_analysis/src/keiba/betting/uncertainty_shrink.py
++++ b/py64_analysis/src/keiba/betting/uncertainty_shrink.py
+@@ -4,7 +4,7 @@ from dataclasses import dataclass
+ from typing import Any
+ 
+ import numpy as np
+-import pandas as pd
++import pandas as pd  # type: ignore[import-untyped]
+ 
+ 
+ def _safe_edges(p: pd.Series, n_bins: int) -> tuple[list[float], list[int]]:
+diff --git a/py64_analysis/src/keiba/config.py b/py64_analysis/src/keiba/config.py
+index ec0aeaa..8b0ac0a 100644
+--- a/py64_analysis/src/keiba/config.py
++++ b/py64_analysis/src/keiba/config.py
+@@ -360,6 +360,14 @@ class StakeOddsDampConfig(BaseModel):
+     min_mult: float = Field(default=0.0, ge=0.0)
+ 
+ 
++class OddsDriftRobustFilterConfig(BaseModel):
++    """Odds drift robustness filter config (EV under conservative odds drop)."""
++
++    enabled: bool = False
++    odds_multiplier: float = Field(default=0.95, gt=0.0)
++    min_ev: float = 0.0
++
++
+ class BettingConfig(BaseModel):
+     """ベッティング設定"""
+ 
+@@ -407,6 +415,9 @@ class BettingConfig(BaseModel):
+     ev_cap_quantile: Optional[float] = Field(default=None, gt=0, lt=1)
+     overlay_abs_cap_quantile: Optional[float] = Field(default=None, gt=0, lt=1)
+     reject_if_overlay_missing: bool = True
++    odds_drift_robust_filter: OddsDriftRobustFilterConfig = Field(
++        default_factory=OddsDriftRobustFilterConfig
++    )
+     # Odds dynamics filter (train/valid-fitted quantile threshold)
+     odds_dynamics_filter: "OddsDynamicsFilterConfig" = Field(
+         default_factory=lambda: OddsDynamicsFilterConfig()
+diff --git a/py64_analysis/src/keiba/eval/extract_metrics.py b/py64_analysis/src/keiba/eval/extract_metrics.py
+index f758f36..9993a72 100644
+--- a/py64_analysis/src/keiba/eval/extract_metrics.py
++++ b/py64_analysis/src/keiba/eval/extract_metrics.py
+@@ -273,6 +273,9 @@ def extract_metrics_from_holdout_run(
+         backtest={
+             "n_bets": _coerce_int(_safe_get(summary, "backtest.n_bets")),
+             "roi": _coerce_float(_safe_get(summary, "backtest.roi")),
++            "roi_slippage_stress": _coerce_float(
++                _safe_get(summary, "backtest.roi_slippage_stress")
++            ),
+             "total_stake": _coerce_float(_safe_get(summary, "backtest.total_stake")),
+             "total_profit": _coerce_float(_safe_get(summary, "backtest.total_profit")),
+             "max_drawdown": _coerce_float(_safe_get(summary, "backtest.max_drawdown")),
+diff --git a/py64_analysis/src/keiba/modeling/race_softmax.py b/py64_analysis/src/keiba/modeling/race_softmax.py
+index 46787e0..4db1976 100644
+--- a/py64_analysis/src/keiba/modeling/race_softmax.py
++++ b/py64_analysis/src/keiba/modeling/race_softmax.py
+@@ -4,13 +4,14 @@ Race-level softmax probability generation.
+ p_race_i = exp(s_i / T) / sum_j exp(s_j / T)
+ where s_i = w * score_model + (1 - w) * score_mkt
+ """
++
+ from __future__ import annotations
+ 
+ from dataclasses import dataclass
+ from typing import Iterable
+ 
+ import numpy as np
+-import pandas as pd
++import pandas as pd  # type: ignore[import-untyped]
+ 
+ 
+ @dataclass(frozen=True)
+@@ -112,7 +113,9 @@ def fit_race_softmax(
+     if work.empty:
+         return RaceSoftmaxFitResult(w=0.0, t=1.0, loss=float("nan"), n_races=0, n_rows=0)
+ 
+-    w_values = np.arange(0.0, 1.0 + 1e-12, float(w_grid_step)) if w_grid_step > 0 else np.array([0.0])
++    w_values = (
++        np.arange(0.0, 1.0 + 1e-12, float(w_grid_step)) if w_grid_step > 0 else np.array([0.0])
++    )
+     t_values = [float(t) for t in t_grid if float(t) > 0]
+     if not t_values:
+         t_values = [1.0]
+@@ -144,7 +147,9 @@ def fit_race_softmax(
+                     return pd.Series(np.zeros_like(v, dtype=float), index=s_local.index)
+                 return pd.Series(exp_v / denom, index=s_local.index)
+ 
+-            p_race = score_series.groupby(work["race_id"], dropna=False, sort=False).transform(_softmax_series)
++            p_race = score_series.groupby(work["race_id"], dropna=False, sort=False).transform(
++                _softmax_series
++            )
+             p_race = _clip(p_race.values, float(clip_eps))
+ 
+             y = work["y"].values
