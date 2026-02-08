@@ -1,0 +1,158 @@
+diff --git a/py64_analysis/src/keiba/modeling/train.py b/py64_analysis/src/keiba/modeling/train.py
+index 7cb41e1..ea243af 100644
+--- a/py64_analysis/src/keiba/modeling/train.py
++++ b/py64_analysis/src/keiba/modeling/train.py
+@@ -1400,25 +1400,6 @@ def train_model(
+             model.save(model_path)
+         return model, metrics
+ 
+-    # 校正器をfit
+-    calibrator = ProbabilityCalibrator(method=config.model.calibration)
+-    p_blend_valid_arr = p_blend_valid
+-    calibrator.fit(p_blend_valid_arr, y_valid_arr)
+-
+-    # 校正後の評価
+-    p_calibrated = calibrator.transform(p_blend_valid_arr)
+-    metrics["valid_brier_calibrated"] = brier_score_loss(y_valid_arr, p_calibrated)
+-    metrics["valid_logloss_calibrated"] = log_loss(y_valid_arr, p_calibrated)
+-    metrics["calibration_method"] = config.model.calibration
+-
+-    # 校正器を保存
+-    if calibrator_path:
+-        calibrator.save(calibrator_path)
+-        logger.info(f"Calibrator saved to {calibrator_path}")
+-
+-    # モデルに校正器を付与（推論時に使えるように）
+-    model.calibrator = calibrator
+-
+     # Distance Bucket Models: train per-distance models and route inference by distance bucket.
+     dist_cfg = getattr(getattr(config, "model", None), "distance_bucket_models", None)
+     enabled = bool(dist_cfg.get("enabled", False)) if isinstance(dist_cfg, dict) else False
+@@ -1427,6 +1408,9 @@ def train_model(
+         min_train = (
+             int(dist_cfg.get("min_train_samples", 5000)) if isinstance(dist_cfg, dict) else 5000
+         )
++        min_valid = (
++            int(dist_cfg.get("min_valid_samples", 2000)) if isinstance(dist_cfg, dict) else 2000
++        )
+         dist = (
+             pd.to_numeric(X_train.get("distance"), errors="coerce") if X_train is not None else None
+         )
+@@ -1436,30 +1420,108 @@ def train_model(
+             else pd.Series([], dtype=object)
+         )
+ 
++        have_valid = (
++            X_valid is not None
++            and y_valid is not None
++            and p_mkt_valid is not None
++            and len(X_valid) > 0
++        )
++        dist_valid = None
++        if have_valid:
++            assert X_valid is not None
++            dist_valid = pd.to_numeric(X_valid.get("distance"), errors="coerce")
++        buckets_valid = (
++            dist_valid.where(dist_valid > 0).apply(distance_bucket)
++            if dist_valid is not None
++            else pd.Series([], dtype=object)
++        )
++
+         bucket_models: dict[int, WinProbabilityModel] = {}
+         n_train_by_bucket: dict[str, int] = {}
++        n_valid_by_bucket: dict[str, int] = {}
+         for b in sorted(set(buckets_train.dropna().tolist())):
+-            mask = buckets_train == b
+-            n = int(mask.sum())
+-            n_train_by_bucket[str(b)] = n
+-            if n < min_train:
++            mask_tr = buckets_train == b
++            n_tr = int(mask_tr.sum())
++            n_train_by_bucket[str(b)] = n_tr
++            n_va = int((buckets_valid == b).sum()) if have_valid else 0
++            n_valid_by_bucket[str(b)] = n_va
++            if n_tr < min_train:
++                continue
++            if have_valid and n_va < min_valid:
+                 continue
+             m = WinProbabilityModel()
+-            m.fit(X_train.loc[mask], y_train.loc[mask], p_mkt_train.loc[mask])
++            if have_valid:
++                assert X_valid is not None
++                assert y_valid is not None
++                assert p_mkt_valid is not None
++                mask_va = buckets_valid == b
++                m.fit(
++                    X_train.loc[mask_tr],
++                    y_train.loc[mask_tr],
++                    p_mkt_train.loc[mask_tr],
++                    X_valid.loc[mask_va],
++                    y_valid.loc[mask_va],
++                    p_mkt_valid.loc[mask_va],
++                )
++            else:
++                m.fit(X_train.loc[mask_tr], y_train.loc[mask_tr], p_mkt_train.loc[mask_tr])
++
++            # Keep blend configuration consistent with the fallback model.
++            m.blend_weight = float(model.blend_weight)
++            m.blend_segmented = getattr(model, "blend_segmented", None)
++            if m.feature_names != model.feature_names:
++                raise ValueError("Distance-bucket models produced different feature_names")
+             bucket_models[int(b)] = m
+ 
+         bucket_meta = {
+             "enabled": True,
+             "min_train_samples": min_train,
++            "min_valid_samples": min_valid,
+             "n_train_by_bucket": n_train_by_bucket,
++            "n_valid_by_bucket": n_valid_by_bucket,
+             "trained_buckets": sorted(bucket_models.keys()),
+         }
+         metrics["distance_bucket_models"] = bucket_meta
+-        final_model = DistanceBucketWinProbabilityModel(
+-            fallback_model=model,
+-            bucket_models=bucket_models,
+-            bucket_meta=bucket_meta,
++        if bucket_models:
++            final_model = DistanceBucketWinProbabilityModel(
++                fallback_model=model,
++                bucket_models=bucket_models,
++                bucket_meta=bucket_meta,
++            )
++
++    # 校正器をfit (distance bucket有効時はバケットルーティング後の予測でfit)
++    if (
++        enabled
++        and X_valid is not None
++        and len(X_valid) > 0
++        and y_valid is not None
++        and p_mkt_valid is not None
++    ):
++        X_valid2 = _align_features(X_valid, model.feature_names)
++        pred_out = final_model.predict(
++            X_valid2, p_mkt_valid, calibrate=False, segments=segments_valid
+         )
++        if isinstance(pred_out, tuple):
++            pred_out = pred_out[0]
++        p_blend_valid = np.asarray(pred_out, dtype=float)
++        y_valid_arr = y_valid.values
++
++    calibrator = ProbabilityCalibrator(method=config.model.calibration)
++    calibrator.fit(p_blend_valid, y_valid_arr)
++
++    # 校正後の評価
++    p_calibrated = calibrator.transform(p_blend_valid)
++    metrics["valid_brier_calibrated"] = brier_score_loss(y_valid_arr, p_calibrated)
++    metrics["valid_logloss_calibrated"] = log_loss(y_valid_arr, p_calibrated)
++    metrics["calibration_method"] = config.model.calibration
++
++    # 校正器を保存
++    if calibrator_path:
++        calibrator.save(calibrator_path)
++        logger.info(f"Calibrator saved to {calibrator_path}")
++
++    # モデルに校正器を付与（推論時に使えるように）
++    model.calibrator = calibrator
+ 
+     if model_path:
+         final_model.save(model_path)
