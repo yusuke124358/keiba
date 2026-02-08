@@ -1,0 +1,136 @@
+diff --git a/py64_analysis/scripts/run_holdout.py b/py64_analysis/scripts/run_holdout.py
+index f32d5ba..f0642f4 100644
+--- a/py64_analysis/scripts/run_holdout.py
++++ b/py64_analysis/scripts/run_holdout.py
+@@ -628,6 +628,36 @@ def main() -> None:
+         if use_slip_table:
+             cfg.betting.closing_odds_multiplier = 1.0
+ 
++    # EXP-013: Closing multiplier by odds bucket (leakage-safe: train..valid only; never test).
++    # When --estimate-closing-mult is used (and table mode isn't explicitly enabled),
++    # fit an odds-bin table so EV/stake uses per-odds r_hat instead of a single scalar.
++    if args.estimate_closing_mult and not use_slip_table and df_slip is not None:
++        st_cfg = getattr(cfg.betting, "slippage_table", None)
++        odds_bins = list(getattr(st_cfg, "odds_bins", None) or [1.0, 3.0, 5.0, 10.0, 20.0])
++        min_count = int(getattr(st_cfg, "min_count", 200) or 0)
++
++        df_fit = df_slip
++        # fit_slippage_table expects optional vol/age cols; provide vol as NaN if missing.
++        if "log_odds_std_60m" not in df_fit.columns:
++            df_fit = df_fit.copy()
++            df_fit["log_odds_std_60m"] = np.nan
++
++        slippage_table = fit_slippage_table(
++            df_fit,
++            quantile=float(args.closing_mult_quantile),
++            min_count=min_count,
++            odds_bins=odds_bins,
++            ts_vol_quantiles=[],
++            use_snap_age=False,
++            snap_age_bins=[],
++        )
++        slippage_table_meta = slippage_table.to_dict()
++        slippage_table_meta["fit_mode"] = "odds_bucket"
++        slippage_table_path = run_dir / "slippage_table.json"
++        slippage_table_path.write_text(
++            json.dumps(slippage_table_meta, ensure_ascii=False, indent=2), encoding="utf-8"
++        )
++
+     # 再現性向上: 実行時に使った設定と race_id リストを保存
+     (run_dir / "race_ids_train.txt").write_text("\n".join(race_ids_train) + "\n", encoding="utf-8")
+     (run_dir / "race_ids_valid.txt").write_text("\n".join(race_ids_valid) + "\n", encoding="utf-8")
+@@ -1952,11 +1982,11 @@ def main() -> None:
+         else None,
+         "slippage_summary": slippage_summary.__dict__ if slippage_summary is not None else None,
+         "slippage_table": {
+-            "enabled": bool(use_slip_table),
++            "enabled": bool(slippage_table is not None),
+             "path": str(slippage_table_path) if slippage_table_path is not None else None,
+             "meta": slippage_table_meta,
+             "train_start": args.train_start,
+-            "train_end": args.train_end,
++            "train_end": slip_end_for_estimation if slippage_table is not None else args.train_end,
+         },
+         "odds_band_bias": {
+             "enabled": bool(use_odds_bias),
+diff --git a/py64_analysis/src/keiba/backtest/engine.py b/py64_analysis/src/keiba/backtest/engine.py
+index 888edf3..a0768ad 100644
+--- a/py64_analysis/src/keiba/backtest/engine.py
++++ b/py64_analysis/src/keiba/backtest/engine.py
+@@ -1642,11 +1642,22 @@ class BacktestEngine:
+             closing_mult = float(self.config.betting.closing_odds_multiplier)
+             slippage_meta = None
+             if self.slippage_table is not None:
++                ts_vol = pred.get("log_odds_std_60m")
++                # If the table has no TS-vol bins, treat it as odds-only.
++                if not getattr(self.slippage_table, "ts_vol_edges", None):
++                    ts_vol = None
+                 odds_effective, slippage_meta = self.slippage_table.effective_odds(
+                     odds_buy=odds_at_buy,
+-                    ts_vol=pred.get("log_odds_std_60m"),
++                    ts_vol=ts_vol,
+                     snap_age_min=pred.get("snap_age_min"),
+                 )
++                try:
++                    r_hat = slippage_meta.get("r_hat") if isinstance(slippage_meta, dict) else None
++                    r_hat_f = float(r_hat) if r_hat is not None else None
++                    if r_hat_f is not None and np.isfinite(r_hat_f) and r_hat_f > 0:
++                        closing_mult = r_hat_f
++                except Exception:
++                    pass
+             else:
+                 odds_effective = odds_at_buy * closing_mult if closing_mult > 0 else odds_at_buy
+             p_hat_pre_blend = None
+@@ -2322,11 +2333,22 @@ class BacktestEngine:
+             closing_mult = float(self.config.betting.closing_odds_multiplier)
+             slippage_meta = None
+             if self.slippage_table is not None:
++                ts_vol = pred.get("log_odds_std_60m")
++                # If the table has no TS-vol bins, treat it as odds-only.
++                if not getattr(self.slippage_table, "ts_vol_edges", None):
++                    ts_vol = None
+                 odds_effective, slippage_meta = self.slippage_table.effective_odds(
+                     odds_buy=odds_at_buy,
+-                    ts_vol=pred.get("log_odds_std_60m"),
++                    ts_vol=ts_vol,
+                     snap_age_min=pred.get("snap_age_min"),
+                 )
++                try:
++                    r_hat = slippage_meta.get("r_hat") if isinstance(slippage_meta, dict) else None
++                    r_hat_f = float(r_hat) if r_hat is not None else None
++                    if r_hat_f is not None and np.isfinite(r_hat_f) and r_hat_f > 0:
++                        closing_mult = r_hat_f
++                except Exception:
++                    pass
+             else:
+                 odds_effective = odds_at_buy * closing_mult if closing_mult > 0 else odds_at_buy
+             p_hat_pre_blend = None
+diff --git a/py64_analysis/src/keiba/betting/policy.py b/py64_analysis/src/keiba/betting/policy.py
+index 03366da..1552c99 100644
+--- a/py64_analysis/src/keiba/betting/policy.py
++++ b/py64_analysis/src/keiba/betting/policy.py
+@@ -581,11 +581,22 @@ class BettingPolicy:
+             # Ticket1/TicketB: EV/?????????????
+             closing_mult = float(self.config.betting.closing_odds_multiplier)
+             if self.slippage_table is not None:
+-                odds_effective, _ = self.slippage_table.effective_odds(
++                ts_vol = pred.get("log_odds_std_60m")
++                # If the table has no TS-vol bins, treat it as odds-only.
++                if not getattr(self.slippage_table, "ts_vol_edges", None):
++                    ts_vol = None
++                odds_effective, slip_meta = self.slippage_table.effective_odds(
+                     odds_buy=odds,
+-                    ts_vol=pred.get("log_odds_std_60m"),
++                    ts_vol=ts_vol,
+                     snap_age_min=pred.get("snap_age_min"),
+                 )
++                try:
++                    r_hat = slip_meta.get("r_hat") if isinstance(slip_meta, dict) else None
++                    r_hat_f = float(r_hat) if r_hat is not None else None
++                    if r_hat_f is not None and np.isfinite(r_hat_f) and r_hat_f > 0:
++                        closing_mult = r_hat_f
++                except Exception:
++                    pass
+             else:
+                 odds_effective = odds * closing_mult if closing_mult > 0 else odds
+             p_hat_pre_blend = None
