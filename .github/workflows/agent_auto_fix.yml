@@ -5,8 +5,8 @@ on:
     types: [created]
   pull_request_review:
     types: [submitted]
-  schedule:
-    - cron: "*/15 * * * *"
+  # Scheduled runs can starve long-running Scientist V2 pipeline jobs on limited
+  # self-hosted runners. Prefer event-driven triggers (comment/review) + manual dispatch.
   workflow_dispatch:
     inputs:
       pr_number:

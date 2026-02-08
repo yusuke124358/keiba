@@ -59,12 +59,16 @@ jobs:
         shell: cmd
         run: >
           py64_analysis\\.venv\\Scripts\\python.exe scripts\\agent\\scientist_v2.py --campaign ${{ inputs.campaign_id }} --stage stage2 --shard ${{ inputs.shard }} --max-jobs ${{ inputs.max_jobs }}
+      - name: Stage artifacts (workspace)
+        if: always()
+        shell: cmd
+        run: >
+          powershell -ExecutionPolicy Bypass -Command "$campaign='${{ inputs.campaign_id }}'; $src=Join-Path $env:KEIBA_ARTIFACT_DIR $campaign; $dest=Join-Path $env:GITHUB_WORKSPACE 'artifact_upload'; Remove-Item -Recurse -Force $dest -ErrorAction SilentlyContinue; New-Item -ItemType Directory -Force -Path $dest | Out-Null; $destCamp=Join-Path $dest $campaign; New-Item -ItemType Directory -Force -Path $destCamp | Out-Null; if (Test-Path (Join-Path $src 'experiments')) { Copy-Item -Recurse -Force (Join-Path $src 'experiments') $destCamp }; if (Test-Path (Join-Path $src 'plans')) { Copy-Item -Recurse -Force (Join-Path $src 'plans') $destCamp }; Copy-Item -Force 'AGENTS.md' (Join-Path $dest 'AGENTS.md') -ErrorAction SilentlyContinue"
       - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: scientist-v2-${{ github.event.inputs.campaign_id }}-stage2-${{ env.SAFE_SHARD }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
-            ${{ env.KEIBA_ARTIFACT_DIR }}/${{ inputs.campaign_id }}/experiments/**
-            ${{ env.KEIBA_ARTIFACT_DIR }}/${{ inputs.campaign_id }}/plans/**
+            artifact_upload/**
           if-no-files-found: warn
