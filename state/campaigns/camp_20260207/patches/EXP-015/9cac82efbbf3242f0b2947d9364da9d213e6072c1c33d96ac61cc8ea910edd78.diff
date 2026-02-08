@@ -1,0 +1,12 @@
+diff --git a/config/experiments/camp_20260207-stage1-EXP-015-a1.yaml b/config/experiments/camp_20260207-stage1-EXP-015-a1.yaml
+new file mode 100644
+index 0000000..3e3c077
+--- /dev/null
++++ b/config/experiments/camp_20260207-stage1-EXP-015-a1.yaml
+@@ -0,0 +1,6 @@
++extends: ../config.yaml
++
++model:
++  # EXP-015: calibration method sweep (variant = temperature scaling)
++  calibration: temperature
++
