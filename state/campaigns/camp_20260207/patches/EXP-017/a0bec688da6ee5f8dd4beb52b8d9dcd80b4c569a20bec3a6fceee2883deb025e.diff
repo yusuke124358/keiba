@@ -1,0 +1,16 @@
+diff --git a/py64_analysis/src/keiba/modeling/train.py b/py64_analysis/src/keiba/modeling/train.py
+index 7cb41e1..861a29e 100644
+--- a/py64_analysis/src/keiba/modeling/train.py
++++ b/py64_analysis/src/keiba/modeling/train.py
+@@ -1098,7 +1098,10 @@ def train_model(
+                 run_name = model_path.parent.parent.name
+             except Exception:
+                 run_name = None
+-        surface_split_enabled = run_name == "exp_20260206_080929"
++        surface_split_enabled = run_name in (
++            "exp_20260206_080929",
++            "camp_20260207-stage1-EXP-017-a1",
++        )
+ 
+     model: Optional[WinProbabilityModel] = None
+     metrics: dict = {}
