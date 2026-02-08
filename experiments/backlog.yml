@@ -300,23 +300,6 @@ items:
   branch: agent/exp_20260207_090000-distance-bucket-models-sparse-bucket-fallback-to-global
   run_id: exp_20260207_090000
   decision: iterate
-- id: EXP-019
-  title: Recency-weighted training
-  hypothesis: Recency weighting improves out-of-sample stability under regime shifts.
-  change_scope:
-  - py64_analysis/src/keiba/modeling/
-  - py64_analysis/scripts/
-  acceptance_criteria:
-  - Rolling ROI stddev improves by >= 5%
-  - ROI >= baseline
-  metrics:
-  - rolling.roi_std
-  - backtest.roi
-  risk_level: medium
-  max_diff_size: 160
-  status: in_progress
-  picked_at: '2026-02-08T00:54:47Z'
-  branch: agent/exp_20260208_090000-recency-weighted-training
 - id: EXP-020
   title: Multi-task top1 + top3 probabilities
   hypothesis: Learning top1 and top3 jointly yields better calibrated win probabilities
@@ -868,3 +851,19 @@ items:
   max_diff_size: 200
   status: todo
   branch: agent/exp_20260207_090000-closing-multiplier-by-odds-bucket
+- id: EXP-019
+  title: Recency-weighted training
+  hypothesis: Recency weighting improves out-of-sample stability under regime shifts.
+  change_scope:
+  - py64_analysis/src/keiba/modeling/
+  - py64_analysis/scripts/
+  acceptance_criteria:
+  - Rolling ROI stddev improves by >= 5%
+  - ROI >= baseline
+  metrics:
+  - rolling.roi_std
+  - backtest.roi
+  risk_level: medium
+  max_diff_size: 160
+  status: todo
+  branch: agent/exp_20260208_090000-recency-weighted-training
