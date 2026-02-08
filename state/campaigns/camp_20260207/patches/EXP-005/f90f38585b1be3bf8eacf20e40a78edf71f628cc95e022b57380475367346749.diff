@@ -1,0 +1,95 @@
+diff --git a/config/experiments/camp_20260207-stage1-EXP-005-a2.yaml b/config/experiments/camp_20260207-stage1-EXP-005-a2.yaml
+new file mode 100644
+index 0000000..5d1428a
+--- /dev/null
++++ b/config/experiments/camp_20260207-stage1-EXP-005-a2.yaml
+@@ -0,0 +1,11 @@
++extends: ../config.yaml
++
++# EXP-005-a2: EV margin schedule by odds bucket.
++# Tighten-only: the engine uses max(betting.ev_margin, bucket.min_ev_margin).
++betting:
++  ev_margin_by_odds_bucket:
++    - min_odds: 20.0
++      max_odds: 50.0
++      min_ev_margin: 0.12
++    - min_odds: 50.0
++      min_ev_margin: 0.15
+diff --git a/py64_analysis/src/keiba/backtest/engine.py b/py64_analysis/src/keiba/backtest/engine.py
+index 888edf3..f5a6c7e 100644
+--- a/py64_analysis/src/keiba/backtest/engine.py
++++ b/py64_analysis/src/keiba/backtest/engine.py
+@@ -1772,6 +1772,7 @@ class BacktestEngine:
+         ev_margin = self.config.betting.ev_margin
+         if bool(getattr(self.config.betting, "enable_market_blend", False)):
+             ev_margin = float(getattr(self.config.betting, "t_ev", ev_margin))
++        ev_margin_buckets = getattr(self.config.betting, "ev_margin_by_odds_bucket", []) or []
+         takeout_ev_cfg = getattr(self.config.betting, "takeout_ev_margin", None)
+         takeout_ev_enabled = bool(takeout_ev_cfg and getattr(takeout_ev_cfg, "enabled", False))
+         takeout_ref = (
+@@ -1847,6 +1848,14 @@ class BacktestEngine:
+             odds_dyn_ev_score = cand.get("odds_dyn_ev_score")
+ 
+             base_min_ev = float(ev_margin)
++            for b in ev_margin_buckets:
++                max_odds = b.max_odds
++                if odds_at_buy >= float(b.min_odds) and (
++                    max_odds is None or odds_at_buy < float(max_odds)
++                ):
++                    # Tighten-only: never go below the global base margin.
++                    base_min_ev = max(base_min_ev, float(b.min_ev_margin))
++                    break
+             min_ev_eff = base_min_ev
+             if takeout_ev_enabled and takeout_slope and takeout_implied is not None:
+                 try:
+@@ -2188,6 +2197,7 @@ class BacktestEngine:
+         ev_margin = self.config.betting.ev_margin
+         if bool(getattr(self.config.betting, "enable_market_blend", False)):
+             ev_margin = float(getattr(self.config.betting, "t_ev", ev_margin))
++        ev_margin_buckets = getattr(self.config.betting, "ev_margin_by_odds_bucket", []) or []
+         takeout_ev_cfg = getattr(self.config.betting, "takeout_ev_margin", None)
+         takeout_ev_enabled = bool(takeout_ev_cfg and getattr(takeout_ev_cfg, "enabled", False))
+         takeout_ref = (
+@@ -2475,6 +2485,14 @@ class BacktestEngine:
+             odds_dyn_ev_score = cand.get("odds_dyn_ev_score")
+ 
+             base_min_ev = float(ev_margin)
++            for b in ev_margin_buckets:
++                max_odds = b.max_odds
++                if odds_at_buy >= float(b.min_odds) and (
++                    max_odds is None or odds_at_buy < float(max_odds)
++                ):
++                    # Tighten-only: never go below the global base margin.
++                    base_min_ev = max(base_min_ev, float(b.min_ev_margin))
++                    break
+             min_ev_eff = base_min_ev
+             if takeout_ev_enabled and takeout_slope and takeout_implied is not None:
+                 try:
+diff --git a/py64_analysis/src/keiba/config.py b/py64_analysis/src/keiba/config.py
+index ec0aeaa..1fef019 100644
+--- a/py64_analysis/src/keiba/config.py
++++ b/py64_analysis/src/keiba/config.py
+@@ -351,6 +351,14 @@ class TakeoutEvMarginConfig(BaseModel):
+     slope: float = 0.0
+ 
+ 
++class EvMarginOddsBucketConfig(BaseModel):
++    """EV margin schedule by odds bucket (buy odds)."""
++
++    min_odds: float = Field(default=0.0, ge=0.0)
++    max_odds: Optional[float] = Field(default=None, gt=0.0)
++    min_ev_margin: float
++
++
+ class StakeOddsDampConfig(BaseModel):
+     """Stake damping by odds (post-selection)."""
+ 
+@@ -364,6 +372,8 @@ class BettingConfig(BaseModel):
+     """ベッティング設定"""
+ 
+     ev_margin: float = 0.10
++    # EXP-005: tighten EV margin by odds bucket (buy odds).
++    ev_margin_by_odds_bucket: list[EvMarginOddsBucketConfig] = Field(default_factory=list)
+     enable_market_blend: bool = False
+     market_prob_method: str = "p_mkt_col"
+     t_ev: float = 0.10
