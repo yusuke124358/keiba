@@ -314,7 +314,9 @@ items:
   - backtest.roi
   risk_level: medium
   max_diff_size: 160
-  status: todo
+  status: in_progress
+  picked_at: '2026-02-08T00:54:47Z'
+  branch: agent/exp_20260208_090000-recency-weighted-training
 - id: EXP-020
   title: Multi-task top1 + top3 probabilities
   hypothesis: Learning top1 and top3 jointly yields better calibrated win probabilities
