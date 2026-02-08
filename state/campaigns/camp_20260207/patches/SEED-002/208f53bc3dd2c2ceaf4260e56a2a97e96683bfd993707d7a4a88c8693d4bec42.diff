@@ -1,0 +1,58 @@
+diff --git a/config/experiments/camp_20260207-stage1-SEED-002-a2.yaml b/config/experiments/camp_20260207-stage1-SEED-002-a2.yaml
+new file mode 100644
+index 0000000..f110391
+--- /dev/null
++++ b/config/experiments/camp_20260207-stage1-SEED-002-a2.yaml
+@@ -0,0 +1,7 @@
++extends: ../config.yaml
++
++# Leak audit: exclude pace-derived features (C4 pace history + race expected pace).
++features:
++  pace_history:
++    enabled: false
++
+diff --git a/py64_analysis/src/keiba/eval/extract_metrics.py b/py64_analysis/src/keiba/eval/extract_metrics.py
+index f758f36..ccbddda 100644
+--- a/py64_analysis/src/keiba/eval/extract_metrics.py
++++ b/py64_analysis/src/keiba/eval/extract_metrics.py
+@@ -143,6 +143,14 @@ def _infer_market_prob_mode(config_path: Optional[Path]) -> Optional[str]:
+     return None
+ 
+ 
++def _leakage_flags_from_config(config_path: Optional[Path]) -> list[str]:
++    if config_path is None or not config_path.exists():
++        return ["missing_config_used"]
++    cfg = _read_yaml(config_path)
++    pace_enabled = bool(_safe_get(cfg, "features.pace_history.enabled", False))
++    return ["pace_history_enabled"] if pace_enabled else []
++
++
+ def _universe_from_config(config_path: Optional[Path]) -> Dict[str, Any]:
+     if config_path is None or not config_path.exists():
+         return {}
+@@ -293,7 +301,10 @@ def extract_metrics_from_holdout_run(
+         step14=None,
+         incomparable_reasons=[],
+     )
+-    return metrics.to_dict()
++    out = metrics.to_dict()
++    out["roi"] = out.get("backtest", {}).get("roi")
++    out["leakage_flags"] = _leakage_flags_from_config(config_path if config_path.exists() else None)
++    return out
+ 
+ 
+ def extract_metrics_from_rolling_run(
+diff --git a/py64_analysis/src/keiba/features/build_features.py b/py64_analysis/src/keiba/features/build_features.py
+index 86b0f98..aea872f 100644
+--- a/py64_analysis/src/keiba/features/build_features.py
++++ b/py64_analysis/src/keiba/features/build_features.py
+@@ -258,6 +258,9 @@ class FeatureBuilder:
+             "race_expected_pace_diff": None,
+             "race_expected_pace_pressure": None,
+         }
++        if not bool(self.config.features.pace_history.enabled):
++            # Fully drop pace-derived features when disabled (leak audit / reproducibility).
++            return {}, {}
+         if not entries or not race_date:
+             return {}, empty_race
+ 
