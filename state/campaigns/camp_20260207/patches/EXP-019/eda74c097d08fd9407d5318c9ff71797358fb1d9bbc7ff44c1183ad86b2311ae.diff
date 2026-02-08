@@ -1,0 +1,140 @@
+diff --git a/py64_analysis/src/keiba/modeling/train.py b/py64_analysis/src/keiba/modeling/train.py
+index 7cb41e1..d9e1339 100644
+--- a/py64_analysis/src/keiba/modeling/train.py
++++ b/py64_analysis/src/keiba/modeling/train.py
+@@ -222,6 +222,7 @@ class WinProbabilityModel:
+         X_valid: Optional[pd.DataFrame] = None,
+         y_valid: Optional[pd.Series] = None,
+         p_mkt_valid: Optional[pd.Series] = None,
++        sample_weight: Optional[pd.Series] = None,
+     ) -> dict:
+         """
+         モデル学習
+@@ -252,15 +253,34 @@ class WinProbabilityModel:
+             y_train, y_val = y, y_valid
+             p_mkt_train, p_mkt_val = p_mkt, p_mkt_valid
+ 
++        # EXP-019: recency-weighted training (train only; valid is unweighted).
++        w_train = None
++        if sample_weight is not None:
++            if isinstance(sample_weight, pd.Series):
++                w_s = sample_weight
++            else:
++                w_s = pd.Series(sample_weight)
++            if len(w_s) != len(X):
++                raise ValueError("sample_weight must have the same length as X")
++            w_s = pd.to_numeric(w_s, errors="coerce").fillna(0.0).astype(float)
++            if X_valid is None:
++                w_train = w_s.iloc[:split_idx].values
++            else:
++                w_train = w_s.values
++            # Normalize within the training set so weight scale stays stable.
++            mean_w = float(np.mean(w_train)) if len(w_train) else 0.0
++            if mean_w > 0:
++                w_train = w_train / mean_w
++
+         # LightGBM用データセット
+         if self.use_market_offset:
+             lo, hi = float(self.p_mkt_clip[0]), float(self.p_mkt_clip[1])
+             init_train = _logit_series(_clip_prob_series(p_mkt_train.astype(float), lo, hi))
+             init_val = _logit_series(_clip_prob_series(p_mkt_val.astype(float), lo, hi))
+-            train_data = lgb.Dataset(X_train, label=y_train, init_score=init_train)
++            train_data = lgb.Dataset(X_train, label=y_train, init_score=init_train, weight=w_train)
+             valid_data = lgb.Dataset(X_val, label=y_val, reference=train_data, init_score=init_val)
+         else:
+-            train_data = lgb.Dataset(X_train, label=y_train)
++            train_data = lgb.Dataset(X_train, label=y_train, weight=w_train)
+             valid_data = lgb.Dataset(X_val, label=y_val, reference=train_data)
+ 
+         params = {
+@@ -1074,6 +1094,37 @@ def train_model(
+     if X_train is None or len(X_train) == 0:
+         raise ValueError("No training data found")
+ 
++    # EXP-019: recency-weighted training by race date (time-based, leak-safe).
++    # Weight(t) = 0.5 ** (age_days / half_life_days),
++    # where age is relative to the latest train date.
++    half_life_days = 365.0
++    sample_weight_train = None
++    if race_ids_train is not None and len(race_ids_train) > 0:
++        try:
++            unique_ids = sorted(set(race_ids_train.astype(str).tolist()))
++            rows = session.execute(
++                text("SELECT race_id, date FROM fact_race WHERE race_id = ANY(:race_ids)"),
++                {"race_ids": unique_ids},
++            ).fetchall()
++            mapping = {str(r[0]): r[1] for r in rows}
++            dates = pd.to_datetime(race_ids_train.astype(str).map(mapping), errors="coerce")
++            anchor = dates.max()
++            if anchor == anchor:
++                age_days = (anchor - dates).dt.days.astype(float).fillna(0.0).values
++                w = np.power(0.5, age_days / half_life_days).astype(float)
++                w = np.clip(w, 1e-3, 1.0)
++                sample_weight_train = pd.Series(w, index=race_ids_train.index)
++                logger.info(
++                    "Recency weighting: half_life_days=%.1f anchor=%s p10=%.3f p50=%.3f p90=%.3f",
++                    half_life_days,
++                    str(getattr(anchor, "date", lambda: anchor)()),
++                    float(np.quantile(w, 0.10)),
++                    float(np.quantile(w, 0.50)),
++                    float(np.quantile(w, 0.90)),
++                )
++        except Exception as e:
++            logger.warning(f"Recency weighting skipped due to error: {e}")
++
+     # 検証データ準備（明示的に指定された場合）
+     X_valid, y_valid, p_mkt_valid, race_ids_valid = None, None, None, None
+     if valid_start and valid_end:
+@@ -1146,6 +1197,9 @@ def train_model(
+                     and int(mask_turf_va.sum()) > 0
+                 )
+                 else None,
++                sample_weight=sample_weight_train.loc[mask_turf_tr]
++                if sample_weight_train is not None
++                else None,
+             )
+ 
+             model_dirt = WinProbabilityModel()
+@@ -1171,6 +1225,9 @@ def train_model(
+                     and int(mask_dirt_va.sum()) > 0
+                 )
+                 else None,
++                sample_weight=sample_weight_train.loc[mask_dirt_tr]
++                if sample_weight_train is not None
++                else None,
+             )
+ 
+             if model_turf.feature_names != model_dirt.feature_names:
+@@ -1204,7 +1261,15 @@ def train_model(
+     if model is None:
+         # Default single-model path.
+         model = WinProbabilityModel()
+-        metrics = model.fit(X_train, y_train, p_mkt_train, X_valid, y_valid, p_mkt_valid)
++        metrics = model.fit(
++            X_train,
++            y_train,
++            p_mkt_train,
++            X_valid,
++            y_valid,
++            p_mkt_valid,
++            sample_weight=sample_weight_train,
++        )
+         metrics["surface_split_enabled"] = False
+ 
+     # Ticket: segment別 blend weight（validのみで推定）
+@@ -1445,7 +1510,14 @@ def train_model(
+             if n < min_train:
+                 continue
+             m = WinProbabilityModel()
+-            m.fit(X_train.loc[mask], y_train.loc[mask], p_mkt_train.loc[mask])
++            m.fit(
++                X_train.loc[mask],
++                y_train.loc[mask],
++                p_mkt_train.loc[mask],
++                sample_weight=sample_weight_train.loc[mask]
++                if sample_weight_train is not None
++                else None,
++            )
+             bucket_models[int(b)] = m
+ 
+         bucket_meta = {
