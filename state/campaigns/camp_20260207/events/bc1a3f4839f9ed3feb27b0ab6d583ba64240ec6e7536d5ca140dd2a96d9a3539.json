@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "campaign_id": "camp_20260207",
+  "seed_id": "EXP-012",
+  "owner": "RUNNER_NAME=DESKTOP-CUOT9LI-2 GITHUB_RUN_ID=21789384024 GITHUB_RUN_ATTEMPT=1",
+  "event_id": "bc1a3f4839f9ed3feb27b0ab6d583ba64240ec6e7536d5ca140dd2a96d9a3539",
+  "event_type": "finished",
+  "stage": "stage1",
+  "attempt": 1,
+  "period_key": "stage1_test",
+  "run_id": "camp_20260207-stage1-EXP-012-a1",
+  "result": "failure",
+  "decision": "iterate",
+  "finished_at": "2026-02-08T06:07:42Z",
+  "metrics_summary": {
+    "delta_roi": null,
+    "delta_roi_ci95": [
+      0.0,
+      0.0
+    ],
+    "p_one_sided_delta_le_0": null,
+    "n_bets": null,
+    "n_days": null,
+    "test_period": "N/A",
+    "delta_max_drawdown": null
+  },
+  "artifacts_ref": {
+    "out_root": "C:/keiba_scientist/artifacts/DESKTOP-CUOT9LI-2/shard-0/camp_20260207",
+    "shard": "0/2",
+    "upstream_run_id": "",
+    "upstream_base_commit": ""
+  },
+  "last_error": "run_experiment failed (3221225786) for camp_20260207-stage1-EXP-012-a1"
+}
