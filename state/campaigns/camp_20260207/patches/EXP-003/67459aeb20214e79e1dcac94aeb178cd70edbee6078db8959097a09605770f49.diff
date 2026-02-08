@@ -1,0 +1,15 @@
+diff --git a/config/experiments/camp_20260207-stage1-EXP-003-a3.yaml b/config/experiments/camp_20260207-stage1-EXP-003-a3.yaml
+new file mode 100644
+index 0000000..879e95a
+--- /dev/null
++++ b/config/experiments/camp_20260207-stage1-EXP-003-a3.yaml
+@@ -0,0 +1,9 @@
++# EXP-003: Selector threshold change for high takeout races
++extends: ../config.yaml
++
++betting:
++  takeout_ev_margin:
++    enabled: true
++    ref_takeout: 0.215
++    slope: 1.0
++
