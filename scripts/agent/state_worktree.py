@@ -34,7 +34,9 @@ def repo_root() -> Path:
 def _origin_url(root: Path) -> str:
     url = run(["git", "remote", "get-url", "origin"], cwd=root).stdout.strip()
     if not url:
-        raise RuntimeError("Unable to determine origin URL (git remote get-url origin).")
+        raise RuntimeError(
+            "Unable to determine origin URL (git remote get-url origin)."
+        )
     return url
 
 
@@ -139,7 +141,11 @@ def ensure_state_worktree(
 
     run(["git", "init"], cwd=worktree_dir)
     run(["git", "remote", "add", "origin", origin_url], cwd=worktree_dir, check=False)
-    run(["git", "remote", "set-url", "origin", origin_url], cwd=worktree_dir, check=False)
+    run(
+        ["git", "remote", "set-url", "origin", origin_url],
+        cwd=worktree_dir,
+        check=False,
+    )
     ensure_git_identity(worktree_dir)
 
     if _remote_branch_exists(worktree_dir, branch):
