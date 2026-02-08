@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "campaign_id": "camp_20260207",
+  "seed_id": "EXP-003",
+  "owner": "RUNNER_NAME=DESKTOP-CUOT9LI GITHUB_RUN_ID=21792700328 GITHUB_RUN_ATTEMPT=1",
+  "event_id": "ddc806d69e35a31043f9451a79f75987bc69608b9d92499363b1afdc1ff7f0ec",
+  "event_type": "heartbeat",
+  "stage": "stage1",
+  "attempt": 2,
+  "heartbeat_bucket": 983626,
+  "last_heartbeat_at": "2026-02-08T05:07:37Z"
+}
