@@ -1,0 +1,12 @@
+diff --git a/config/experiments/camp_20260207-stage1-EXP-007-a2.yaml b/config/experiments/camp_20260207-stage1-EXP-007-a2.yaml
+new file mode 100644
+index 0000000..9b06b44
+--- /dev/null
++++ b/config/experiments/camp_20260207-stage1-EXP-007-a2.yaml
+@@ -0,0 +1,6 @@
++extends: ../config.yaml
++
++betting:
++  caps:
++    # EXP-007: cap per-race stake as a % of bankroll to reduce drawdown tail risk.
++    per_race_pct: 0.009
