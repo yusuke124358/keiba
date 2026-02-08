@@ -1,0 +1,130 @@
+diff --git a/config/experiments/camp_20260207-stage1-EXP-010-a1.yaml b/config/experiments/camp_20260207-stage1-EXP-010-a1.yaml
+new file mode 100644
+index 0000000..53785a1
+--- /dev/null
++++ b/config/experiments/camp_20260207-stage1-EXP-010-a1.yaml
+@@ -0,0 +1,7 @@
++# camp_20260207-stage1-EXP-010-a1 / EXP-010
++# Minimum odds floor for win bets.
++extends: ../config.yaml
++
++betting:
++  odds_floor_min_odds: 1.8
++
+diff --git a/py64_analysis/src/keiba/backtest/engine.py b/py64_analysis/src/keiba/backtest/engine.py
+index 888edf3..723109b 100644
+--- a/py64_analysis/src/keiba/backtest/engine.py
++++ b/py64_analysis/src/keiba/backtest/engine.py
+@@ -165,6 +165,16 @@ class BacktestEngine:
+         self._stake_damp_n = 0
+         self._stake_damp_low_odds_stake_before = 0.0
+         self._stake_damp_low_odds_stake_after = 0.0
++        self._odds_floor_filtered_bets = 0
++        self._odds_floor_filtered_stake = 0.0
++        min_odds = getattr(self.config.betting, "odds_floor_min_odds", 0.0)
++        try:
++            min_odds_val = float(min_odds) if min_odds is not None else 0.0
++        except Exception:
++            min_odds_val = 0.0
++        self._odds_floor_min_odds = (
++            float(min_odds_val) if min_odds_val and min_odds_val > 0 else 0.0
++        )
+ 
+         # レース一覧取得
+         races = self._get_races(start_date, end_date)
+@@ -436,7 +446,6 @@ class BacktestEngine:
+         result.max_drawdown_bankroll = result.max_drawdown
+         result.min_bankroll = min_bankroll
+ 
+-        self._apply_odds_floor_postprocess(result)
+         result.odds_floor_min_odds = float(self._odds_floor_min_odds or 0.0)
+         result.odds_floor_filtered_bets = int(self._odds_floor_filtered_bets)
+         result.odds_floor_filtered_stake = float(self._odds_floor_filtered_stake)
+@@ -1186,26 +1195,28 @@ class BacktestEngine:
+         except Exception:
+             min_odds_val = 0.0
+         enabled = bool(min_odds_val and min_odds_val > 0)
++        self._odds_floor_min_odds = float(min_odds_val) if enabled else 0.0
++        if not enabled:
++            return bets
+         filtered: list[Bet] = []
+         for bet in bets:
+             odds_val = bet.odds_at_buy
+             passed = None
+-            if enabled and odds_val is not None:
++            if odds_val is not None:
+                 passed = bool(odds_val >= min_odds_val)
+             bet.extra = bet.extra or {}
+             bet.extra.update(
+                 {
+-                    "odds_floor_min_odds": float(min_odds_val) if enabled else 0.0,
++                    "odds_floor_min_odds": float(min_odds_val),
+                     "odds_floor_odds_used": float(odds_val) if odds_val is not None else None,
+-                    "passed_odds_floor": passed if enabled else None,
++                    "passed_odds_floor": passed,
+                 }
+             )
+-            if enabled and passed is False:
++            if passed is False:
+                 self._odds_floor_filtered_bets += 1
+                 self._odds_floor_filtered_stake += float(bet.stake)
+                 continue
+             filtered.append(bet)
+-        self._odds_floor_min_odds = float(min_odds_val) if enabled else 0.0
+         return filtered
+ 
+     def _apply_stake_odds_damp(self, bets: list["Bet"], *, min_yen: int) -> list["Bet"]:
+@@ -2082,10 +2093,24 @@ class BacktestEngine:
+             grouped: dict[str, list[Bet]] = {}
+             for bet in bets:
+                 grouped.setdefault(bet.race_id, []).append(bet)
+-            reduced = []
++            reduced: list[Bet] = []
+             for race_id, race_bets in grouped.items():
+                 race_bets.sort(key=lambda b: b.ev, reverse=True)
+-                reduced.extend(race_bets[:max_bets_per_race])
++                selected = self._apply_odds_floor(race_bets[:max_bets_per_race])
++                if (
++                    len(selected) < max_bets_per_race
++                    and self._odds_floor_min_odds > 0
++                    and len(race_bets) > max_bets_per_race
++                ):
++                    for cand in race_bets[max_bets_per_race:]:
++                        if cand.odds_at_buy < self._odds_floor_min_odds:
++                            continue
++                        picked = self._apply_odds_floor([cand])
++                        if picked:
++                            selected.append(picked[0])
++                            if len(selected) >= max_bets_per_race:
++                                break
++                reduced.extend(selected)
+             bets = reduced
+ 
+         bets = sorted(bets, key=lambda b: b.ev, reverse=True)
+@@ -2686,7 +2711,25 @@ class BacktestEngine:
+             bets.append(bet)
+ 
+         bets = sorted(bets, key=lambda b: b.ev, reverse=True)
+-        bets = bets[: self.config.betting.max_bets_per_race]
++        max_bets_per_race = int(self.config.betting.max_bets_per_race)
++        if max_bets_per_race > 0:
++            selected = self._apply_odds_floor(bets[:max_bets_per_race])
++            if (
++                len(selected) < max_bets_per_race
++                and self._odds_floor_min_odds > 0
++                and len(bets) > max_bets_per_race
++            ):
++                for cand in bets[max_bets_per_race:]:
++                    if cand.odds_at_buy < self._odds_floor_min_odds:
++                        continue
++                    picked = self._apply_odds_floor([cand])
++                    if picked:
++                        selected.append(picked[0])
++                        if len(selected) >= max_bets_per_race:
++                            break
++            bets = selected
++        else:
++            bets = []
+ 
+         # ★日次残り予算を考慮
+         if not use_new_stake:
