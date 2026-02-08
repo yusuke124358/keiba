@@ -615,7 +615,9 @@ def propose_decision(
     )
 
 
-PLACEHOLDER_RE = re.compile(r"<[^>]+>")
+# Only match single-line "<...>" placeholders. This avoids false positives when
+# generated logs include "<=" / ">" comparisons on different lines.
+PLACEHOLDER_RE = re.compile(r"<[^>\n]+>")
 
 
 def ensure_no_placeholders(text: str) -> None:
