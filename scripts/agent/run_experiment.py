@@ -789,6 +789,86 @@ def ensure_clean(root: Path) -> None:
         raise RuntimeError("Working tree not clean. Commit or stash changes first.")
 
 
+def git_status_porcelain(root: Path) -> str:
+    return subprocess.run(
+        ["git", "status", "--porcelain"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout
+
+
+def git_head_commit(root: Path) -> str:
+    return (
+        subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=False,
+        ).stdout.strip()
+    )
+
+
+def parse_changed_paths_from_porcelain(status: str) -> list[str]:
+    raw = status or ""
+    if not raw.strip():
+        return []
+    paths: list[str] = []
+    for line in raw.splitlines():
+        if not line.strip():
+            continue
+        if len(line) < 4:
+            continue
+        path = line[3:].strip()
+        if "->" in path:
+            path = path.split("->")[-1].strip()
+        paths.append(path.replace("\\", "/"))
+    return paths
+
+
+def list_changed_paths_between_commits(
+    root: Path, base_commit: str, head_commit: str
+) -> list[str]:
+    out = subprocess.run(
+        ["git", "diff", "--name-only", f"{base_commit}..{head_commit}"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout
+    return [p.strip().replace("\\", "/") for p in out.splitlines() if p.strip()]
+
+
+def collect_impl_changes(
+    *, root: Path, base_commit: str
+) -> tuple[list[str], str, str]:
+    """
+    Return (changed_paths, head_commit_after_impl, mode).
+
+    mode:
+    - worktree: codex/apply-patch left uncommitted changes.
+    - commits: codex created commits and left the working tree clean.
+    """
+
+    status = git_status_porcelain(root)
+    head_after = git_head_commit(root)
+
+    if status.strip():
+        return parse_changed_paths_from_porcelain(status), head_after, "worktree"
+
+    if head_after and head_after != base_commit:
+        changed = list_changed_paths_between_commits(root, base_commit, head_after)
+        if changed:
+            return changed, head_after, "commits"
+
+    raise RuntimeError(
+        "No implementation changes detected after codex implementation. "
+        "Ensure the agent modifies tracked files under config/ or py64_analysis/."
+    )
+
+
 def ensure_codex_writable(log_path: Path) -> None:
     if not log_path.exists():
         return
@@ -805,45 +885,14 @@ def ensure_codex_writable(log_path: Path) -> None:
         )
 
 
-def ensure_impl_changes(root: Path) -> None:
-    status = subprocess.run(
-        ["git", "status", "--porcelain"],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        check=False,
-    ).stdout.strip()
-    if not status:
-        raise RuntimeError(
-            "No working tree changes after codex implementation. "
-            "Ensure the prompt triggers real code/config edits and codex "
-            "can write to the repo."
-        )
-
-
 def list_changed_paths(root: Path) -> list[str]:
-    status = subprocess.run(
-        ["git", "status", "--porcelain"],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        check=False,
-    ).stdout.strip()
-    if not status:
-        return []
-    paths = []
-    for line in status.splitlines():
-        path = line[3:].strip()
-        if "->" in path:
-            path = path.split("->")[-1].strip()
-        paths.append(path.replace("\\", "/"))
-    return paths
+    return parse_changed_paths_from_porcelain(git_status_porcelain(root))
 
 
-def ensure_no_disallowed_changes(root: Path) -> None:
+def ensure_no_disallowed_changes(changed_paths: list[str]) -> None:
     disallowed = [
         path
-        for path in list_changed_paths(root)
+        for path in (changed_paths or [])
         if path.startswith(("docs/experiments/", "tasks/"))
     ]
     if disallowed:
@@ -853,7 +902,7 @@ def ensure_no_disallowed_changes(root: Path) -> None:
         )
 
 
-def ensure_substantive_changes(root: Path) -> None:
+def ensure_substantive_changes(changed_paths: list[str]) -> None:
     substantive_prefixes = (
         "config/",
         "py64_analysis/",
@@ -863,7 +912,7 @@ def ensure_substantive_changes(root: Path) -> None:
     )
     substantive = [
         path
-        for path in list_changed_paths(root)
+        for path in (changed_paths or [])
         if path.startswith(substantive_prefixes)
     ]
     if not substantive:
@@ -874,10 +923,10 @@ def ensure_substantive_changes(root: Path) -> None:
         )
 
 
-def detect_experiment_config(root: Path) -> str | None:
+def detect_experiment_config(changed_paths: list[str]) -> str | None:
     configs = [
         path
-        for path in list_changed_paths(root)
+        for path in (changed_paths or [])
         if path.startswith("config/experiments/") and path.endswith(".yaml")
     ]
     if not configs:
@@ -1298,21 +1347,22 @@ def main() -> int:
     else:
         run_codex(root, root / args.prompt, plan, args.profile, codex_log)
         ensure_codex_writable(codex_log)
-    ensure_impl_changes(root)
-    ensure_no_disallowed_changes(root)
-    ensure_substantive_changes(root)
-    exp_config_path = detect_experiment_config(root)
+    impl_changed_paths, impl_head_commit, impl_mode = collect_impl_changes(
+        root=root, base_commit=base_commit
+    )
+    ensure_no_disallowed_changes(impl_changed_paths)
+    ensure_substantive_changes(impl_changed_paths)
+    exp_config_path = detect_experiment_config(impl_changed_paths)
 
-    # Commit code changes before evaluation so head_commit is stable/reproducible.
-    run(["git", "add", "-A"], cwd=root)
-    run(["git", "commit", "-m", f"agent: {run_id} {slugify(plan['title'])}"], cwd=root)
-    head_commit = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        check=False,
-    ).stdout.strip()
+    head_commit = impl_head_commit
+    if impl_mode == "worktree":
+        # Commit code changes before evaluation so head_commit is stable/reproducible.
+        run(["git", "add", "-A"], cwd=root)
+        run(
+            ["git", "commit", "-m", f"agent: {run_id} {slugify(plan['title'])}"],
+            cwd=root,
+        )
+        head_commit = git_head_commit(root)
     changed_files = subprocess.run(
         ["git", "diff", "--name-only", f"{base_commit}..{head_commit}"],
         cwd=root,
