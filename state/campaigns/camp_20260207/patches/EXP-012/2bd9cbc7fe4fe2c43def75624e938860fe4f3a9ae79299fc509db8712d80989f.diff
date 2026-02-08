@@ -1,0 +1,15 @@
+diff --git a/config/experiments/camp_20260207-stage1-EXP-012-a3.yaml b/config/experiments/camp_20260207-stage1-EXP-012-a3.yaml
+new file mode 100644
+index 0000000..c5192bb
+--- /dev/null
++++ b/config/experiments/camp_20260207-stage1-EXP-012-a3.yaml
+@@ -0,0 +1,9 @@
++# EXP-012: Tune closing_odds_multiplier quantile (more conservative).
++#
++# Using buy_t_minus_minutes=1, we computed ratio_final_to_buy = odds_final / odds_buy
++# on train+valid (2020-02-08..2024-02-06). The q20 value was ~0.967064 (q30=1.0).
++# This config applies the q20 multiplier to reduce EV overestimation when betting before close.
++extends: ../config.yaml
++
++betting:
++  closing_odds_multiplier: 0.967064
