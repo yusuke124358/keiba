@@ -1,0 +1,77 @@
+diff --git a/config/experiments/camp_20260207-stage1-EXP-009-a1.yaml b/config/experiments/camp_20260207-stage1-EXP-009-a1.yaml
+new file mode 100644
+index 0000000..21185f4
+--- /dev/null
++++ b/config/experiments/camp_20260207-stage1-EXP-009-a1.yaml
+@@ -0,0 +1,6 @@
++extends: ../config.yaml
++
++betting:
++  # EXP-009: Skip small-field races (reduces slippage/selection noise).
++  min_field_size: 9
++
+diff --git a/py64_analysis/src/keiba/backtest/engine.py b/py64_analysis/src/keiba/backtest/engine.py
+index 888edf3..f87f525 100644
+--- a/py64_analysis/src/keiba/backtest/engine.py
++++ b/py64_analysis/src/keiba/backtest/engine.py
+@@ -129,6 +129,7 @@ class BacktestEngine:
+         self.ev_upper_cap = ev_upper_cap  # Ticket G2: EV上限値
+         self.uncertainty_shrink = uncertainty_shrink
+         self._surface_cache: dict[str, str] = {}
++        self._field_size_cache: dict[str, int | None] = {}
+         self._odds_floor_filtered_bets = 0
+         self._odds_floor_filtered_stake = 0.0
+         self._odds_floor_min_odds = 0.0
+@@ -526,6 +527,22 @@ class BacktestEngine:
+         self._surface_cache[race_id] = seg
+         return seg
+ 
++    def _get_race_field_size(self, race_id: str) -> int | None:
++        if race_id in self._field_size_cache:
++            return self._field_size_cache[race_id]
++        query = text("SELECT field_size FROM fact_race WHERE race_id = :race_id")
++        row = self.session.execute(query, {"race_id": race_id}).fetchone()
++        fs = None
++        if row:
++            try:
++                fs = int(row[0]) if row[0] is not None else None
++            except Exception:
++                fs = None
++        if fs is not None and fs <= 0:
++            fs = None
++        self._field_size_cache[race_id] = fs
++        return fs
++
+     def _predict_race(self, race_id: str, asof_time: datetime, model) -> list[dict]:
+         """
+         レースの予測を実行
+@@ -533,6 +550,16 @@ class BacktestEngine:
+         asof_time以前の情報のみを使用してリークを防止
+         """
+         # 特徴量取得（asof_time条件でリーク防止）
++        min_field_size = getattr(self.config.betting, "min_field_size", None)
++        try:
++            min_field_size = int(min_field_size) if min_field_size is not None else None
++        except Exception:
++            min_field_size = None
++        if min_field_size is not None and min_field_size > 0:
++            fs = self._get_race_field_size(race_id)
++            if fs is not None and fs < min_field_size:
++                return []
++
+         query = text("""
+             SELECT f.horse_id, f.payload
+             FROM features f
+diff --git a/py64_analysis/src/keiba/config.py b/py64_analysis/src/keiba/config.py
+index ec0aeaa..cd78069 100644
+--- a/py64_analysis/src/keiba/config.py
++++ b/py64_analysis/src/keiba/config.py
+@@ -369,6 +369,8 @@ class BettingConfig(BaseModel):
+     t_ev: float = 0.10
+     odds_cap: Optional[float] = Field(default=None, gt=0)
+     exclude_odds_band: Optional[str] = None
++    # EXP-009: Skip races with small fields (field_size < min_field_size). None disables.
++    min_field_size: Optional[int] = Field(default=None, ge=1)
+     selection: SelectionConfig = Field(default_factory=SelectionConfig)
+     race_cost_filter: RaceCostFilterConfig = Field(default_factory=RaceCostFilterConfig)
+     takeout_ev_margin: TakeoutEvMarginConfig = Field(default_factory=TakeoutEvMarginConfig)
