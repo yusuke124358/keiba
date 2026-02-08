@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "campaign_id": "camp_20260207",
+  "seed_id": "EXP-008",
+  "owner": "RUNNER_NAME=DESKTOP-CUOT9LI GITHUB_RUN_ID=21798153598 GITHUB_RUN_ATTEMPT=1",
+  "event_id": "e281be21ce13376743a7d0fe9104ac0a769dde6ae1166a6c076c4c0e41ed35f4",
+  "event_type": "reconciled",
+  "stage": "stage2",
+  "attempt": 1,
+  "reconcile_action": "requeue",
+  "reconciled_at": "2026-02-08T15:16:15Z",
+  "reason": "stale lease: last_activity=2026-02-08T12:08:11Z ttl_sec=7200"
+}
