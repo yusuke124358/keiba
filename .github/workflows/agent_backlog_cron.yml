@@ -1,8 +1,7 @@
 name: agent_backlog_cron
 
 on:
-  schedule:
-    - cron: "15 * * * *"
+  # Deprecated (V1 backlog runner). V2 scientist pipeline is the supported path.
   workflow_dispatch:
 
 concurrency:
