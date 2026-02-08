@@ -1,0 +1,422 @@
+diff --git a/py64_analysis/scripts/run_holdout.py b/py64_analysis/scripts/run_holdout.py
+index f32d5ba..4f6bd2c 100644
+--- a/py64_analysis/scripts/run_holdout.py
++++ b/py64_analysis/scripts/run_holdout.py
+@@ -1160,11 +1160,13 @@ def main() -> None:
+                             X_valid2, p_mkt_val, calibrate=False, segments=segments_valid
+                         )
+                     else:
+-                        p_model_val = (
++                        p_raw = (
+                             model.lgb_model.predict(X_valid2)
+                             if model.lgb_model is not None
+                             else np.zeros(len(X_valid2))
+                         )
++                        p_arr = np.asarray(p_raw, dtype=float)
++                        p_model_val = p_arr[:, 0] if p_arr.ndim == 2 else p_arr
+                     df_rs = pd.DataFrame(
+                         {
+                             "race_id": race_ids_valid.values,
+diff --git a/py64_analysis/src/keiba/backtest/engine.py b/py64_analysis/src/keiba/backtest/engine.py
+index 888edf3..d908a3d 100644
+--- a/py64_analysis/src/keiba/backtest/engine.py
++++ b/py64_analysis/src/keiba/backtest/engine.py
+@@ -883,14 +883,18 @@ class BacktestEngine:
+                     if model.use_market_offset:
+                         p_model = float(p_hat)
+                     else:
+-                        p_model = float(model.lgb_model.predict(X)[0])
++                        pred_raw = model.lgb_model.predict(X)
++                        pred_arr = np.asarray(pred_raw, dtype=float)
++                        p_model = float(pred_arr[0] if pred_arr.ndim == 1 else pred_arr[0, 0])
+                     return float(p_hat), residual_meta, float(p_model)
+                 else:
+                     p_hat = result[0]
+                     if model.use_market_offset:
+                         p_model = float(p_hat)
+                     else:
+-                        p_model = float(model.lgb_model.predict(X)[0])
++                        pred_raw = model.lgb_model.predict(X)
++                        pred_arr = np.asarray(pred_raw, dtype=float)
++                        p_model = float(pred_arr[0] if pred_arr.ndim == 1 else pred_arr[0, 0])
+                     return float(p_hat), {}, float(p_model)
+             except Exception as e:
+                 logger.warning(f"Model prediction failed: {e}")
+diff --git a/py64_analysis/src/keiba/backtest/pred_quality.py b/py64_analysis/src/keiba/backtest/pred_quality.py
+index cedfbef..27cf968 100644
+--- a/py64_analysis/src/keiba/backtest/pred_quality.py
++++ b/py64_analysis/src/keiba/backtest/pred_quality.py
+@@ -153,6 +153,8 @@ def compute_prediction_quality(
+             else np.zeros(len(X2), dtype=float)
+         )
+         p_model = np.asarray(lgb_out, dtype=float)
++        if p_model.ndim == 2:
++            p_model = p_model[:, 0]
+ 
+     segments = None
+     blend_segmented = getattr(model, "blend_segmented", None)
+diff --git a/py64_analysis/src/keiba/modeling/train.py b/py64_analysis/src/keiba/modeling/train.py
+index 7cb41e1..9a0a9ed 100644
+--- a/py64_analysis/src/keiba/modeling/train.py
++++ b/py64_analysis/src/keiba/modeling/train.py
+@@ -30,6 +30,24 @@ from .race_softmax import fit_race_softmax
+ logger = logging.getLogger(__name__)
+ 
+ 
++def _as_win_prob(pred: Any) -> np.ndarray:
++    """
++    LightGBM `predict()` output -> 1D win probability.
++
++    - binary objective: (n,) probabilities
++    - multiclass objective: (n, num_class) probabilities (win assumed to be class 0)
++    """
++    arr = np.asarray(pred, dtype=float)
++    if arr.ndim == 0:
++        return arr.reshape(1)
++    if arr.ndim == 1:
++        return arr
++    if arr.ndim == 2:
++        return arr[:, 0]
++    # Should not happen for LightGBM; keep a safe fallback.
++    return arr.reshape(arr.shape[0], -1)[:, 0]
++
++
+ class SurfaceDispatchBooster:
+     """
+     Booster-like wrapper that dispatches predictions to turf/dirt models.
+@@ -63,15 +81,22 @@ class SurfaceDispatchBooster:
+             return np.asarray(self._dirt.predict(X, **kwargs), dtype=float)
+ 
+         mask_turf = is_turf == 1
+-        out = np.empty(n, dtype=float)
++        pred_turf = None
++        pred_dirt = None
+         if mask_turf.any():
+-            out[mask_turf] = np.asarray(
+-                self._turf.predict(X.iloc[mask_turf], **kwargs), dtype=float
+-            )
++            pred_turf = np.asarray(self._turf.predict(X.iloc[mask_turf], **kwargs), dtype=float)
+         if (~mask_turf).any():
+-            out[~mask_turf] = np.asarray(
+-                self._dirt.predict(X.iloc[~mask_turf], **kwargs), dtype=float
+-            )
++            pred_dirt = np.asarray(self._dirt.predict(X.iloc[~mask_turf], **kwargs), dtype=float)
++
++        # Support both binary (n,) and multiclass (n, K) outputs.
++        sample = pred_turf if pred_turf is not None else pred_dirt
++        if sample is None:
++            return np.asarray([], dtype=float)
++        out = np.empty((n,) if sample.ndim == 1 else (n, int(sample.shape[1])), dtype=float)
++        if pred_turf is not None:
++            out[mask_turf] = pred_turf
++        if pred_dirt is not None:
++            out[~mask_turf] = pred_dirt
+         return out
+ 
+ 
+@@ -222,6 +247,8 @@ class WinProbabilityModel:
+         X_valid: Optional[pd.DataFrame] = None,
+         y_valid: Optional[pd.Series] = None,
+         p_mkt_valid: Optional[pd.Series] = None,
++        y_top3: Optional[pd.Series] = None,
++        y_top3_valid: Optional[pd.Series] = None,
+     ) -> dict:
+         """
+         モデル学習
+@@ -241,16 +268,32 @@ class WinProbabilityModel:
+ 
+         self.feature_names = X.columns.tolist()
+ 
++        multitask_enabled = y_top3 is not None and not self.use_market_offset
++        if y_top3 is not None and self.use_market_offset:
++            logger.warning("multitask_top3 requested but use_market_offset=true; disabled")
++            multitask_enabled = False
++
+         # 検証データが指定されていない場合、訓練データの最後20%を使用
+         if X_valid is None:
+             split_idx = int(len(X) * 0.8)
+             X_train, X_val = X.iloc[:split_idx], X.iloc[split_idx:]
+             y_train, y_val = y.iloc[:split_idx], y.iloc[split_idx:]
+             p_mkt_train, p_mkt_val = p_mkt.iloc[:split_idx], p_mkt.iloc[split_idx:]
++            y_top3_train = (
++                y_top3.iloc[:split_idx] if multitask_enabled and y_top3 is not None else None
++            )
++            y_top3_val = (
++                y_top3.iloc[split_idx:] if multitask_enabled and y_top3 is not None else None
++            )
+         else:
+             X_train, X_val = X, X_valid
+             y_train, y_val = y, y_valid
+             p_mkt_train, p_mkt_val = p_mkt, p_mkt_valid
++            if multitask_enabled and y_top3_valid is None:
++                logger.warning("multitask_top3 enabled but y_top3_valid is missing; disabled")
++                multitask_enabled = False
++            y_top3_train = y_top3 if multitask_enabled else None
++            y_top3_val = y_top3_valid if multitask_enabled else None
+ 
+         # LightGBM用データセット
+         if self.use_market_offset:
+@@ -260,12 +303,22 @@ class WinProbabilityModel:
+             train_data = lgb.Dataset(X_train, label=y_train, init_score=init_train)
+             valid_data = lgb.Dataset(X_val, label=y_val, reference=train_data, init_score=init_val)
+         else:
+-            train_data = lgb.Dataset(X_train, label=y_train)
+-            valid_data = lgb.Dataset(X_val, label=y_val, reference=train_data)
++            if multitask_enabled and y_top3_train is not None and y_top3_val is not None:
++                y_tr = y_train.values.astype(int)
++                y3_tr = y_top3_train.values.astype(int)
++                y_va = y_val.values.astype(int)
++                y3_va = y_top3_val.values.astype(int)
++                y_train_label = np.where(y_tr == 1, 0, np.where(y3_tr == 1, 1, 2)).astype(int)
++                y_val_label = np.where(y_va == 1, 0, np.where(y3_va == 1, 1, 2)).astype(int)
++                train_data = lgb.Dataset(X_train, label=y_train_label)
++                valid_data = lgb.Dataset(X_val, label=y_val_label, reference=train_data)
++            else:
++                train_data = lgb.Dataset(X_train, label=y_train)
++                valid_data = lgb.Dataset(X_val, label=y_val, reference=train_data)
+ 
+         params = {
+-            "objective": "binary",
+-            "metric": "binary_logloss",
++            "objective": "multiclass" if multitask_enabled else "binary",
++            "metric": "multi_logloss" if multitask_enabled else "binary_logloss",
+             "boosting_type": "gbdt",
+             "num_leaves": 31,
+             "learning_rate": 0.05,
+@@ -279,6 +332,8 @@ class WinProbabilityModel:
+             "feature_fraction_seed": int(self.config.model.seed),
+             "bagging_seed": int(self.config.model.seed),
+         }
++        if multitask_enabled:
++            params["num_class"] = 3
+         if self.use_market_offset:
+             # priorをinit_scoreで与えるので、平均ラベルからの自動初期化はOFF（残差の解釈を安定化）
+             params["boost_from_average"] = False
+@@ -309,11 +364,11 @@ class WinProbabilityModel:
+             p_blend_val = p_model_val
+             p_blend_train = p_model_train
+         else:
+-            p_model_val = np.asarray(self.lgb_model.predict(X_val), dtype=float)
++            p_model_val = _as_win_prob(self.lgb_model.predict(X_val))
+             p_blend_val = self.blend_weight * p_mkt_val + (1 - self.blend_weight) * p_model_val
+ 
+             # 訓練データ上のメトリクスも参考に（過学習チェック用）
+-            p_model_train = np.asarray(self.lgb_model.predict(X_train), dtype=float)
++            p_model_train = _as_win_prob(self.lgb_model.predict(X_train))
+             p_blend_train = (
+                 self.blend_weight * p_mkt_train + (1 - self.blend_weight) * p_model_train
+             )
+@@ -336,6 +391,7 @@ class WinProbabilityModel:
+             "n_valid": len(y_val),
+             "n_features": len(self.feature_names),
+             "best_iteration": self.lgb_model.best_iteration,
++            "multitask_top3_enabled": bool(multitask_enabled),
+         }
+ 
+         # ★校正用に検証データの予測結果を保持（train_model() からアクセス可能に）
+@@ -498,7 +554,7 @@ class WinProbabilityModel:
+                         "cap_value": None,
+                     }
+         else:
+-            p_model = self.lgb_model.predict(X_dispatch)
++            p_model = _as_win_prob(self.lgb_model.predict(X_dispatch))
+             p_mkt_arr = np.asarray(p_mkt, dtype=float)
+             w_arr = self._resolve_blend_weights(segments, len(p_mkt_arr))
+             p_blend_raw = w_arr * p_mkt_arr + (1 - w_arr) * p_model
+@@ -690,13 +746,15 @@ class DistanceBucketWinProbabilityModel:
+             )
+             if booster is None:
+                 continue
+-            out[mask.values] = booster.predict(X.loc[mask], raw_score=raw_score)
++            out[mask.values] = _as_win_prob(booster.predict(X.loc[mask], raw_score=raw_score))
+ 
+         unknown = buckets.isna()
+         if unknown.any():
+             booster = getattr(self.fallback_model, "lgb_model", None)
+             if booster is not None:
+-                out[unknown.values] = booster.predict(X.loc[unknown], raw_score=raw_score)
++                out[unknown.values] = _as_win_prob(
++                    booster.predict(X.loc[unknown], raw_score=raw_score)
++                )
+         return out
+ 
+     def predict(
+@@ -778,6 +836,7 @@ def prepare_training_data(
+     min_date: str,
+     max_date: str,
+     buy_t_minus_minutes: Optional[int] = None,
++    return_y_top3: bool = False,
+ ) -> tuple:
+     """
+     学習データを準備（リーク防止版）
+@@ -794,7 +853,8 @@ def prepare_training_data(
+         buy_t_minus_minutes: 発走何分前を購入時点とするか
+ 
+     Returns:
+-        (X, y, p_mkt, race_ids)
++        - return_y_top3=False: (X, y, p_mkt, race_ids)
++        - return_y_top3=True: (X, y, y_top3, p_mkt, race_ids)
+     """
+     # ★config一元化: buy_t_minus_minutes が None なら config から取得
+     if buy_t_minus_minutes is None:
+@@ -860,7 +920,8 @@ def prepare_training_data(
+             lf.horse_id,
+             lf.payload,
+             lf.date,
+-            CASE WHEN res.finish_pos = 1 THEN 1 ELSE 0 END as is_winner
++            CASE WHEN res.finish_pos = 1 THEN 1 ELSE 0 END as is_winner,
++            CASE WHEN res.finish_pos <= 3 THEN 1 ELSE 0 END as is_top3
+         FROM latest_features lf
+         -- ★重要: 結果未投入レースが混ざると is_winner=0 扱いで静かに汚れるため、
+         --         結果がある行だけに限定
+@@ -887,6 +948,8 @@ def prepare_training_data(
+     ).fetchall()
+ 
+     if not results:
++        if return_y_top3:
++            return None, None, None, None, None
+         return None, None, None, None
+ 
+     # DataFrameに変換
+@@ -1007,6 +1070,7 @@ def prepare_training_data(
+     # 数値化（1行/少数行でも dtype=object になってLightGBMで落ちるのを防ぐ）
+     X = df[available_cols].apply(pd.to_numeric, errors="coerce").fillna(0.0)
+     y = df["is_winner"]
++    y_top3 = df["is_top3"] if return_y_top3 else None
+ 
+     market_mode = str(
+         getattr(getattr(cfg, "model", None), "market_prob_mode", "raw") or "raw"
+@@ -1025,6 +1089,8 @@ def prepare_training_data(
+     p_mkt = p_mkt_raw.fillna(p_mkt_mean)
+ 
+     logger.info(f"Prepared {len(df)} training samples (leak-free)")
++    if return_y_top3:
++        return X, y, y_top3, p_mkt, df["race_id"]
+     return X, y, p_mkt, df["race_id"]
+ 
+ 
+@@ -1067,22 +1133,22 @@ def train_model(
+     )
+ 
+     # 訓練データ準備
+-    X_train, y_train, p_mkt_train, race_ids_train = prepare_training_data(
+-        session, train_start, train_end, buy_t_minus_minutes
++    X_train, y_train, y_top3_train, p_mkt_train, race_ids_train = prepare_training_data(
++        session, train_start, train_end, buy_t_minus_minutes, return_y_top3=True
+     )
+ 
+     if X_train is None or len(X_train) == 0:
+         raise ValueError("No training data found")
+ 
+     # 検証データ準備（明示的に指定された場合）
+-    X_valid, y_valid, p_mkt_valid, race_ids_valid = None, None, None, None
++    X_valid, y_valid, y_top3_valid, p_mkt_valid, race_ids_valid = None, None, None, None, None
+     if valid_start and valid_end:
+-        X_valid, y_valid, p_mkt_valid, race_ids_valid = prepare_training_data(
+-            session, valid_start, valid_end, buy_t_minus_minutes
++        X_valid, y_valid, y_top3_valid, p_mkt_valid, race_ids_valid = prepare_training_data(
++            session, valid_start, valid_end, buy_t_minus_minutes, return_y_top3=True
+         )
+         if X_valid is None or len(X_valid) == 0:
+             logger.warning("No validation data found, falling back to train split")
+-            X_valid, y_valid, p_mkt_valid = None, None, None
++            X_valid, y_valid, y_top3_valid, p_mkt_valid = None, None, None, None
+ 
+     # Surface split (turf vs dirt): train 2 models and dispatch by race surface
+     # at inference/backtest.
+@@ -1146,6 +1212,14 @@ def train_model(
+                     and int(mask_turf_va.sum()) > 0
+                 )
+                 else None,
++                y_top3=y_top3_train[mask_turf_tr],
++                y_top3_valid=y_top3_valid[mask_turf_va]
++                if (
++                    y_top3_valid is not None
++                    and mask_turf_va is not None
++                    and int(mask_turf_va.sum()) > 0
++                )
++                else None,
+             )
+ 
+             model_dirt = WinProbabilityModel()
+@@ -1171,6 +1245,14 @@ def train_model(
+                     and int(mask_dirt_va.sum()) > 0
+                 )
+                 else None,
++                y_top3=y_top3_train[mask_dirt_tr],
++                y_top3_valid=y_top3_valid[mask_dirt_va]
++                if (
++                    y_top3_valid is not None
++                    and mask_dirt_va is not None
++                    and int(mask_dirt_va.sum()) > 0
++                )
++                else None,
+             )
+ 
+             if model_turf.feature_names != model_dirt.feature_names:
+@@ -1204,7 +1286,16 @@ def train_model(
+     if model is None:
+         # Default single-model path.
+         model = WinProbabilityModel()
+-        metrics = model.fit(X_train, y_train, p_mkt_train, X_valid, y_valid, p_mkt_valid)
++        metrics = model.fit(
++            X_train,
++            y_train,
++            p_mkt_train,
++            X_valid,
++            y_valid,
++            p_mkt_valid,
++            y_top3=y_top3_train,
++            y_top3_valid=y_top3_valid,
++        )
+         metrics["surface_split_enabled"] = False
+ 
+     # Ticket: segment別 blend weight（validのみで推定）
+@@ -1231,7 +1322,7 @@ def train_model(
+ 
+         X_val2 = _align_features(X_valid, model.feature_names)
+         p_model_val = (
+-            model.lgb_model.predict(X_val2)
++            _as_win_prob(model.lgb_model.predict(X_val2))
+             if model.lgb_model is not None
+             else np.zeros(len(X_val2))
+         )
+@@ -1329,10 +1420,12 @@ def train_model(
+             if fit_cfg is None or bool(getattr(fit_cfg, "enabled", True)):
+                 X_val2 = _align_features(X_valid, model.feature_names)
+                 if model.use_market_offset:
+-                    p_model_val = model.predict(X_val2, p_mkt_valid, calibrate=False)
++                    p_model_val_rs = model.predict(X_val2, p_mkt_valid, calibrate=False)
++                    if isinstance(p_model_val_rs, tuple):
++                        p_model_val_rs = p_model_val_rs[0]
+                 else:
+-                    p_model_val = (
+-                        model.lgb_model.predict(X_val2)
++                    p_model_val_rs = (
++                        _as_win_prob(model.lgb_model.predict(X_val2))
+                         if model.lgb_model is not None
+                         else np.zeros(len(X_val2))
+                     )
+@@ -1340,7 +1433,7 @@ def train_model(
+                     {
+                         "race_id": race_ids_valid.values,
+                         "y": y_valid.values,
+-                        "p_model": np.asarray(p_model_val, dtype=float),
++                        "p_model": np.asarray(p_model_val_rs, dtype=float),
+                         "p_mkt": pd.to_numeric(p_mkt_valid, errors="coerce")
+                         .fillna(0.0)
+                         .astype(float)
+@@ -1445,7 +1538,12 @@ def train_model(
+             if n < min_train:
+                 continue
+             m = WinProbabilityModel()
+-            m.fit(X_train.loc[mask], y_train.loc[mask], p_mkt_train.loc[mask])
++            m.fit(
++                X_train.loc[mask],
++                y_train.loc[mask],
++                p_mkt_train.loc[mask],
++                y_top3=y_top3_train.loc[mask] if y_top3_train is not None else None,
++            )
+             bucket_models[int(b)] = m
+ 
+         bucket_meta = {
