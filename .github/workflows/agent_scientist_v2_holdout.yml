@@ -23,6 +23,8 @@ concurrency:
 jobs:
   holdout:
     runs-on: self-hosted
+    # Default is 360 minutes; v2 runs can exceed that when eval is slow.
+    timeout-minutes: 720
     steps:
       - uses: actions/checkout@v4
         with:
