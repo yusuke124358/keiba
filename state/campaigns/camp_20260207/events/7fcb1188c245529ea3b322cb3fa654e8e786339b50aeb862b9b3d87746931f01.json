@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "campaign_id": "camp_20260207",
+  "seed_id": "EXP-009",
+  "owner": "RUNNER_NAME=DESKTOP-CUOT9LI-2 GITHUB_RUN_ID=21796612382 GITHUB_RUN_ATTEMPT=1",
+  "event_id": "7fcb1188c245529ea3b322cb3fa654e8e786339b50aeb862b9b3d87746931f01",
+  "event_type": "finished",
+  "stage": "stage1",
+  "attempt": 1,
+  "period_key": "stage1_test",
+  "run_id": "camp_20260207-stage1-EXP-009-a1",
+  "result": "success",
+  "decision": "candidate",
+  "finished_at": "2026-02-08T12:23:39Z",
+  "metrics_summary": {
+    "delta_roi": 0.041196511249024376,
+    "delta_roi_ci95": [
+      0.005098525934662819,
+      0.10180236001637111
+    ],
+    "p_one_sided_delta_le_0": 0.0033333333333333335,
+    "n_bets": 341,
+    "n_days": 122,
+    "test_period": "2024-02-07 to 2025-05-06",
+    "delta_max_drawdown": -0.009333333333333332
+  },
+  "artifacts_ref": {
+    "out_root": "C:/keiba_scientist/artifacts/DESKTOP-CUOT9LI-2/shard-1/camp_20260207",
+    "experiment_dir": "C:/keiba_scientist/artifacts/DESKTOP-CUOT9LI-2/shard-1/camp_20260207/experiments/camp_20260207-stage1-EXP-009-a1",
+    "experiment_result": "C:/keiba_scientist/artifacts/DESKTOP-CUOT9LI-2/shard-1/camp_20260207/experiments/camp_20260207-stage1-EXP-009-a1/experiment_result.json",
+    "upstream_run_id": "",
+    "upstream_base_commit": "",
+    "shard": "1/2",
+    "github": {
+      "run_id": "21796612382",
+      "run_attempt": "1",
+      "job": "pipeline"
+    }
+  },
+  "patch_ref": {
+    "sha256": "abc2dd8d645f70cf2c78264e7fb06149128a7dfe4c81a87f7ba444dc19d63ef3",
+    "path": "state/campaigns/camp_20260207/patches/EXP-009/abc2dd8d645f70cf2c78264e7fb06149128a7dfe4c81a87f7ba444dc19d63ef3.diff"
+  }
+}
