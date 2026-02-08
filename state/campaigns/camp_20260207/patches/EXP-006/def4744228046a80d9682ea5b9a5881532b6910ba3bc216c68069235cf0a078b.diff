@@ -1,0 +1,296 @@
+diff --git a/config/experiments/camp_20260207-stage1-EXP-006-a1.yaml b/config/experiments/camp_20260207-stage1-EXP-006-a1.yaml
+new file mode 100644
+index 0000000..ae2d71a
+--- /dev/null
++++ b/config/experiments/camp_20260207-stage1-EXP-006-a1.yaml
+@@ -0,0 +1,12 @@
++extends: ../config.yaml
++
++# EXP-006-a1: Adaptive fractional Kelly under drawdown
++betting:
++  sizing:
++    adaptive_drawdown:
++      enabled: true
++      # Scale down stakes once drawdown exceeds 5%, reaching min_mult at 20%.
++      start_drawdown: 0.05
++      full_drawdown: 0.20
++      min_fraction_mult: 0.50
++
+diff --git a/py64_analysis/src/keiba/backtest/engine.py b/py64_analysis/src/keiba/backtest/engine.py
+index 888edf3..c4a1b63 100644
+--- a/py64_analysis/src/keiba/backtest/engine.py
++++ b/py64_analysis/src/keiba/backtest/engine.py
+@@ -17,6 +17,7 @@ from sqlalchemy import text
+ from sqlalchemy.orm import Session
+ 
+ from ..analysis.slippage_table import SlippageTable
++from ..betting.drawdown_sizing import drawdown_fraction_multiplier
+ from ..betting.market_blend import compute_market_blend, parse_exclude_odds_band
+ from ..betting.odds_band_bias import OddsBandBias
+ from ..betting.odds_dynamics import compute_odds_dyn_metric, eval_odds_dyn_filter
+@@ -173,6 +174,7 @@ class BacktestEngine:
+         result = BacktestResult(initial_bankroll=initial_bankroll)
+         bankroll = initial_bankroll
+         bankroll_decision = initial_bankroll
++        peak_bankroll_decision = initial_bankroll
+         peak_bankroll = initial_bankroll
+         min_bankroll = initial_bankroll
+         log_growths: list[float] = []
+@@ -226,6 +228,11 @@ class BacktestEngine:
+                 daily_loss = 0.0
+                 per_day_cap = _per_day_cap_for(bankroll_decision)
+                 bankroll_for_day = bankroll_decision
++                dd_for_day = (
++                    (peak_bankroll_decision - bankroll_for_day) / peak_bankroll_decision
++                    if peak_bankroll_decision > 0
++                    else 0.0
++                )
+                 daily_candidates: list[dict] = []
+ 
+                 for race_id in day_races:
+@@ -249,6 +256,7 @@ class BacktestEngine:
+                     bankroll_for_day,
+                     remaining_daily_budget=None,
+                     selection_mode=sel_mode,
++                    drawdown=dd_for_day,
+                 )
+ 
+                 if not use_new_stake and per_day_cap is not None:
+@@ -284,6 +292,7 @@ class BacktestEngine:
+ 
+                     profit_before = _profit_before_damp(bet, bet_result.profit)
+                     bankroll_decision += profit_before
++                    peak_bankroll_decision = max(peak_bankroll_decision, bankroll_decision)
+                     if profit_before < 0:
+                         daily_loss += abs(profit_before)
+ 
+@@ -294,6 +303,11 @@ class BacktestEngine:
+                 daily_loss = 0.0
+                 per_day_cap = _per_day_cap_for(bankroll_decision)
+                 bankroll_for_day = bankroll_decision
++                dd_for_day = (
++                    (peak_bankroll_decision - bankroll_for_day) / peak_bankroll_decision
++                    if peak_bankroll_decision > 0
++                    else 0.0
++                )
+                 daily_bets = []
+ 
+                 for race_id in day_races:
+@@ -314,6 +328,7 @@ class BacktestEngine:
+                         buy_time,
+                         bankroll_for_day,
+                         remaining_daily_budget=None,
++                        drawdown=dd_for_day,
+                     )
+                     daily_bets.extend(bets)
+ 
+@@ -341,6 +356,7 @@ class BacktestEngine:
+ 
+                     profit_before = _profit_before_damp(bet, bet_result.profit)
+                     bankroll_decision += profit_before
++                    peak_bankroll_decision = max(peak_bankroll_decision, bankroll_decision)
+                     if profit_before < 0:
+                         daily_loss += abs(profit_before)
+ 
+@@ -380,12 +396,18 @@ class BacktestEngine:
+                 remaining_daily_budget = None
+                 if per_day_cap is not None:
+                     remaining_daily_budget = max(0.0, per_day_cap - daily_stake)
++                dd_for_race = (
++                    (peak_bankroll_decision - bankroll_decision) / peak_bankroll_decision
++                    if peak_bankroll_decision > 0
++                    else 0.0
++                )
+                 bets = self._generate_bets(
+                     race_id,
+                     predictions,
+                     buy_time,
+                     bankroll_decision,
+                     remaining_daily_budget=remaining_daily_budget,
++                    drawdown=dd_for_race,
+                 )
+                 bets = self._apply_stake_odds_damp(bets, min_yen=min_yen)
+ 
+@@ -415,6 +437,7 @@ class BacktestEngine:
+                     daily_stake += stake_for_budget
+                     profit_before = _profit_before_damp(bet, bet_result.profit)
+                     bankroll_decision += profit_before
++                    peak_bankroll_decision = max(peak_bankroll_decision, bankroll_decision)
+                     if profit_before < 0:
+                         daily_loss += abs(profit_before)
+ 
+@@ -1767,6 +1790,7 @@ class BacktestEngine:
+         *,
+         remaining_daily_budget: Optional[float],
+         selection_mode: str,
++        drawdown: float | None = None,
+     ) -> list[Bet]:
+         bets = []
+         ev_margin = self.config.betting.ev_margin
+@@ -1944,6 +1968,26 @@ class BacktestEngine:
+             if stake_raw < min_yen:
+                 continue
+ 
++            stake_pre_dd = stake_raw
++            dd_mult = 1.0
++            dd_cfg = getattr(self.config.betting.sizing, "adaptive_drawdown", None)
++            if (
++                drawdown is not None
++                and dd_cfg is not None
++                and bool(getattr(dd_cfg, "enabled", False))
++                and sizing_method == "fractional_kelly"
++            ):
++                dd_mult = drawdown_fraction_multiplier(
++                    float(drawdown),
++                    start_drawdown=float(getattr(dd_cfg, "start_drawdown", 0.0) or 0.0),
++                    full_drawdown=float(getattr(dd_cfg, "full_drawdown", 0.0) or 0.0),
++                    min_mult=float(getattr(dd_cfg, "min_fraction_mult", 1.0) or 1.0),
++                )
++                if dd_mult < 1.0:
++                    stake_raw = int((stake_raw * dd_mult) // min_yen * min_yen)
++                    if stake_raw < min_yen:
++                        stake_raw = min_yen
++
+             race_id_val = cand.get("race_id")
+             asof_time_val = cand.get("asof_time")
+             if race_id_val is None or asof_time_val is None:
+@@ -1968,6 +2012,9 @@ class BacktestEngine:
+                     "overround_sum_inv": overround_sum_inv,
+                     "takeout_implied": takeout_implied,
+                     "base_min_ev": base_min_ev,
++                    "sizing_drawdown": float(drawdown) if drawdown is not None else None,
++                    "sizing_drawdown_mult": float(dd_mult),
++                    "sizing_stake_pre_drawdown": int(stake_pre_dd),
+                     "market_blend_enabled": cand.get("market_blend_enabled"),
+                     "market_prob_method": cand.get("market_prob_method"),
+                     "market_blend_w": cand.get("market_blend_w"),
+@@ -2177,6 +2224,7 @@ class BacktestEngine:
+         asof_time: datetime,
+         bankroll: float,
+         remaining_daily_budget: Optional[float] = None,
++        drawdown: float | None = None,
+     ) -> list[Bet]:
+         """
+         ベット生成
+@@ -2571,6 +2619,26 @@ class BacktestEngine:
+             if stake_raw < min_yen:
+                 continue
+ 
++            stake_pre_dd = stake_raw
++            dd_mult = 1.0
++            dd_cfg = getattr(self.config.betting.sizing, "adaptive_drawdown", None)
++            if (
++                drawdown is not None
++                and dd_cfg is not None
++                and bool(getattr(dd_cfg, "enabled", False))
++                and sizing_method == "fractional_kelly"
++            ):
++                dd_mult = drawdown_fraction_multiplier(
++                    float(drawdown),
++                    start_drawdown=float(getattr(dd_cfg, "start_drawdown", 0.0) or 0.0),
++                    full_drawdown=float(getattr(dd_cfg, "full_drawdown", 0.0) or 0.0),
++                    min_mult=float(getattr(dd_cfg, "min_fraction_mult", 1.0) or 1.0),
++                )
++                if dd_mult < 1.0:
++                    stake_raw = int((stake_raw * dd_mult) // min_yen * min_yen)
++                    if stake_raw < min_yen:
++                        stake_raw = min_yen
++
+             bet = Bet(
+                 race_id=race_id,
+                 horse_no=pred["horse_no"],
+@@ -2588,6 +2656,9 @@ class BacktestEngine:
+                     "overround_sum_inv": overround_sum_inv,
+                     "takeout_implied": takeout_implied,
+                     "base_min_ev": base_min_ev,
++                    "sizing_drawdown": float(drawdown) if drawdown is not None else None,
++                    "sizing_drawdown_mult": float(dd_mult),
++                    "sizing_stake_pre_drawdown": int(stake_pre_dd),
+                     "market_blend_enabled": cand.get("market_blend_enabled"),
+                     "market_prob_method": cand.get("market_prob_method"),
+                     "market_blend_w": cand.get("market_blend_w"),
+diff --git a/py64_analysis/src/keiba/betting/drawdown_sizing.py b/py64_analysis/src/keiba/betting/drawdown_sizing.py
+new file mode 100644
+index 0000000..fbacfdf
+--- /dev/null
++++ b/py64_analysis/src/keiba/betting/drawdown_sizing.py
+@@ -0,0 +1,50 @@
++from __future__ import annotations
++
++import math
++
++
++def drawdown_fraction_multiplier(
++    drawdown: float,
++    *,
++    start_drawdown: float,
++    full_drawdown: float,
++    min_mult: float,
++) -> float:
++    """Return a multiplier in [min_mult, 1.0] for drawdown=(peak-current)/peak.
++
++    Returns 1.0 when disabled/invalid; this keeps the baseline behavior unchanged.
++    """
++    try:
++        dd = float(drawdown)
++        dd_start = float(start_drawdown)
++        dd_full = float(full_drawdown)
++        m_min = float(min_mult)
++    except Exception:
++        return 1.0
++
++    if not math.isfinite(dd) or dd <= 0.0:
++        return 1.0
++
++    if not math.isfinite(dd_start):
++        dd_start = 0.0
++    if not math.isfinite(dd_full):
++        dd_full = dd_start
++    if not math.isfinite(m_min) or m_min >= 1.0:
++        return 1.0
++
++    dd_start = max(0.0, min(1.0, dd_start))
++    dd_full = max(0.0, min(1.0, dd_full))
++    m_min = max(0.0, min(1.0, m_min))
++
++    # Invalid range: treat as a step function at dd_start.
++    if dd_full <= dd_start:
++        return m_min if dd >= dd_start else 1.0
++
++    if dd <= dd_start:
++        return 1.0
++    if dd >= dd_full:
++        return m_min
++
++    t = (dd - dd_start) / (dd_full - dd_start)
++    mult = 1.0 + t * (m_min - 1.0)
++    return max(m_min, min(1.0, mult))
+diff --git a/py64_analysis/src/keiba/config.py b/py64_analysis/src/keiba/config.py
+index ec0aeaa..bf47a7e 100644
+--- a/py64_analysis/src/keiba/config.py
++++ b/py64_analysis/src/keiba/config.py
+@@ -132,11 +132,24 @@ class BacktestConfig(BaseModel):
+     slippage: SlippageConfig = Field(default_factory=SlippageConfig)
+ 
+ 
++class AdaptiveDrawdownSizingConfig(BaseModel):
++    """Adaptive fractional Kelly scaling based on current drawdown."""
++
++    enabled: bool = False
++    # drawdown = (peak - current) / peak
++    start_drawdown: float = Field(default=0.05, ge=0.0, le=1.0)
++    full_drawdown: float = Field(default=0.20, ge=0.0, le=1.0)
++    min_fraction_mult: float = Field(default=0.50, ge=0.0, le=1.0)
++
++
+ class SizingConfig(BaseModel):
+     """賭け金計算設定"""
+ 
+     method: str = "fractional_kelly"
+     fraction: float = 0.2
++    adaptive_drawdown: AdaptiveDrawdownSizingConfig = Field(
++        default_factory=AdaptiveDrawdownSizingConfig
++    )
+ 
+ 
+ class CapsConfig(BaseModel):
