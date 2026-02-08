@@ -223,6 +223,7 @@
             "promotion_applied",
             "promotion_skipped_conflict",
             "promotion_skipped_apply_fail",
+            "promotion_skipped_hash_mismatch",
             "promotion_skipped_recheck_fail"
           ]
         },

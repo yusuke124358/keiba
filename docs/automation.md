@@ -71,6 +71,8 @@
   - `.github/workflows/agent_scientist_v2_screening.yml` (Stage1: Codex implementation + screening)
   - `.github/workflows/agent_scientist_v2_confirmation.yml` (Stage2: apply stored patch + confirmation)
   - `.github/workflows/agent_scientist_v2_holdout.yml` (Holdout: apply stored patch + final holdout)
+  - `.github/workflows/agent_scientist_v2_pipeline.yml` (Stage1 -> Stage2 -> Holdout in one run; avoids manual chaining)
+  - `.github/workflows/agent_scientist_v2_promote.yml` (Promotion: recheck holdout on latest base and create PRs for accepted seeds)
 - Concurrency: serialized per `<campaign_id>-<shard>` across V2 workflows (stage is not part of the key).
 
 ## Backlog Batch Runner
