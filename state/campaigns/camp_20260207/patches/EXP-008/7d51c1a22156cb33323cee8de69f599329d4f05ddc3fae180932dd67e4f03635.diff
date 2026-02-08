@@ -1,0 +1,261 @@
+diff --git a/config/experiments/camp_20260207-stage1-EXP-008-a1.yaml b/config/experiments/camp_20260207-stage1-EXP-008-a1.yaml
+new file mode 100644
+index 0000000..ca7600e
+--- /dev/null
++++ b/config/experiments/camp_20260207-stage1-EXP-008-a1.yaml
+@@ -0,0 +1,8 @@
++extends: ../config.yaml
++
++betting:
++  stop:
++    # EXP-008: daily stop-loss/stop-win guardrails
++    max_daily_loss_pct: 0.03
++    max_daily_profit_pct: 0.03
++
+diff --git a/py64_analysis/src/keiba/backtest/engine.py b/py64_analysis/src/keiba/backtest/engine.py
+index 888edf3..6db2816 100644
+--- a/py64_analysis/src/keiba/backtest/engine.py
++++ b/py64_analysis/src/keiba/backtest/engine.py
+@@ -198,6 +198,16 @@ class BacktestEngine:
+             return float(initial_bankroll) * float(self.config.betting.caps.per_day_pct)
+ 
+         max_daily_loss = initial_bankroll * self.config.betting.stop.max_daily_loss_pct
++        max_daily_profit: float | None = None
++        stop_cfg = getattr(self.config.betting, "stop", None)
++        if stop_cfg is not None:
++            pct = getattr(stop_cfg, "max_daily_profit_pct", None)
++            try:
++                pct = float(pct) if pct is not None else None
++            except Exception:
++                pct = None
++            if pct is not None and np.isfinite(pct) and pct > 0:
++                max_daily_profit = initial_bankroll * pct
+ 
+         def _profit_before_damp(bet: Bet, profit_actual: float) -> float:
+             extra = bet.extra or {}
+@@ -224,6 +234,7 @@ class BacktestEngine:
+         if sel_mode == "daily_top_n":
+             for race_date, day_races in groupby(races, key=lambda r: r[:8]):
+                 daily_loss = 0.0
++                daily_profit = 0.0
+                 per_day_cap = _per_day_cap_for(bankroll_decision)
+                 bankroll_for_day = bankroll_decision
+                 daily_candidates: list[dict] = []
+@@ -271,6 +282,8 @@ class BacktestEngine:
+                 for bet in daily_bets:
+                     if daily_loss >= max_daily_loss:
+                         break
++                    if max_daily_profit is not None and daily_profit >= max_daily_profit:
++                        break
+ 
+                     bet_result = self._settle_bet(bet)
+                     result.bets.append(bet_result)
+@@ -284,6 +297,7 @@ class BacktestEngine:
+ 
+                     profit_before = _profit_before_damp(bet, bet_result.profit)
+                     bankroll_decision += profit_before
++                    daily_profit += profit_before
+                     if profit_before < 0:
+                         daily_loss += abs(profit_before)
+ 
+@@ -292,6 +306,7 @@ class BacktestEngine:
+         elif use_new_stake:
+             for race_date, day_races in groupby(races, key=lambda r: r[:8]):
+                 daily_loss = 0.0
++                daily_profit = 0.0
+                 per_day_cap = _per_day_cap_for(bankroll_decision)
+                 bankroll_for_day = bankroll_decision
+                 daily_bets = []
+@@ -328,6 +343,8 @@ class BacktestEngine:
+                     # ?E??????????E??
+                     if daily_loss >= max_daily_loss:
+                         break
++                    if max_daily_profit is not None and daily_profit >= max_daily_profit:
++                        break
+ 
+                     bet_result = self._settle_bet(bet)
+                     result.bets.append(bet_result)
+@@ -341,6 +358,7 @@ class BacktestEngine:
+ 
+                     profit_before = _profit_before_damp(bet, bet_result.profit)
+                     bankroll_decision += profit_before
++                    daily_profit += profit_before
+                     if profit_before < 0:
+                         daily_loss += abs(profit_before)
+ 
+@@ -351,6 +369,7 @@ class BacktestEngine:
+             current_date = None
+             daily_stake = 0.0
+             daily_loss = 0.0
++            daily_profit = 0.0
+             per_day_cap = _per_day_cap_for(bankroll_decision)
+ 
+             for race_id in races:
+@@ -360,11 +379,14 @@ class BacktestEngine:
+                     current_date = race_date
+                     daily_stake = 0.0
+                     daily_loss = 0.0
++                    daily_profit = 0.0
+                     per_day_cap = _per_day_cap_for(bankroll_decision)
+ 
+                 # ?E??????????E??
+                 if daily_loss >= max_daily_loss:
+                     continue
++                if max_daily_profit is not None and daily_profit >= max_daily_profit:
++                    continue
+ 
+                 # ???????E?????E
+                 buy_time = self._get_buy_time(race_id)
+@@ -391,6 +413,8 @@ class BacktestEngine:
+ 
+                 # ????E
+                 for bet in bets:
++                    if max_daily_profit is not None and daily_profit >= max_daily_profit:
++                        break
+                     bet_result = self._settle_bet(bet)
+                     result.bets.append(bet_result)
+ 
+@@ -415,6 +439,7 @@ class BacktestEngine:
+                     daily_stake += stake_for_budget
+                     profit_before = _profit_before_damp(bet, bet_result.profit)
+                     bankroll_decision += profit_before
++                    daily_profit += profit_before
+                     if profit_before < 0:
+                         daily_loss += abs(profit_before)
+ 
+diff --git a/py64_analysis/src/keiba/betting/policy.py b/py64_analysis/src/keiba/betting/policy.py
+index 03366da..2e61d2f 100644
+--- a/py64_analysis/src/keiba/betting/policy.py
++++ b/py64_analysis/src/keiba/betting/policy.py
+@@ -160,6 +160,7 @@ class BettingPolicy:
+         self.daily_stake = 0
+         # TODO: 未実装 - 決済取り込みと連携して更新する必要がある
+         self.daily_loss = 0
++        self.daily_profit = 0
+     
+ 
+     def _resolve_selection_mode(self) -> tuple[str, object | None]:
+@@ -1182,6 +1183,18 @@ class BettingPolicy:
+         max_loss = self.bankroll * self.config.betting.stop.max_daily_loss_pct
+         return self.daily_loss >= max_loss
+     
++    def check_stop_win(self) -> bool:
++        """謳榊､ｱ stop-win (take-profit) チェック"""
++        pct = getattr(self.config.betting.stop, "max_daily_profit_pct", None)
++        try:
++            pct = float(pct) if pct is not None else None
++        except Exception:
++            pct = None
++        if pct is None or pct <= 0:
++            return False
++        max_profit = self.bankroll * pct
++        return self.daily_profit >= max_profit
++
+     def save_signals(self, candidates: list[BetCandidate], run_id: str) -> int:
+         """シグナルをDBに保存"""
+         count = 0
+@@ -1313,6 +1326,9 @@ def generate_bet_signals(
+         if policy.check_stop_loss():
+             logger.warning("Stop loss triggered")
+             break
++        if policy.check_stop_win():
++            logger.warning("Stop win triggered")
++            break
+         
+         predictions = predictions_by_race.get(race_id, [])
+         candidates = policy.generate_candidates(race_id, predictions, asof_time)
+diff --git a/py64_analysis/src/keiba/config.py b/py64_analysis/src/keiba/config.py
+index ec0aeaa..abfdd28 100644
+--- a/py64_analysis/src/keiba/config.py
++++ b/py64_analysis/src/keiba/config.py
+@@ -170,6 +170,8 @@ class StopConfig(BaseModel):
+     """停止条件"""
+ 
+     max_daily_loss_pct: float = 0.03
++    # Optional take-profit guardrail (disabled when null/<=0).
++    max_daily_profit_pct: Optional[float] = Field(default=None, ge=0)
+ 
+ 
+ class SlippageTableConfig(BaseModel):
+diff --git a/py64_analysis/src/keiba/eval/extract_metrics.py b/py64_analysis/src/keiba/eval/extract_metrics.py
+index f758f36..804ada3 100644
+--- a/py64_analysis/src/keiba/eval/extract_metrics.py
++++ b/py64_analysis/src/keiba/eval/extract_metrics.py
+@@ -105,6 +105,46 @@ def _safe_get(d: dict, path: str, default=None):
+     return cur
+ 
+ 
++def _daily_loss_p95_from_per_bet_pnl(path: Path) -> Tuple[Optional[float], Optional[str]]:
++    """
++    Compute p95 of daily loss (yen) from per_bet_pnl.csv.
++
++    daily_loss(day) := max(-sum(profit_yen), 0)
++    """
++    if not path.exists():
++        return None, "missing_per_bet_pnl"
++    try:
++        import pandas as pd  # type: ignore[import-untyped]
++        import numpy as np
++    except Exception:
++        return None, "pandas_unavailable"
++    try:
++        df = pd.read_csv(path)
++    except Exception:
++        return None, "read_failed"
++    if df.empty:
++        return None, "empty"
++    if "date" not in df.columns or "profit" not in df.columns:
++        return None, "missing_cols"
++    profits = pd.to_numeric(df["profit"], errors="coerce")
++    if profits.notna().sum() == 0:
++        return None, "profit_all_nan"
++    day_profit = (
++        pd.DataFrame({"date": df["date"].astype(str), "profit": profits})
++        .dropna(subset=["date"])
++        .groupby("date", observed=True)["profit"]
++        .sum()
++    )
++    daily_loss = (-day_profit).clip(lower=0)
++    try:
++        p95 = float(daily_loss.quantile(0.95))
++    except Exception:
++        return None, "quantile_failed"
++    if not np.isfinite(p95):
++        return None, "p95_nonfinite"
++    return p95, None
++
++
+ def _infer_prob_variant(config_path: Optional[Path]) -> str:
+     if config_path is None or not config_path.exists():
+         return "unknown"
+@@ -244,6 +284,13 @@ def extract_metrics_from_holdout_run(
+     config_rel = _rel_path(config_path) if config_path.exists() else None
+     config_hash = _sha256_file(config_path) if config_path.exists() else None
+ 
++    daily_loss_p95, daily_loss_reason = _daily_loss_p95_from_per_bet_pnl(
++        run_dir / "per_bet_pnl.csv"
++    )
++    incomparable_reasons: list[str] = []
++    if daily_loss_reason:
++        incomparable_reasons.append(f"backtest.daily_loss_p95:{daily_loss_reason}")
++
+     metrics = MetricsV01(
+         run_kind="holdout",
+         run_dir=_rel_path(run_dir),
+@@ -276,6 +323,7 @@ def extract_metrics_from_holdout_run(
+             "total_stake": _coerce_float(_safe_get(summary, "backtest.total_stake")),
+             "total_profit": _coerce_float(_safe_get(summary, "backtest.total_profit")),
+             "max_drawdown": _coerce_float(_safe_get(summary, "backtest.max_drawdown")),
++            "daily_loss_p95": daily_loss_p95,
+         },
+         pred_quality={
+             "logloss_market": _coerce_float(_safe_get(summary, "pred_quality.logloss_market")),
+@@ -291,7 +339,7 @@ def extract_metrics_from_holdout_run(
+             "ece": _coerce_float(_safe_get(summary, "pred_quality.ece_calibrated")),
+         },
+         step14=None,
+-        incomparable_reasons=[],
++        incomparable_reasons=incomparable_reasons,
+     )
+     return metrics.to_dict()
+ 
